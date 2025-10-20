@@ -1,0 +1,5 @@
+debian/00-session-router-client.conf /etc/systemd/resolved.conf.d
+debian/ufw/session-router-client /etc/ufw/applications.d
+contrib/session-router-resolvconf /usr/sbin
+contrib/systemd-resolved/session-router-client.pkla /var/lib/polkit-1/localauthority/10-vendor.d
+contrib/systemd-resolved/session-router-client.rules /usr/share/polkit-1/rules.d

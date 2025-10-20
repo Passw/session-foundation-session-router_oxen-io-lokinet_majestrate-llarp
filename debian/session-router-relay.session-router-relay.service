@@ -1,0 +1,19 @@
+[Unit]
+Description=Session Router (service node relay)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=_session
+Type=notify
+WatchdogSec=30s
+SyslogIdentifier=session-router
+WorkingDirectory=/var/lib/session-router/relay
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+ExecStart=/usr/bin/session-router -r /etc/session-router/relay.ini
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
