@@ -1,0 +1,5244 @@
+lokinet (0.9.14-1) unstable; urgency=medium
+
+  * Update mainnet bootstraps
+
+ -- Jason Rhinelander <jason@session.foundation>  Fri, 11 Jul 2025 12:38:41 -0300
+
+lokinet (0.9.13-2) unstable; urgency=medium
+
+  * lokinet 0.9.13
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 24 Feb 2025 18:30:22 -0400
+
+lokinet (0.9.13-1) unstable; urgency=medium
+
+  * update oxenc to latest
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 21 Feb 2025 23:39:29 -0400
+
+lokinet (0.9.13-1) unstable; urgency=medium
+
+  * rebuild
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 21 Feb 2025 20:38:16 -0400
+
+lokinet (0.9.12-2) unstable; urgency=medium
+
+  [ Thomas Winget ]
+  * mainnet service node detect and exit bad state
+
+  [ Jason Rhinelander ]
+  * Fix invalid oxend rpc call
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 17 Feb 2025 14:38:12 -0400
+
+lokinet (0.9.12-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+  * Rediff patches
+  * stop using deprecated docker image name
+  * stable branch library compatibility fixes
+
+  [ Thomas Winget ]
+  * mainnet service node detect and exit bad state
+
+  [ Jason Rhinelander ]
+  * disable warnings as errors on stable branch
+  * update various outdated ci deps
+  * Add workaround for bool config values
+  * Fix usage of uniform_int_distribution<uint8_t>
+  * Update oxen-encoding, oxen-mq
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 12 Dec 2024 21:20:14 -0400
+
+lokinet (0.9.11-3) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * stable branch library compatibility fixes
+
+  [ Thomas Winget ]
+  * mainnet service node detect and exit bad state
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 11 Dec 2024 20:03:02 -0400
+
+lokinet (0.9.11-2) unstable; urgency=medium
+
+  * ping oxend after getting identity keys
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 06 Feb 2023 12:47:16 -0400
+
+lokinet (0.9.11-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Fix missing option names
+  * Make [lokid]:rpc setting required in SN mode
+  * Make Default&Required or Required&Hidden compilation failures
+
+  [ Audric Ackermann ]
+  * fix: allow GUI window height as low as 600 for small screens
+
+  [ Jason Rhinelander ]
+  * Remove another obsolete bootstrap
+
+  [ Thomas Winget ]
+  * add much logging around dns and windivert
+  * Remove obsolete/extraneous WouldLoop function
+  * force windivert to recalc IP checksum
+  * invert packet direction on WINDIVERT_ADDRESS
+  * rvalue ref -> value
+  * log func should return a string instead
+  * I hate clang-format sometimes
+  * fix missing namespace
+
+  [ Jason Rhinelander ]
+  * Update deps to latest versions
+  * Bump version for fix release
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 29 Nov 2022 20:28:50 -0400
+
+lokinet (0.9.10-4) unstable; urgency=medium
+
+  * Switch to non-deprecated oxend path
+  * Remove another obsolete bootstrap
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 18 Nov 2022 16:03:06 -0400
+
+lokinet (0.9.10-3) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Bump apple network extension sub-version
+
+  [ Jeff Becker ]
+  * add omitted header
+
+  [ Thomas Winget ]
+  * when in rome, remove duplicate includes
+
+  [ Jason Rhinelander ]
+  * Add mac .dmg background
+  * Make dmg background retina capable
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 15 Nov 2022 13:48:01 -0400
+
+lokinet (0.9.10-2) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Remove bootstrap.signed from generated default configs
+  * Bump apple network extension sub-version
+
+  [ Jeff Becker ]
+  * add omitted header
+
+  [ Thomas Winget ]
+  * when in rome, remove duplicate includes
+
+  [ Jason Rhinelander ]
+  * Add mac .dmg background
+  * Make dmg background retina capable
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 10 Nov 2022 22:37:10 -0400
+
+lokinet (0.9.10-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Use Windows-y 'x64' instead of '64bit' in static upload
+  * Use rsvg instead of imagemagick to make windows .ico
+  * Add rsvg-convert dep to windows readme
+  * Split windows into gui/main builds, main now builds on bookworm
+  * Windows prebuilt gui fixes
+
+  [ Jeff Becker ]
+  * proper handling of public ips
+
+  [ Jason Rhinelander ]
+  * Remove useless iterator assignments
+  * Fix time_delta<seconds> formatting in milliseconds
+  * Replace duration/timestamp formats with functions
+
+  [ Thomas Winget ]
+  * wait until actually stopped to tell windows we are
+  * debian missing yacc apparently all of a sudden
+
+  [ Jeff Becker ]
+  * correct windows service manager behavior.
+
+  [ Thomas Winget ]
+  * some useful log statements
+
+  [ Jeff Becker ]
+  * fix comment to reflect reality
+  * system layer manager (llarp::sys::service_manager)
+
+  [ Jason Rhinelander ]
+  * Remove dead/redundant code
+  * Fix crashes in wintun and windivert stopping
+  * Add some more debugging
+  * Update gui to latest
+  * Add networkReady to stats result
+  * Extend windows startup timeout
+
+  [ majestrate ]
+  * Update llarp/router/router.cpp
+
+  [ Jeff Becker ]
+  * simplify logic for disabling service manager on windows
+  * fix typo in filename
+
+  [ Jason Rhinelander ]
+  * Move log init even earlier
+  * Remove unused VERSION_STR constant
+  * Improve windows running-as-a-service detection works
+
+  [ Thomas Winget ]
+  * remove dead dns resolver code
+
+  [ Jeff Becker ]
+  * fix crash on shutdown
+
+  [ Thomas Winget ]
+  * stop-time debug statements
+
+  [ Jason Rhinelander ]
+  * Don't raise log level on shutdown
+  * Remove bad assert
+  * Add more stopping signals
+  * windivert: avoid trying to send during shutdown
+
+  [ Jeff Becker ]
+  * use std::shared_ptr for pending queries
+
+  [ Jason Rhinelander ]
+  * Fix crashy race condition in shutdown
+  * Fix crash on unbound cleanup
+  * patch unbound to fix windows shutdown crash
+  * RPC: fix "halt" command
+
+  [ Jeff Becker ]
+  * remove assert()
+  * remove duplicate log statement
+
+  [ majestrate ]
+  * update note about platform support
+  * point to explicit link
+  * correct documentation
+
+  [ Jeff Becker ]
+  * remove dead file
+  * explicitly select signing key used in source tarball signing script
+  * dont hardcode keyid
+  * prevent throwing on no error in lokinet-vpn
+
+  [ Jason Rhinelander ]
+  * Update gui subproject
+
+  [ Jeff Becker ]
+  * llarp::service::Endpoint::ReadyToDoLookup()
+
+  [ majestrate ]
+  * Update llarp/service/endpoint.cpp
+
+  [ Jason Rhinelander ]
+  * Bump openssl static build version
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 04 Nov 2022 11:38:03 -0300
+
+lokinet (0.9.10~rc2-2) unstable; urgency=medium
+
+  * proper handling of public ips
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 26 Oct 2022 16:20:08 -0300
+
+lokinet (0.9.10~rc2-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Fix multi-field < ordering
+  * Clean up oxend service node list handling
+  * Log demotion
+  * Oxend error ping + unfunded tracking
+  * zlib version bump
+
+  [ jeff ]
+  * lint
+
+  [ Jeff Becker ]
+  * when running as a client squelch warnings about snode status and make sure we connect out
+  * cancel pending queries on down.
+  * dont do queries while down
+
+  [ jeff ]
+  * format
+
+  [ Jason Rhinelander ]
+  * Config setting documentation edits
+
+  [ Thomas Winget ]
+  * use first gateway, not last...
+
+  [ Jason Rhinelander ]
+  * Update static deps to latest stable versions
+  * Update submodules to latest version:
+  * CI fixes
+  * Set _WIN32_WINNT in static deps
+  * Rename darwin -> macos in uploaded build file
+  * Bump clang-format to 14
+
+  [ Jeff Becker ]
+  * fixes issue #2029
+
+  [ Thomas Winget ]
+  * add 'networkReady' to endpoint status
+  * clarify strict-connect usage and enforce minimum of 2 nodes
+
+  [ Jason Rhinelander ]
+  * Restart multi-sn lokinet-routers.target on upgrade
+  * Fix backwards compatible config option handler
+  * Debug Router::Configure; initialize logging earlier
+  * Remove obsolete junk
+  * Fix bootstrap list bad bootstrap skipping
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 26 Oct 2022 10:48:03 -0300
+
+lokinet (0.9.10~rc1-1) unstable; urgency=medium
+
+  [ Jeff ]
+  * add additional fallback case
+
+  [ Jason Rhinelander ]
+  * Clean up system-or-submodule handling
+
+  [ Pebu ]
+  * Update error message
+
+  [ majestrate ]
+  * add french readme
+  * link to french readme
+
+  [ Jason Rhinelander ]
+  * Add -DLOKINET_VERSIONTAG to override version tag
+  * Show router pubkey at startup
+  * Don't build empty cpp files
+  * Remove dead code: netns, shell hooks
+  * Cmake cleanup: remove unneeded =1 from definitions
+  * Remove shadow testing framework
+  * Move destructor back to .cpp file
+
+  [ Jeff ]
+  * simple keygen script
+
+  [ Jason Rhinelander ]
+  * Add missing header
+  * Replace logging with oxen-logger
+  * Make test code work with new logging
+  * Avoid ctor inheritance to make diagnostics better
+  * Remote util::Printer and related cruft
+  * Use more fmt
+  * Add missing header to fix libc++ build
+  * gcc 8/9 fix
+
+  [ Jeff ]
+  * fix win32 and android builds
+
+  [ Jason Rhinelander ]
+  * Update oxen-logging for macos compilation
+  * oxen-logging update to handle level/type parsing exceptions
+  * hive fmt/spdlog updates
+
+  [ Jeff ]
+  * * add mockable network functions * add unit tests with ability to pretend to be different network setups
+  * clean up build helper scripts:
+  * use info as default log level on clients as most users have continously been confused by lack of log output with warn level as default, which i predicted would happen
+  * actually use correct variable in iteration
+
+  [ Jason Rhinelander ]
+  * DNS message parsing fixes and cleanup
+
+  [ Jeff ]
+  * reword message
+  * this code needs to detect the first non-existing interface by name, not the first existing one. this remidies this. sorry testnet for breaking you
+
+  [ Jason Rhinelander ]
+  * Fix log level being forced to warning
+  * Fix [bind]inbound IP-omitted handling
+  * Reorganize [bind] comments
+  * Remove the initial sink before reconfiguring logging
+  * Make outbound wildcard default to inbound IP
+
+  [ Jeff ]
+  * add directory specific readmes
+  * re enable rc expiration
+  * kill log statements
+
+  [ Jason Rhinelander ]
+  * Fix comment
+  * Add debug logging for RC removal
+
+  [ Jeff ]
+  * remove invalid entries on loading nodedb
+  * macos ci fixes
+  * fix up sid ci pipeline
+  * make unit tests happy
+  * do not clear out entries that are valid from nodedb when we are a service node. this logic was inverted.
+  * add lokinet.swift cli args
+
+  [ Jason Rhinelander ]
+  * Require explicit disabling of codesigning
+  * Change permissions for system extension
+  * Make sure BUILD_SHARED_LIBS is a cache variable
+  * Fix `platform::is_apple` value
+
+  [ Jeff ]
+  * on apple write packets back to interface when it is for us because that does not have a route spec for the interace ip on loopback as apple finds having sensible defaults bothersome internally
+
+  [ Jason Rhinelander ]
+  * macOS system extension support
+  * Handle Apple's trash servers when polling for notarization
+
+  [ jeff ]
+  * maker packet tunnel provider compile
+  * build gui and assemble app bundles into one singular app bundle
+
+  [ Jason Rhinelander ]
+  * Update mingw zmq patch
+  * Remove disabled submodule check
+
+  [ jeff ]
+  * Build apple/macos GUI from lokinet project
+
+  [ Jason Rhinelander ]
+  * contrib/windows.sh: do a release build by default
+  * Stub out the peer stats sqlite_orm code
+  * Working signed macOS GUI build
+  * Don't use sign target for contrib/mac.sh
+
+  [ Jeff ]
+  * move all code directory readmes into docs/project-structure.md
+  * add initial high level usage docs
+  * wire up new docs pages
+
+  [ majestrate ]
+  * add more info
+
+  [ jeff ]
+  * set up links to new docs pages
+
+  [ Jeff ]
+  * bump version to 0.9.10
+  * fix up log statements
+
+  [ Jason Rhinelander ]
+  * Update gui submodule to dev branch
+  * Remove obsolete mac packaging cruft
+  * Fix mac.sh defaults to make a signed, notarized build
+  * Build an installer dmg
+  * Lower minimum version for swift binary
+  * Fix codesigning: reenable extension provisioning profile
+  * dmg: version, and set icon
+  * Apple icon bullshit
+  * Remove unused parameter names
+  * Set up sign target dependencies always; mark unsigned package
+  * Drone macos fixes
+  * Don't build peerstats tests when peer stats disabled
+  * Don't look for sqlite when not building peerstats
+
+  [ Jeff Becker ]
+  * restructure readme and docs
+  * zero copy compare
+
+  [ Jeff ]
+  * refactor dns subsystem
+  * wire up dns srv records
+  * restucture dbus parts
+  * remove compat wrapper
+  * unbreak android config loading
+  * tweaks for wine and yarn for gui
+  * changeset for windows port
+
+  [ Jeff Becker ]
+  * disable lokinet-bootstrap on windows builds
+  * revise ./contrib/format.sh
+
+  [ Jason Rhinelander ]
+  * Make windows-configure.sh runnable without root/build
+  * C-cast to work around gross enum==int assumption in windows API
+
+  [ Jeff Becker ]
+  * fix up CI
+  * unit tests
+
+  [ Jason Rhinelander ]
+  * Apply some lipstick to llarp_buffer_t
+  * Fix read problem in linux
+  * llarp_buffer_t: rename badly named operator==
+  * Fix buffer_printer overflow
+
+  [ Jeff Becker ]
+  * small optimizations and fixes
+
+  [ Jason Rhinelander ]
+  * DNS: default to 127.3.2.1 & high port on Linux
+  * Bump cmake min to 3.13 and adopt policies up to 3.24
+  * Avoid strict aliasing warning on function pointers
+  * Simplify/fix ip_header layout
+  * Slightly DRY thread-setting code, fix warning
+  * Fail if wintun can't retrieve its version
+
+  [ Jeff Becker ]
+  * promote log statement
+
+  [ Jason Rhinelander ]
+  * Simplify dll loading via static function pointers
+  * bind/close to find free UDP port
+  * llarp/dns logging refactor
+  * format
+  * Fix sockaddr_len initial value
+  * Fixed crash in DNS resolving
+  * fix speeling
+  * Fix backwards from/to in PacketSource_Wrapper
+  * De-inline vpn/win32.hpp
+  * Upgrade unbound to latest stable
+  * Disable upstream TCP DNS
+  * Restore Apple hax
+  * Log upstream DNS servers when setting it up
+  * Windows DNS fixes
+  * cleanups/simplifications
+
+  [ Jeff Becker ]
+  * fix up win32 route poker a bit
+  * limit route poker
+  * idempotent dns
+
+  [ Jason Rhinelander ]
+  * Fix crash on shutdown
+  * Simplifications
+  * Don't do route poking when disabled
+  * Linux route poker fixes
+  * Add missing != operator to nuint_t
+  * Refactor/fix GetAdaptersAddresses
+  * Fix linked list iteration for windows ip/gateways
+
+  [ Jeff Becker ]
+  * make unit tests pass
+
+  [ Jason Rhinelander ]
+  * OpenSSL 1.1.1 -> 3.0.5
+  * Set various -W flags on apple
+  * macos compilation fixes
+
+  [ Jeff Becker ]
+  * remove hunk of win32 specific code, it is dead in this codepath
+
+  [ Jason Rhinelander ]
+  * Fix macos
+  * Apple DNS configuration fix: don't obliterate trampoline
+  * Apple DNS fix WIP
+
+  [ Jeff Becker ]
+  * rewire up dns reconfiguration for macos
+  * override method
+
+  [ Jason Rhinelander ]
+  * Fix apple dns, part 817
+  * ReconfigureDNS fixes, fixes macos exit mode
+  * Format fixes & fix warning in format script
+  * compiler warnings cmake 3.13 compatibility fix
+  * openssl 3 build fixes
+  * Windows compilation fix
+  * macos CI fixes
+  * Android build fixes for openssl 3.0.5
+  * Disable installer path modification
+  * Add oxen build mirror to linux static builds
+  * Disable mips cross compile build on ci
+  * RPC: Relax token/range argument handling
+  * Rename LMQ -> OMQ
+  * lokinet-vpn: misc cleanups
+  * Fix log warning
+  * Rewrite and tweak the macos icon
+  * Scale down the inner part of the logo a bit
+  * Add binary file slurp/dump utility functions
+  * llarp/profiling: refactor to use oxenc producer/consumer
+  * Bump required oxenc version
+  * Try to appease android's crappy toolchain
+  * Add local mirror to most jobs; build script cleanups
+
+  [ Thomas Winget ]
+  * omq rpc log subscription
+
+  [ Jason Rhinelander ]
+  * Add ring buffer sink to macos build
+  * Apple: fix build failure when file already exists
+  * macos: Fix hanging --start when Lokinet already running
+  * Lower log level for renewals to debug
+  * fix macos assemble_gui dependency
+  * Bump lokinet-gui to latest
+  * Significantly decrease decomm warning frequency
+  * Clean up/simplify SN list handling
+
+  [ Thomas Winget ]
+  * Fallback bootstrap router build parameter
+  * don't ping core if active with too few peers
+
+  [ Jason Rhinelander ]
+  * bake in bootstrap fallbacks at build time
+  * oxen-mq update to tagged stable release
+  * Fix obsolete oxenmq/hex.h usage
+  * Add InterfaceInfo formatter
+  * Add more logging around route poking conditions
+  * DRY private range selection; add missing ranges
+  * Fix interface enumeration on posix
+  * Windows fix: iterate over IPv4/IPv6 interfaces separately
+  * De-prioritize some windivert logging
+  * Remake non-mac icon; regenerate during build for windows
+  * Add a net::ToString() to help stringify ipaddr_t
+  * Rediff patches
+  * Switch to using VERSIONTAG cmake var
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 10 Oct 2022 19:36:02 -0300
+
+lokinet (0.9.9-2) unstable; urgency=medium
+
+  * add additional fallback case
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 31 May 2022 16:32:01 -0300
+
+lokinet (0.9.9-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * match timeouts in introset selection spread with logic for publishing
+
+  [ Jason Rhinelander ]
+  * Also consider last publish; eliminate unwanted condition
+
+  [ Jeff Becker ]
+  * create new constexpr for the staleness window for introsets and use it in publishing introsets and intro selection
+
+  [ Jason Rhinelander ]
+  * docker CI: Fix error message
+
+  [ Jeff Becker ]
+  * paralellize android build much better
+  * demote log statement levels
+
+  [ Jeff ]
+  * Update high-level.txt
+
+  [ Jeff Becker ]
+  * when lokinet looses ip4 connectivity libunbound used to freak out and only use ip6 after such an event. as a result dns queries stop working because we blackhole ip6 routes if exit mode is on. this prevents this case from being hit.
+
+  [ Jeff ]
+  * drop x86 for android as flutter does not support it
+
+  [ Jeff Becker ]
+  * remove old out of date documentation
+
+  [ Jeff ]
+  * * fix up lokinet cli help opts * document doxygen
+  * add big chunks of docs
+  * spaces
+  * more docs
+  * add deps to doxygen
+  * remove duplicate file
+
+  [ majestrate ]
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+
+  [ Jeff ]
+  * match io loop event order on windows/apple to match linux.
+  * do not send buggy reply as rpc
+  * make serivce::Endpoint::EnsurePathToService have a default timeout as a named constant.
+
+  [ Jeff Becker ]
+  * implement exit node pooling, allows users to use multiple exits for an address range.
+  * configurable route poker this allows you to use exit nodes without forcing routes over the interface, useful for using lokinet with an exit and selectively routing over the lokinet interface using an external socks proxy or binding to device explicitly.
+  * reword auto-routing config comment
+
+  [ Benjamin Henrion ]
+  * Add missing libssl-dev
+
+  [ Jeff ]
+  * prevent segfault in route poker if Init() is not called
+
+  [ Jason Rhinelander ]
+  * readme: point to oxen docs; mention systemctl controls
+
+  [ majestrate ]
+  * Update llarp/router/route_poker.cpp
+
+  [ Jeff ]
+  * redo systemd status line to include number of paths and endpoint count. optionally warn about low path success.
+  * route poker: allow not blackholing routes. allow runtime configuration to disable ip blackholing.
+  * disable tests by default make ci enable tests explicitly
+  * wire up sigusr1 to trigger a network thaw on non win32 platforms
+  * detect timeskip and thaw network when we think it happened.
+  * move constant to new header
+  * make it so github sees the repo is gpl3
+  * fix typo in readme, use 3 hashes instead of 2 because it is a sub 3 section
+
+  [ Jeff Becker ]
+  * update header with notes
+  * update liblokinet udp api header
+  * remove dead shit from header
+  * update liblokinet udp header
+  * changes for liblokinet-ffi
+  * fix compile error
+  * lokinet_add_bootstrap_rc
+  * llarp::BootstrapConfig update
+  * typo fix
+  * log errors on decoding
+  * more logging
+  * sanity check
+  * more logging
+  * correct function names
+  * add WITH_BOOTSTRAP option for toggling building lokinet-bootstrap
+  * typo fixes and clarify docs
+  * fix typos add lokinet_udp_close
+  * typofix
+  * typofix
+  * add lokinet_hex_to_base32z
+  * wire up liblokient_udp_*
+  * thread safety stuff
+  * make it compile
+  * move WITH_BOOTSTRAP option to root project CMakeLists.txt
+  * enable liblokinet on macos
+  * build liblokinet on macos
+  * disable gost in static build
+  * nodejs dipshittery
+  * add liblokinet custom logger
+  * dont enable apple languages when not building daemon
+
+  [ Jeff ]
+  * Update mac.sh
+  * Update CMakeLists.txt
+
+  [ Jeff Becker ]
+  * dont pack struct becuase alignment
+  * make function pointer arguments named
+  * docstring update
+  * identify
+  * updates:
+  * cmake fixups
+  * make pybind compile
+  * typofix
+  * make it compile
+  * resolve race condition in udp flow and packet handling
+  * do less allocations in lokinet_hex_tobase32z
+
+  [ Jeff ]
+  * chore: bump static deps versions
+  * libcurl no long users --without-libmetalink so remove the flag
+  * bump ngtcp2 to v0.1.0 tag
+  * add close_reason parameter to quic::Endpoint::close_connection defaulting to emtpy string
+  * add cross compile helpers and update/add toolchains
+  * fix up contrib/cross.sh to put everything in build-cross
+  * fix up ppc64le toolchain, remove suffix
+  * fixup armhf target
+  * fix up ppc64le cross target
+  * dont capture flow_addr, results in compiler error on sid
+
+  [ majestrate ]
+  * fix up readme
+  * Update readme.md
+  * Update readme.md
+  * spruce up README more
+  * Delete llarp.png
+
+  [ Jeff ]
+  * use quad nine as default upstream dns
+
+  [ Audric Ackermann ]
+  * fix numPaths value in Router::ExtractSummaryStatus
+
+  [ Jason Rhinelander ]
+  * Crank oxen-mq to (1.2.)11; switch to oxen-encoding
+
+  [ Jeff ]
+  * make CI pipline generate docs with doxygen, doxybook2 and mkdocs.
+  * use COPYONLY for the non templated configure_file targets
+  * include mkdocs.yml in ci artifacts for docs
+  * move documentation builder closer to the top of the ci jobs
+  * remove markdown extension that is not required
+  * make comments with colins in them not have them in it
+  * make doxybook2 run from PATH if installed on our system
+  * more docs
+
+  [ Audric Ackermann ]
+  * add version and uptime to summary status endpoint
+
+  [ audric ]
+  * summary status: no services means not running
+
+  [ Jeff ]
+  * rpc fixes for lokinet gui only add stats for services when we have them
+  * remove old dead code
+  * cmake workarround for quark in older cmake where pkg config produces non existing targets
+  * oxenc
+  * fix wire protocol race condition
+
+  [ Pebu ]
+  * Fix spelling changes
+
+  [ majestrate ]
+  * Update readme.md
+
+  [ Jeff ]
+  * dry cross compile
+  * remove unneeded line from contrib/cross.sh
+  * redo contrib/cross.sh to take cmake arguments
+  * ci pipeline for cross compile
+  * bump zlib hashpin
+  * Cache best paths determined by GetPathByRouter to reduce cpu usage
+  * disable building fat liblokinet.so on bionic because lto is broken on bionoic still
+  * drone-ci image name fix, use -builder images
+  * try not to spam builds
+  * clean up paths that are ignored and inactive
+
+  [ majestrate ]
+  * add arch linux section to readme
+
+  [ Jeff ]
+  * idempotent flush queues on path builds
+  * add public key in rpc ping
+  * remove bitrotten files
+  * handle edge case better
+  * use the new electron gui in windows build
+  * kill/restore ipv6 with powershell because windows is vile
+  * static endpoint auth codes
+  * add file auth for tokens
+  * make destructor virtual
+  * add hashed password capability to endpoint auth by file
+  * disable hashed auth on windows
+  * make more platforms ignore libcrypt
+  * dont require libcrypt for cross compiled builds
+
+  [ Jason Rhinelander ]
+  * Replace llarp/util/endian.hpp with oxenc/endian.h
+  * Update to oxenc 1.0.2
+
+  [ Jeff ]
+  * add idempotent pump after sending lrcm to very make sure that it is pumped
+  * randomize all frames in lrsm to prevent info leak about hop length
+  * propagate link layer message priority to link layer so it can order retransmissions with that in mind
+  * add util::ascending_priority_queue type
+  * convert priority queues
+
+  [ majestrate ]
+  * Update llarp/iwp/session.cpp
+  * Update llarp/router/outbound_message_handler.cpp
+
+  [ Jeff ]
+  * add mirror for cmake static deps
+  * add static deps mirror to ci
+  * bump libuv version with hashpin
+  * typo
+  * split up link order for oxenmq and oxenc
+
+  [ majestrate ]
+  * use ::/0
+
+  [ Jeff ]
+  * clean up ip packet code
+  * bump oxenc submodule and force oxenc submodule on win32
+  * alignas
+  * fixup edge case on windows
+  * state machine fix for link layer
+
+  [ majestrate ]
+  * use oxenc submodule in android
+  * typofix
+
+  [ Jeff ]
+  * remove unneeded submodule
+  * bump ci to make jammy debs
+  * remove focal deb build from ci
+  * connect to routers even if we are decomissioned
+  * if we are decommissioned or deregistered, do not test other routers so we do not spam them.
+  * publish our rc out to the network when we regenerate them
+  * add gossip info to systemd status
+  * format systemd status as time deltas from now
+  * set source ip on service nodes for outbound link to not use all interfaces
+  * footcannon prevention: check for invalid address family.
+  * replace LLARP_PROTO_VERSION macro
+  * macro removals
+  * generate windows rc for each executable target so we can set the executable name right for each one
+  * move windows nsis parts for cpack into external files
+  * bump verions of all deps
+
+  [ Jason Rhinelander ]
+  * Don't be dynamic for win32 rc crap
+
+  [ Jeff ]
+  * do not build liblokinet in windows, exe gets too big
+
+  [ Jason Rhinelander ]
+  * Add oxen repo to bionic for updated cmake version
+
+  [ Jeff ]
+  * version bump to 0.9.9
+
+  [ Jason Rhinelander ]
+  * gbp compat fix
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 30 May 2022 22:28:52 -0300
+
+lokinet (0.9.8-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * check for intersecting ip ranges correctly, add unit test
+
+  [ Jason Rhinelander ]
+  * Add python build deps to ci images
+  * Make sure we apt-get update in the build
+  * Pass DOCKER_BUILD_OPTS env var to docker build
+
+  [ Jeff Becker ]
+  * bump libunbound static dep hashpin
+
+  [ Jason Rhinelander ]
+  * Add a bunch of base CI images for building debs
+  * Replace dockerfiles with a Python script
+  * Add --no-cache option; fix manifest generation
+  * Parallelize builds
+  * Make it snazzy
+  * Fix i386 builds
+  * Add hacks; add --distro to rebuild just one
+  * Fix race condition in interactive output
+  * Install g++-8 on bionic
+
+  [ Jeff Becker ]
+  * do not requeue nodes for testing from failing queue if we do not have them marked as failing anymore
+
+  [ Jason Rhinelander ]
+  * Fix comment typo
+
+  [ Jeff Becker ]
+  * make PumpLL idempotent to reduce cpu use a bit
+  * prevent 100% cpu usage on service nodes
+  * make event loop pump function non idempotent
+  * only pump path context in idempotent pumpll
+
+  [ Jason Rhinelander ]
+  * Allow a nullptr callback for event loop PumpLL
+  * Make outbound message queue PumpLL again if it doesn't send all
+  * outbound_message_handler: skip instead of aborting on removed paths
+  * transit hop: drop instead of flushing when full
+  * Simplifications & C++17
+  * Triggered pumping
+  * Remove another unwanted unconditional PumpLL
+  * Combine empty + pop into single call
+  * Simplify
+  * Fix link layer delivery race condition (fix random ping delays)
+  * Get rid of external event loop direct wakeups
+  * Rename PumpLL -> TriggerPump
+  * Increase plaintext queue size from 32 to 512
+  * Cleanups
+  * Fix packet delay creep
+  * Cleanup: avoid pointless copy of `this` pointer
+  * Remove dead declaration
+  * Pump hidden context sooner
+  * Simplify
+  * Add missing inbound traffic pump trigger
+  * Pump outbound context
+  * Add another missing pump trigger
+  * Remove hopeless flush
+  * Fix client latency bug; De-shared_ptr IHopHandler queues
+  * Remove broken test
+  * Remove debug comment
+  * Abstract & simplify logic
+  * Move paths pumping into PumpLL
+  * Avoid std::function in hot pump code
+  * Optimization: eliminate unneeded shared_ptrs
+  * Use libuv's cached current time for `time_now()`
+
+  [ Jeff Becker ]
+  * in static linux ci pipeline disable building lokinet-bootstrap and bundle a bootstrap.signed
+
+  [ Jason Rhinelander ]
+  * Bump version
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 16 Nov 2021 19:53:46 -0400
+
+lokinet (0.9.7-2) unstable; urgency=medium
+
+  * update deb repo signature filename
+  * Switch to cached ci base image
+  * do not requeue nodes for testing from failing queue if we do not have them marked as failing anymore
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 29 Oct 2021 11:55:20 -0300
+
+lokinet (0.9.7-1) unstable; urgency=medium
+
+  [ Jeff ]
+  * make lokinet-util library static
+
+  [ Jeff Becker ]
+  * bump ngtcp2 submodule
+  * make it compile again (squashme)
+  * update submodule
+  * make it compile again
+  * update ci to use main lokinet mobile repo
+  * always build ngtcp2 as static
+  * refactor logging to use std::source_location
+
+  [ jeff ]
+  * make source location happy on macos * because of course apple doesn't provide any implementation (lmao) we provide one ourself
+
+  [ Jeff Becker ]
+  * use inline source_location implementation for android too
+  * for some reason [[maybe_unused]] is hated by buster 32 bit x86 so we do something else to appease that compiler.
+  * fix up gripes in source_location
+  * refactor for apple
+  * update log statement for win32
+  * use llarp:: prefix for LogError
+  * fix up logging, put _log into anonynous namespace, make only log trace nop in release builds
+  * some compilers hated [[maybe_unused]] so use (void) when they are unused
+  * iterate through directory entries in lexigraphical order
+
+  [ Jeff ]
+  * Update fs.hpp
+
+  [ Jeff Becker ]
+  * handle exceptions on setup and config load without aborting
+  * set base v6 address to nullopt when explicit empty string is provided
+  * catch ipv6 ioctl throwing when someone runs lokinet with no ipv6
+
+  [ Nuc1eoN ]
+  * Add missing dep 'cppzmq' (#1764)
+
+  [ Jeff ]
+  * prevent bizare half open state. (#1754)
+
+  [ Sean ]
+  * RPC call for summary get_status (#1742)
+
+  [ Jeff Becker ]
+  * fix debian sid compiler error
+
+  [ Jason Rhinelander ]
+  * Another gcc-11 fix
+  * Update clang build to 13; add full llvm-13 build
+  * Add missing deprecated copy assignment operator
+  * Add jsonnet formatting (if jsonnet is installed)
+  * make format
+  * which => command -v; different format.sh exit codes
+  * Remove windows linefeeds
+  * Add libzmq3-dev; change deps into arrays
+  * Docker image updates
+  * Update deb repo dns name
+  * CI docker multiarch
+  * Docker package updates:
+  * Reformat RUN commands to make editing easier
+  * Update Catch2 to latest to fix build on impish
+  * Add automake, libtool, libjemalloc-dev
+  * Add cached images with debhelper & related tools for deb pipelines
+  * No recommends
+  * Make sure we always pull the latest image
+  * Fix arch-specific docker repo names
+  * Disable ABI warnings on buster/armhf
+  * Add missing xz-utils to buster
+  * Reorder pipelines to put static builds together
+  * Fetch CI submodules in parallel
+
+  [ Jeff Becker ]
+  * version bump to 0.9.7
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 19 Oct 2021 16:26:40 -0300
+
+lokinet (0.9.6-6) unstable; urgency=medium
+
+  * Fix installed bootstrap permissions (remove +x)
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 07 Oct 2021 20:02:23 -0300
+
+lokinet (0.9.6-5) unstable; urgency=medium
+
+  * catch ipv6 ioctl throwing when someone runs lokinet with no ipv6
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 06 Oct 2021 19:12:47 -0300
+
+lokinet (0.9.6-4) unstable; urgency=medium
+
+  * set base v6 address to nullopt when explicit empty string is provided
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 06 Oct 2021 17:30:59 -0300
+
+lokinet (0.9.6-3) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * make lokinet-bootstrap target toggleable
+
+  [ Jason Rhinelander ]
+  * Redo how we build ngtcp2 lib
+  * Apply suggestions from code review
+  * Add mainnet/testnet bootstrap files into repo
+
+  [ Jeff ]
+  * Update exit-setup.md
+
+  [ Jason Rhinelander ]
+  * Remove duplicate handling of jemalloc
+
+  [ Jeff ]
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+
+  [ Jeff Becker ]
+  * SystemD DNS fix:
+
+  [ Jason Rhinelander ]
+  * Fix install order and give it the D
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 17 Sep 2021 11:06:58 -0300
+
+lokinet (0.9.6-2) unstable; urgency=medium
+
+  * Bundle default bootstrap.signed in deb
+  * Add mainnet/testnet bootstrap files into repo
+  * Install bootstrap files from contrib
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 16 Sep 2021 19:16:28 -0300
+
+lokinet (0.9.6-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * add --help and -h flags to lokinet-bootstrap to show help message
+
+  [ Jason Rhinelander ]
+  * Update wording and wrap help message
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 08 Sep 2021 20:53:45 -0300
+
+lokinet (0.9.6~pre1-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * fix dns on android
+  * add / remove route blackhole so we dont leak if we crash
+
+  [ Sean ]
+  * Update readme.md
+
+  [ Jason Rhinelander ]
+  * bencode-dump.py: support reading from stdin
+  * Remove unused defaults.hpp
+  * Rediff patches
+  * Remove old unused lokinet-bootstrap script
+  * Remove unneeded split(str, char) method
+  * Fix default upstream DNS not working
+
+  [ Jeff Becker ]
+  * format
+  * initial routing table refactor
+  * initial win32 port of route manager
+  * remove old routing table maniuplation code
+  * introduce add/del route via interface to route manager
+  * make add/del blackhole default to empty implementation
+  * use vpn::NetworkInterface for add/del route via interface instead of string
+  * add NOP implementation of VPN route manager for android
+
+  [ Jason Rhinelander ]
+  * SockAddr string optimization
+
+  [ Jeff Becker ]
+  * bump openssl static deps version for upstream security update
+
+  [ Jason Rhinelander ]
+  * Revert "fix dns on android"
+  * Reapply "fix dns on android" + fix argument order
+
+  [ Jeff Becker ]
+  * dont save addrmap on android as it hangs
+  * redo dns to use event loop on non windows and threading bullshit on windows
+
+  [ Jason Rhinelander ]
+  * Unbound callbacks also need arguments reversed
+  * Stop using deprecated OMQ connect_remote overload
+
+  [ Jeff Becker ]
+  * make ci try building the flutter apk in the android apk pipeline
+  * correct lokinet flutter url
+  * dont bundle raw jni libs
+  * upload bare apk as ci artifact
+
+  [ jeff ]
+  * initial network extension code for macos probably does not work
+  * add swift version bullshit file and additional bullshittery
+
+  [ Jason Rhinelander ]
+  * Various cmake build cleanups/refactors
+  * Set version into Info.plist, don't manually configure
+  * Switch extension from a framework to an appex
+  * Default CODESIGN_APPEX to CODESIGN_APP
+
+  [ jeff ]
+  * macos sort of works now
+  * make ci run ./contrib/mac.sh with no codesigning
+  * add dummy sign target for ci when we don't have signing keys remove static macos from ci pipeline
+  * it works
+
+  [ Jason Rhinelander ]
+  * Consolidate apple-specific bits into llarp/apple
+  * Tweak icns generation to only run when necessary
+  * Apple OS interface cleanup & refactoring
+  * Remove swift version (do not squash)
+  * format.sh: support macports clang-format
+  * Remove no-longer-used framework.mm
+  * Generate a default client lokinet.ini on startup if it doesn't exist
+  * Remove more unused dns-proxy files
+  * Remove unused/empty/no longer used apple headers
+  * Add lokinet subnet to default routes
+  * Add RouteManager; make exit on/off work
+  * Remove unused vars
+  * Add DNS trampoline
+  * Remove debug
+  * Unleak exit mode DNS via unbound DNS trampoline on (macOS)
+  * Reformat
+  * Silence warnings
+  * Remove dead code
+
+  [ Jeff Becker ]
+  * disable language ASM, yolo
+
+  [ Jason Rhinelander ]
+  * Forward-declare ub_ctx/ub_result
+
+  [ Jeff Becker ]
+  * invert logic for android dns hook
+
+  [ Jason Rhinelander ]
+  * Re-enable LTO; target macos 10.12+
+  * Remove debugging
+  * LOKINET_VERSION -> built in lokinet_VERSION
+  * Remove old mac installer packaging
+  * Remove advertising of big crappy company
+  * Remove obsolete bigs
+
+  [ Jeff Becker ]
+  * add comment about android dns
+  * tmp commit for debugging (revert me)
+  * remove unused import
+
+  [ Jason Rhinelander ]
+  * Fix IPv4 routes are disabling exit
+
+  [ Jeff Becker ]
+  * override ShouldHandlePacket on android to bypass non .snode/.loki dns hooking.
+
+  [ Jason Rhinelander ]
+  * Add IPv6 addr/routing for macos
+
+  [ Jeff Becker ]
+  * set ipv6 address on apple to hardcoded value
+  * format
+  * limit RC gossip to 20 peers max
+  * try not to prefer outbound vs inbound link sessions before when we get the list of router ids for gossip it was highly bias towards outbound sessions. instead now we get a full list of link session router ids in random order, truncate them to be at most MaxGossipPeers number of keys, and then put them into an unordered set
+  * use std::sample to grab MaxGossipPeers when populating std::unordered_set
+
+  [ Jason Rhinelander ]
+  * Disable tests on static bionic
+  * Bump dev branch version
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 03 Sep 2021 23:04:57 -0300
+
+lokinet (0.9.5-3) unstable; urgency=medium
+
+  * Fix lokinet.pkla install path
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 22 Jul 2021 15:12:38 -0300
+
+lokinet (0.9.5-2) unstable; urgency=medium
+
+  * Install polkit files for systemd-resolved support
+  * Update lokinetmon required packages
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 22 Jul 2021 13:08:23 -0300
+
+lokinet (0.9.5-1) unstable; urgency=medium
+
+  [ Jeff ]
+  * fix up docs generation
+
+  [ Jason Rhinelander ]
+  * Link to jemalloc for better memory usage
+
+  [ Thomas Winget ]
+  * fix minor oversight/inefficiency with already established connections
+
+  [ Jeff Becker ]
+  * update urls
+  * refactor to use RouterID instead of rc.pubkey
+  * add docker image for nodejs
+  * add wine as dependancy because god made windows so that man may suffer
+  * if we have an inbound session don't fail with NoLink
+  * establish outbound sessions when we have no outbound session. when we have an inbound session we still want to make an outbound session.
+  * * add log warn * throw if inbound link makes outbound session
+  * more information in logs
+  * inbound sessions from CLIENTS should only have an elevated lifetime
+  * dont give peer stats in rpc
+  * disable peer status entirely
+  * add string representation to SessionResult
+  * * add establish fail enum * dont call outbound session hooks for inbound sessions
+  * update lokinetmon
+  * expunge outbound contexts that have not gotten inbound traffic for a long while
+  * add age to outbound contexts in lokinetmon better time foratting in lokinetmon
+  * add path filter in lokinetmon
+  * make filters consistent for localhost.loki
+  * typofix
+  * fixes for lokinetmon filters
+  * fix unicode char
+  * unify introset-filter and path-filter
+  * better time formatting for future times
+  * add option to invert regex filter results
+  * * make tranform function for SessionResult to SendStatus * add case for SessionResult::EstablishFail * clean up outbound message handler to use transform function instead of many private member functions
+  * bump up the jam, bump it up, while your feet are jumping.
+  * * throw exception on invalid SessionResult when transforming to SendStatus * add case for printing unknown SessionResult
+
+  [ Jason Rhinelander ]
+  * Fix typo in libuv error message
+
+  [ Jeff Becker ]
+  * dont use constexpr
+  * fix issue with excessively pedantic stl on archlinux
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 06 Jul 2021 10:23:22 -0300
+
+lokinet (0.9.4-2) unstable; urgency=medium
+
+  * Link to jemalloc for better memory usage
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 29 Jun 2021 16:07:15 -0300
+
+lokinet (0.9.4-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * use weak_ptr instead of bare pointer to prevent use after free
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 25 Jun 2021 17:24:21 -0300
+
+lokinet (0.9.4~pre20210623-1) unstable; urgency=medium
+
+  [ Jeff ]
+  * [feature] optionally keep inbound convos mapped to same IP on restart  (#1672)
+
+  [ Jeff Becker ]
+  * [buildsystem] remove use of ninja entirely
+  * update android ci docker image definition to include cmake and exclude gradle
+  * dont build shared libs when we are building static deps
+  * * make android ABIS list configurable * fix android ci jizz, correct typo, upload generated assets
+  * fix windows static ci upload for windows
+  * typofix
+  * fix android ci output path name so that it does not conflict
+  * ccache android builds in ci
+  * use make instead of build essential in ci so that it does not conflict with clang builds
+  * use $(MAKE) only on makefile generator
+  * pass VERBOSE=1 in ci jobs for full verbosity on builds
+  * use std::make_optional for backwards compat on older toolchains
+  * add new JNI function: LokinetDaemon DumpStatus
+  * fix #1655
+  * add dns hosts file option for user side dns filtering
+  * only use @ syntax when the dns port is not port 53
+  * mitigate lto compiler bug with lto
+  * update docker ci jizz to include flutter on android
+  * if git describe fails fall back to a placeholder
+  * update android ci docker jizz
+  * correct the logic for inbound convos
+  * dont mark inbound sessions as outbound when we get a DNS lookup for it
+  * format and logging ignore outbound session auth messages
+  * kill outbound context when we remove our convotag
+  * in outbound context, ShouldBuildMore intro.ExpiresSoon delta is too big and has no overlap, change it so that
+
+  [ Thomas Winget ]
+  * make sure we have a path to the next introduction we want to use
+
+  [ Jeff Becker ]
+  * more
+  * format
+  * make clang compile, remove unused variable
+  * remove badIntros from lokinetmon as rpc no longer has them in it
+  * ReadyToSend also should include checking we have a path to the remote
+  * value initialize introduction so that expiresAt defaults to zero
+  * remove redundant check as ReadyToSend also checks IntroSent()
+  * rename local variable to be clear about meaning, add comment
+  * make it so lookups dont time out
+  * bump version to 0.9.4
+  * add upperbound to number of endpoints used in lns lookups
+  * use exisitng convotag first instead of trying to send to directly
+  * publish introsets on nearest routers fetch introset from random routers
+  * if we get a discard message from the pivot discard the outbound context if the remote intro is also expired
+  * only permit 1 pending session per udp endpoint
+
+  [ Jason Rhinelander ]
+  * Add bencoded file dumper
+  * Fix program name in bencode-dump.py --help
+
+  [ Jeff ]
+  * update deps for source build
+
+  [ Jeff Becker ]
+  * when an outbound context is "marked bad" we want to ignore any new paths. before this commit when a new path was made when an outbound context marked bad lokinet would segfault.
+  * lower log level
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 23 Jun 2021 09:21:55 -0300
+
+lokinet (0.9.3-2) unstable; urgency=medium
+
+  * Revert test patch from sid
+  * use exisitng convotag first instead of trying to send to directly
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 11 Jun 2021 17:54:14 -0300
+
+lokinet (0.9.3-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Apply majestrate/introset-spacing-2021-05-19
+  * Remove double cpr submodule
+
+  [ Jeff Becker ]
+  * windows cmake upgrades: * dont call lokinet-bootstrap.exe on install * bump lokinet gui version with hashpin update
+  * initial lokinet router testing: * report via rpc to oxen core connection stats on success and failure * connect to random service node by pubkey every 5 seconds for testing
+  * * use weak_ptr on core rpc * use reachability testing code lifted storage server's code
+  * there were some unhandled edge cases in outbound_session_maker, specifically when we are not permitted to connect to a remoute but we got its rc we silently drop the error.
+
+  [ Jason Rhinelander ]
+  * Switch stl mt19937_64 to CSRNG
+
+  [ Jeff Becker ]
+  * capture by value to appease clang 11
+  * handle case where we already have an outbound session, inform caller about it
+
+  [ Jason Rhinelander ]
+  * Fix use after move
+  * Add logging about testing success/fail
+
+  [ Jeff Becker ]
+  * separate white/grey list for active/decommissioned nodes.
+  * gossip RC when we are not deregistered so we can come back when we are decommissioned
+
+  [ Jason Rhinelander ]
+  * Add warning when can't update whitelist
+  * Fix unintentional whitelist/greylist copying
+  * Avoid copying & keep router alive by moving shared_ptr
+  * Don't pass last hash into UpdateServiceNodeList
+  * Fix failing pks not being populated
+  * Make format
+
+  [ Jeff Becker ]
+  * typofix
+  * dont run router testing if we are decommissioned.
+
+  [ Thomas Winget ]
+  * make outbound session if we do not have
+
+  [ Jeff Becker ]
+  * make windows happy by making some constexprs non static and such as windows does not LTO
+  * fix linking on win32 for lokinet.dll only apply static link flags for executables
+  * export functions in liblokinet for win32 dll
+  * * get_failing does not need abstract router as paramter so we remove it * add remove_node_from_failing to remove a node by pubkey from the failing set * if a router is deregistered we remove it from the failing set so we don't retest it * remove a router from the failing set if we get a test success
+  * updates to lokinetmon
+  * increase link layer buffer size
+  * reduce path build timeout from 30s to 10s
+  * reduce path intro spread slices from 5 to 4.
+  * fix an assert fail in gcc 11.
+  * improve log message clairity by printing the address not hex
+  * don't cache dns result if we have an address mapped. we want to use dns to trigger a call to EnsurePathTo
+  * make packet sending logic not attempt to align back to inbound sessions.
+  * make log warning have a more accurate message when we have no path for a relay downstream message
+  * fix latency tests.
+  * path and intro selection fixups:
+  * * don't include failed at when we are the pivot router as that case never happens. * mark paths as ingored instead of expired when we stop a path builder * only remove path builder when we have no established paths
+  * far stricter profiling algorithm * include first hop in profiling * decay stats faster * make fail case for path build profiling far more sensative
+  * make router tick 250ms instead of 100ms to prevent excessive log spam
+  * re-enable multithreading on clients but not on service nodes
+  * add relayOrder awareness to introset lookups.
+  * * tweak introset handover timeouts * introset path haodver tweaks * improve warn/error messages to convey more information * dont block on queue insertion * reset convotag on decrypt/verify fail * add multiple ready hooks on outbound context * lookup introsets from close routers on dht * continue to tick dead sessions so they expire their paths * introset spacing * reduce lns lookup diversity requirement for speed * add a function to send reset convotag message * only have 1 outbound context at a time
+  * remove service nodes we can't look up from the nodedb as client
+  * improve log messages about expiring convotags
+  * dont change send timeout for exits from tun handler as that screws with consistency in testing.
+  * use inbound sessions we don't have paths to in GetBestConvoTagFor just so we can give the caller SOMETHING.
+  * dont call null handler if we have no path to the remote router that's fine still use it just in case we have no other convotags
+  * log drop events more
+  * defer ready to send state until after we send a handshake
+  * delay setting sentIntro by the advertised latency of the remote intro instead of static value
+  * only inform failure or success of introset lookups when all lookups have returned
+  * decay path build limiter per path builder every tick
+  * add relay order to error message
+  * increase default session lifetime to 5 minutes for mobile client related reasons
+  * for inbound sessions, keep them alive for the default session lifetime, for outbound sessions keep alive for 5 ping intervals
+  * don't kill outbound context after build or lookup fails
+  * HandleTimeout can touch iterators so do all handling of lookup timeouts outside of loop iteration
+  * add idempotent wake up for sending messages to the network and writing packets on interfaces
+  * add path aligntment timeout to send and connect timeouts on outbound context to reduce the chance of timing race conditon
+  * log when we ignore a path
+  * treat ignored paths like established paths when dealing with expiration
+  * use weak_ptr on a path to reference its parent pathset instead of a bare pointer so crashes dont happen
+  * account for path latency in introset lookups on outbound contexts
+  * record reason for path fail and the full hops
+  * nuke invalid routers when we get a path build fail back to not resuse them in the future
+  * nuke from orbit style router profiling for path build timeouts.
+  * unconditional putsenderfor
+  * dont establish paths to inbound sessions to try and address state race condition
+  * add MarkAddressOutbound to plainquic
+  * this fixes the shit wtf
+  * when we map an address forever mark it as outbound
+  * on path timeout look up each router, if the lookup fails then we remove it from nodedb and close any connections to it so that bad first hops are rotated off of.
+  * tweak timeouts to be a bit more sane
+  * fixes for loopback testnet
+  * correctly persist link sessions
+  * more shit
+  * close links and remove commit
+  * mark exit address outbound when we add it via rpc
+  * mark ip active on successful send
+  * typofix
+  * add idempotent wakeup for flushing instead of the dumb queue checking
+  * spelling fix
+  * convert to lambda
+  * convert magic number to where it came from
+  * correctly do latency test FEC
+  * forgot to pump on wakeup
+  * remove case that spams build on an outbound context
+  * move setting hop to nullptr to after delivery or delivery fail
+  * downgrade log level
+  * increase timer timeout interval because 1 seconds RTT can happen but 2 seconds is pretty bad
+  * version bump
+  * fix for testing: dont remove from failing set
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 10 Jun 2021 16:36:08 -0300
+
+lokinet (0.9.2-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * add format verification to contrib/format.sh
+  * check in pre-push git hook so I don't lose it
+  * mark inbound traffic as convotag active
+  * exits don't rewrite ip addresses, fix this and add note
+  * simplify loop and correct logic, we want to bail out of the loop on first match.
+  * send a keep alive to keep an idle session alive so it doesn't get removed
+  * update introset if we get a discard message from a possibly expired intro
+  * don't defer call to ready hook with timer call it right away because we are ready
+  * bump version
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 17 May 2021 15:24:21 -0300
+
+lokinet (0.9.1-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Add missing <optional> header
+
+  [ Jeff Becker ]
+  * fixes for android jni
+  * fix regression: llarp::Context::CallSafe was not deferring call on startup
+  * prepare for ipv6 on android
+  * remove test case
+  * limit calls to service node list updates for when we are synching the chain we dont spam with list updates
+
+  [ Jason Rhinelander ]
+  * Limit builds to 6 jobs (4 for arm)
+  * Add missing getIPv6 implementation
+  * Add systemd-resolved dynamic DNS updating
+  * Put systemd ifdef around the headers, too
+  * format
+  * Fix headers & grammar for non-systemd
+
+  [ Thomas Winget ]
+  * Fixes subtle memory leak, adds comments
+
+  [ Jeff Becker ]
+  * lokinetmon updates
+  * fix up outbound session
+  * limit path reanimation
+  * parameterize traffic alignement timeout in dns lookups
+  * don't rehash decaying hashsets that is no bueno and probably leaks like the pipes in tom's apartment
+  * compat for lokinet 0.8.x
+  * consmetic fixes
+  * win32 installer
+  * make path alignment timeout configuable
+  * make default log level warn fixes #1593
+  * change granularity to seconds
+  * try fixing std::shared_ptr leak with paths
+  * if a path's latency is zero dont use it because it's not actually a zero latency path it's probably about to be failed or timed out
+  * dont invalidate cache on lns timeout, only on explicit negative
+  * allow more than one outbound context per endpoint for fallback in case one outbound context takes a shit
+  * only use alive paths for lookups only track usage from sessions and don't care about intro timeouts
+  * use correct intro
+  * re-add parans
+  * report block height reported by oxend in systemd status
+  * report block height reported by oxend in systemd status
+  * format
+  * make profiling far stricter for path builds
+  * limit path builds across all builders
+  * always do path tests
+
+  [ David Arnold ]
+  * Tyops
+
+  [ Jeff Becker ]
+  * fixups in service endpoint
+  * don't send nx if we have an address already mapped
+  * in the event that a session is removed and then gets more traffic we would re-add the session with everything blank if there was more traffic in the same tick.
+  * shift off bad intros when we get a discard message, this happens if the other side's intro expires or the pivot restarts for whatever reason.
+  * when we have to reestablish an outbound session use a much much higher timeout for restablishment so it doesn't time out and get into a state that's totally screwed.
+  * DefaultPathAlignmentTimeout -> PathAlignmentTimeout
+  * if we look deregistered we will now:
+  * version bump for 0.9.1
+  * when we stop a path builder we want to expire all of their paths so they go away
+  * rpc server fixups for win32:
+  * add liblokinet option to nsis cpack installer
+  * make liblokinet target work on nsis cpack
+  * fix route poking via rpc:
+
+  [ Jeff ]
+  * update release motto
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 14 May 2021 16:46:24 -0300
+
+lokinet (0.9.0-2) unstable; urgency=medium
+
+  * Build in /staging
+  * limit calls to service node list updates for when we are synching the chain we dont spam with list updates
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 27 Apr 2021 17:18:43 -0300
+
+lokinet (0.9.0-1) unstable; urgency=medium
+
+  [ Thomas Winget ]
+  * add project source dir to util include directories
+  * standardize include format and pragma once
+  * let format.sh try system clang-format in case it is the correct version
+  * remove vestigal file
+
+  [ Jason Rhinelander ]
+  * Convert protocol type to enum class
+  * Code cleanups
+  * SockAddr endian cleanups & add uint128 ctors
+  * Replace ::Hash nested structs with std::hash specializations
+
+  [ Jeff Becker ]
+  * fix segfault
+  * remove references to lokimq namespace
+  * lokimq -> oxenmq artifact
+  * make ipv6 range used by exit traffic configurable.
+  * dont use .value() because macos is absolutely broken, thanks apple.
+  * fix issue #1562
+  * add warning and note in documenation of config option
+  * redunant lookups for lns.
+  * cache result on success
+  * dont reference iterator in lambda.
+  * make Endpoint::LookupNameAsync return void
+  * make lookup name async return optional variant
+  * seperate logic into IsDone()
+  * lokimq -> oxenmq artifact
+  * allow failure of setting ipv6 address when it is not allowed by kernel on linux
+  * remove std::visit because apple is functionally retarded and does not support it despite claiming to support c++14
+  * use var::variant and var::visit shims because apple is sux
+  * move stuff to var::variant
+  * use std::variant
+  * forgot a type
+  * call delivery status hook on overload
+  * * lessen replay filter window * dont have transit hops use a replay filter * formatting
+  * rebrand and bump version
+  * lokinet-bootstrap native binary
+  * rebrand and bump version
+  * lokinet-bootstrap native binary
+  * add include directory for daemon directory so llarp/* includes work
+  * require openssl explicitly for lokinet-bootstrap
+  * update lokinet-bootstrap
+  * build lokinet-android target only on android
+  * throw on failed writing and port fs namespace changes from oxen-core
+  * catch exception and print out error
+  * use binary mode for writing files
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+  * Add new libcurl build dep
+  * Add libssl-dev needed for libcurl
+
+  [ Jeff Becker ]
+  * remove old vpnio bits
+  * remove unneeded header
+  * remove llarp.h header references
+  * add lokinet.h header for liblokinet api
+  * flesh out lokinet.h more
+  * redo cmake parts
+  * fix pybind layer compile errors from missing llarp.h header
+  * fix windows dll link-ism
+  * get rid of deprecated vpnio code in android
+  * don't build liblokinet in android we have liblokinet-android for that
+
+  [ Jason Rhinelander ]
+  * Add draft liblokinet TCP-over-QUIC design doc
+  * Add ngtcp2 submodule
+  * Move external/ cmake bits into external/CMakeLists.txt
+  * WIP plainquic tunnels
+  * Replace custom random with llarp/sodium random
+  * Migrate plainquic logging to llarp logging
+  * Add llarp::buffer_printer for pretty buffer logs
+  * no-op LogTrace(); print chars as ints
+
+  [ Jeff Becker ]
+  * fix and format.
+  * more
+  * clean up address/ip management code to use std::variant and std::optional
+  * fix link error in ngtcp2
+  * update ngtcp2 address/path structs
+  * get rid of uneeded type
+  * * add protocol type to snode traffic * make path::PathSet::SendPacketToRemote know about protocol type
+  * use more variants
+  * * add convotags to ensure path to snode * add service::Endpoint::EnsurePathTo which gives you a std::optional<Convotag>
+  * remove superflous include
+
+  [ Jason Rhinelander ]
+  * Change MaybeGetLoop to a virtual member func
+  * Simplify/unify SendTo* methods
+  * Fix logging of std::byte values
+  * Fix cursed formatting
+  * Rename isRouter -> isSNode
+  * Add isIPv4/isIPv6 to SockAddr
+  * QUIC lokinet integration refactor
+
+  [ Jeff Becker ]
+  * fix compile error
+  * wire up snode traffic to quic
+  * try inbound paths first
+  * fix compiler errors
+  * add virtual default destructor to appease clang
+  * variable is unused for now but i dont want to remove it yet
+  * comment out member
+  * move lokinet-quic into the big giant amalgum of liblokinet
+  * re add static build for all internal lokinet libs
+  * rpc endpoint for triggering quic tunnel
+  * make the lokinet endpoint code work still needs the quic sides to work
+  * add quic_tester.py script for hitting rpc endpoints to test quic
+  * various fixups and cleanups
+  * dont try to build untracked file
+  * patch
+
+  [ Jason Rhinelander ]
+  * Disable building ngtcp2 example code
+  * Set port properly in server-to-client reply packets
+  * Add more checks and logging
+  * Try outbound convos if no inbound convos work (FIXME)
+  * Add missing client TCP accept/forwarding handlers
+  * Add some more useful debug logging
+  * Fix Server's missing opt-out of ring buffer
+
+  [ Jeff Becker ]
+  * stuff
+
+  [ Jason Rhinelander ]
+  * Sever tunnel links earlier
+  * Update ngtcp2
+  * Remove obsolete fixme
+  * Stop retransmit timer when destroying a connection
+  * Schedule retransmit after blocked send
+  * Fix/refactor stream closing
+  * Simplify/fix expiry timer logic
+  * Don't install stream forwarding here
+  * Revisit/reduce quic logging
+  * Remove obsolete fixme
+  * Replace timer->again() with stop/start()
+  * Properly handle ngtcp2 returning UINT64_MAX
+  * Remove superfluous log statement
+
+  [ Jeff Becker ]
+  * build paths faster and limit path builds at edge router instead of via a time counter for all edges
+  * fixes
+  * refactors
+  * fix loopback convotag
+  * dont regenerate convotag on loopback when we have one already
+  * mark loopback convotags as forever make null handler mark discard data as activity for convotag
+
+  [ Jason Rhinelander ]
+  * Increase null_iv to 8 bytes to avoid ngtcp2 stack corruption
+  * Fix debug message
+  * Remove superfluous block (FIXME: squash this with earlier "FIXME")
+  * Add trace debugging of inbound packet type
+
+  [ Jeff Becker ]
+  * wire up liblokinet
+  * fix up liblokinet api to be more friendly to ffi
+
+  [ Jason Rhinelander ]
+  * Fix connection close handling
+  * Reduce max number of per-connection active streams to 32
+
+  [ Jeff Becker ]
+  * proper shutdown
+  * liblokinet additions:
+  * more liblokinet api stuff
+  * add readme
+  * fix: if we have not used a session yet we only check the intro for expiration
+  * XXX: single threaded mode
+  * temp commit, closeReset -> close
+  * more liblokinet api functions
+  * service node logic change: simplify transit hop behavior to send protocol frames directly from a path transfer message
+  * fix up some retarded bullshit
+  * liblokinet and lnproxy updates
+  * add option to run lokinet traffic only with no exit and drop all non lokinet traffic
+  * add forgotten header
+  * reduce log level
+  * srv records
+  * correctly discard invalid data on transfer traffic message
+  * add untracked file
+  * add forgotten file again
+  * stop crashing when we send dns reply for snode on service nodes
+  * various cleanups
+  * cover special case for 1 hop path builders
+  * tweak timeout parameters for link layer. have different timeouts for service node vs client
+  * dont persist sessions if we failed to build
+  * Revert "tweak timeout parameters for link layer."
+  * use rx id on snode side of paths set protocol on reply routing messages
+  * use rxid
+  * more client to snode quic fixes
+  * use rxid
+  * fix up client to snode codepath
+  * try fixing deadlock
+  * remove deprecated test
+  * remove untracked file
+  * fix infinite iteration
+  * remove old deprecated files
+  * ensure dns srv data is valid after decoding
+  * formatting
+  * split up liblokinet headers
+  * fixes for testnet
+  * add forgotten files
+  * temp commit
+  * initial commit for #1595
+  * rebrand and bump version
+  * win32 fix
+  * finish wiring up config for #1595
+  * fix some compiler errors
+  * refactor: make lokinet-bootstrap a native executable
+  * bullshit for windows and openssl with CPR
+  * fixes for lokinet-bootstrap
+  * cleanup after rebase
+  * set up accept any plainquic handlers
+  * deconstexpr ip range bogon check
+
+  [ Jason Rhinelander ]
+  * Attempt fix to work around gcc-8 warning
+  * Link lokinet-bootstrap against libssl as well
+
+  [ Jeff Becker ]
+  * macos variant fixes
+  * pybind fixes
+  * correct header
+  * add_command instead of add_request_command
+
+  [ Jason Rhinelander ]
+  * Remove stable old debian/ dir
+  * Update submodules and static build deps
+  * ngtcp2 compat update
+  * 😡
+
+  [ Jeff ]
+  * add link to demo repo
+
+  [ Jeff Becker ]
+  * bump libuv version to match the tarball fetched
+
+  [ Jason Rhinelander ]
+  * Fix curl hash
+
+  [ Jeff Becker ]
+  * libunbound patch no longer needed as fixes have been upstreamed
+  * link against core foundation as a fix for static macos build
+
+  [ Thomas Winget ]
+  * Lokinet version bump to 0.9.0
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 22 Apr 2021 00:21:38 -0300
+
+lokinet (0.8.4-2) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * fix segfault
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 11 Mar 2021 09:55:41 -0400
+
+lokinet (0.8.4-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * add llarp.endpoint rpc command with kill option to kill all active convotags given a list of or a single remote service address.
+
+  [ Jason Rhinelander ]
+  * Bump version & gui build (#1501)
+  * Add full-static-deps armhf build (+upload) (#1505)
+
+  [ Dimitris Apostolou ]
+  * Fix macOS instructions (#1506)
+
+  [ Jeff ]
+  * tun code refactor (#1495)
+
+  [ Jeff Becker ]
+  * unbreak the build
+  * add ulimit -n 1024 to mac ci stuff because lol apple
+
+  [ Yevhen Stasiv ]
+  * Update readme.md (#1512)
+
+  [ Jason Rhinelander ]
+  * Update required lokimq version
+  * Rediff patches
+  * Add oxend to dependencies
+
+  [ Jeff ]
+  * libuv cmake fixups (#1511)
+  * prevent crash by removing duplicate logic (#1515)
+
+  [ Jason Rhinelander ]
+  * Fix build server name & path (#1516)
+  * Downgrade required libuv version to 1.18
+  * Add automake+libtool for libuv static build
+  * Remove CMAKE_CROSSCOMPILE
+  * Link against libdl for libuv
+
+  [ jahway603 ]
+  * fixed broken documentation link
+
+  [ Jeff Becker ]
+  * bump submodule
+  * nodedb refactor
+  * fix iteration bug
+  * minidump fix
+  * fix pybind layer
+  * proper lokimq -> oxenmq refactor
+  * consolidate pathbuilder logic
+  * use good routers
+  * make llarp::NodeDB::GetIf always randmize location
+  * clean up calls to NodeDB::GetIf to be cleaner and more concise
+  * GetIf -> GetRandom
+
+  [ Anton Nesterov ]
+  * update apparmor profile:
+
+  [ Jeff Becker ]
+  * redo readme structure:
+  * update windows parts
+  * update badge url
+  * update readme links
+  * initial v6 exits
+  * fix exit range default value
+  * fix up route poking with lokinet to work with ipv6
+  * windows and macos route pokers for ipv6
+  * fix up macos route command for ipv6
+  * fix up names of functions to be less hidious.
+  * make it compile again
+  * clarify new member's purpose and name. add comment.
+  * wire up sigusr1 to reset libunbound dns resolver
+  * close stale sessions on thaw because they are probably already gone. this removes them and forces the sessions to be renegotiated.
+  * thaw router when connectivity changes
+  * dont wire up router thaw to sigusr1
+  * update route poker logic to include "up"
+  * always use most recent convotag
+  * call closed hook when we explicitly close a link session
+  * actually set disabled when disabiling route poker
+  * prevent bad side effects, dont use iterator after use and use operator[]
+  * try coleasing inbound packets from iwp
+  * flush queue when full
+  * get rid of use of llarp::IpAddress from hotpaths
+  * drop on overload
+  * feedback from tom.
+  * remove pointless operator overload
+  * add missing header
+  * only set public address when provided
+  * feedback auth result via lmq rpc
+  * make service restart
+  * revise lambda captures
+  * add string reason to auth messages
+  * fix typo
+  * make AuthResultCode an enum class
+  * use static_cast with enum class
+
+  [ Jason Rhinelander ]
+  * SockAddr fixes and cleanups
+  * Fix SockAddr test code
+
+  [ Jeff Becker ]
+  * loki-mq -> oxen-mq
+  * add option to enforce unique netblocks per path.
+  * truly random access in nodedb iteration
+  * feedback from jason
+  * make non 64 bit platforms happy
+  * use 64-bit Mersenne Twister instead of 32 bit flavor in nodedb
+  * use pointers to entries instead of lookups by key
+  * dont use std::optional
+  * add value 0 to disable unique-range-size
+  * fix typo
+  * add llarp::CSRNG for cryptographically secure random number generator for use in std::shuffle
+  * fix up pyllarp parts
+  * add mx records to lns names
+  * redo ci pipeline:
+  * add explicit check for setcap binary when doing setcap so when it's missing it's not a nop / silent failure
+
+  [ Thomas Winget ]
+  * Large collection of changes to make android work
+
+  [ Jeff Becker ]
+  * disallow fail on ci pipeline for android builds
+
+  [ Jason Rhinelander ]
+  * Allow multiple gradles to run on the same box
+
+  [ Jeff Becker ]
+  * use mutable lambda instead of shared_ptr for handling mx dns reply for lns
+  * use lowest latency path for send context
+  * fixes for ipv4 traffic: dont use new range because that breaks backwards comapt
+  * explicitly turn off setcap on ci builds so they pass
+  * enable route poker poking before going "up"
+  * rework cmake install targets
+  * dont include lokinet-bootstrap.ps1 in ci builds
+  * only do single ack packets
+  * use a std::map instead of a std::unordered_map for holding message buffers by their sequentially increasing message id. when retransmissions happen, they will be executed in a deterministic order by their delivery id. this reduces the jitter from delayed message delivery on link layer as with an unordered map the order of iteration is "random", so when we iterate all messages for retransmission we do it lowest id first (the messages queued first).
+  * consolidate rx message handling in iwp
+  * simplify call
+  * revert priority queue ordering change
+  * reduce test message count so it can pass
+  * don't leave old multi ack codepath in
+  * plug memory leak in outbound message queue.
+
+  [ lyyn ]
+  * Migrate tests from gtest to catch2
+
+  [ Jeff Becker ]
+  * get rid of the rest of gtest/gmock
+  * catchAll -> testAll
+  * generate keys in unit test
+  * decaying hashset unit test fixes
+
+  [ Jason Rhinelander ]
+  * Add more junk & clangd symlinks to .gitignore
+  * Bump required oxenmq version
+  * Fix signed/unsigned char comparison bug
+  * Shut up noisy catch tests
+  * Tweak clang-tidy rules
+  * Disallow evil compilation
+  * C++17 simplification
+  * Replace libuv with uvw & related refactoring
+  * Merge Logic functions into EventLoop
+  * Make format
+  * Remove unused variable
+  * Fix linux compilation & narrowing conversion warning
+  * Switch uvw to a fork with libuv backwards compat support
+  * Remove unused junk (also fix win32 compilation fail)
+  * Rename EventLoop::udp to EventLoop::make_udp
+  * Simplify code of many f's
+  * Remove unused arguments (and ants)
+  * Remove HasNextPacket() (and fix win32)
+  * Android & hive fixes
+  * Export UDP file descriptor (for android)
+  * Make llarp_buffer_t constructible from an rvalue reference
+  * Uncurse SockAddr's sockaddr* operator
+  * EventLoop: add public wakeup() method, and call it from call()
+  * Tick event loop on data queuing
+  * Remove unused ShouldFlushNow method
+  * Modernize [[maybe_unused]] attribute
+  * Add wakeup call into transit_hop UpstreamHandler
+  * Add oxen-core deps to docker images
+
+  [ Jeff Becker ]
+  * fix docker lines and dont install recommended packages
+
+  [ Jason Rhinelander ]
+  * Upgrade to clang-format 11
+  * Reformat with clang-format-11
+
+  [ Jeff Becker ]
+  * correctly set size of OwnedBuffer when using OwnedBuffer::copy_used
+  * try to unbreak more
+  * make android work again
+  * flip order of parameters so it works
+  * bump version for 0.8.4
+
+  [ Jason Rhinelander ]
+  * Bump oxen-mq submodule to tagged 1.2.4
+
+  [ Jeff Becker ]
+  * update gui hashpin for windows
+
+  [ Jason Rhinelander ]
+  * Fix UB -- use after move
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 10 Mar 2021 20:29:53 -0400
+
+lokinet (0.8.2-2) unstable; urgency=medium
+
+  * Rebuild for newer deps
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 15 Jan 2021 14:27:46 -0400
+
+lokinet (0.8.2-1) unstable; urgency=medium
+
+  [ Jeff Becker ]
+  * key manager should throw on failures
+  * format
+
+  [ Jason Rhinelander ]
+  * Add building on message in drone build
+  * Install less stuff on windows CI
+  * Update gui win32 package url (#1466)
+  * Update gui win32 package url (#1466) (#1468)
+
+  [ Jeff ]
+  * stop lokinet before uninstalling service (#1469)
+
+  [ Jason Rhinelander ]
+  * Update win32 gui download with smaller svg icon
+  * Dev to stable (#1471)
+  * Disable LTO on sid for now (#1472)
+
+  [ Jeff ]
+  * poke route hole for loopback on windows because that OS is made by brain damaged non programmers. (#1473)
+  * do /1 route poker split on linux (#1480)
+
+  [ Jeff Becker ]
+  * fix install path for liblokinet-cryptography.so
+
+  [ Jason Rhinelander ]
+  * Bump required lokimq to 1.2.2
+  * Fix the copy of lokinet-resolvconf that we install
+
+  [ Jeff Becker ]
+  * update packaging for macos add preinstall script that nukes any existing lokinet make uninstaller revert dns to "empty" make cpack use preinstall script in pkg file
+  * preflight -> preinstall
+  * try watching trash for lokinet-gui.app and delete ourself if we see it
+  * revert
+  * add initial uninstaller code that is horrible
+  * fix typo
+  * chmod +x
+  * fix header
+  * more fixes for macos
+  * security.h
+  * ugh
+  * add install target
+  * fix icon path
+  * change tool name
+  * change icon
+  * add entitlements
+  * update icon
+  * remove line from uninstaller
+  * try installing to lokinet subdirectory
+  * remove old path too
+  * delete lokinet applications directory
+  * kill the gui
+  * use /var/log/ for log files
+
+  [ Jason Rhinelander ]
+  * Upgrade libunbound to latest stable
+  * Patch to avoid IP_DONTFRAG bug in latest xcode with broken Big Sur SDK
+  * Move all patches into contrib/patches
+  * Update to lokimq 1.2.2 for segfault-at-shutdown fix
+  * macos: pass our pre-built static libs into the gui sub-build
+  * Version bump (#1483)
+  * Build mac uninstaller as subproject instead of externalproject (#1485)
+  * Revert "Build mac uninstaller as subproject instead of externalproject (#1485)"
+
+  [ Jeff ]
+  * make macos uninstaller actually kill and uninstall lokinet (#1484)
+  * * make llarp.halt rpc call actually return a reply (#1488)
+  * resolve merge conflicts for 0.8.2 (#1493)
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 23 Nov 2020 18:58:19 -0400
+
+lokinet (0.8.1-3) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Fix deb snapshot builds + misc other CI updates (#1462)
+
+  [ Jeff ]
+  * try to handle router deregistrations on the network better (#1461)
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 10 Nov 2020 13:19:04 -0400
+
+lokinet (0.8.1-2~pre1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Build with deps from main repo
+
+  [ Jeff ]
+  * Revert "deny traffic to non whitelisted routers. (#1444)"
+  * remove dpi flag for windows
+
+  [ Jason Rhinelander ]
+  * deregistered router fix, v2
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 09 Nov 2020 23:27:34 -0400
+
+lokinet (0.8.1-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Don't use -march=native for static linux build (#1390)
+
+  [ Jeff ]
+  * add status command to lokinet-vpn (#1393)
+  * don't allow running lokid-rpc as client (#1394)
+  * dont segfault on exit (#1396)
+
+  [ Jason Rhinelander ]
+  * macos package fixes for 0.3.0
+  * Config file improvements (#1397)
+
+  [ Rick V ]
+  * move old stuff down a notch (#1377)
+
+  [ Jeff ]
+  * order packets when writing to network interface (#1372)
+  * fix empty config case (#1400)
+
+  [ Jason Rhinelander ]
+  * Don't report a huge negative elapsed time on startup (#1401)
+
+  [ Jeff ]
+  * dns features (#1404)
+  * always use data directory for bootstrap.signed (#1405)
+  * Unflaky-ify lns dns (#1406)
+
+  [ Jason Rhinelander ]
+  * Try to build for 10.14 (#1412)
+  * Reduce macOS target to 10.12, and fix target for deps (#1414)
+
+  [ Thomas Winget ]
+  * Route Poker changes (#1416)
+
+  [ Jeff ]
+  * Lns exits (#1407)
+  * add conf.d directory for config overrides (#1410)
+
+  [ Thomas Winget ]
+  * Some Windows fixes (#1415)
+
+  [ Jeff ]
+  * use correct path for windows service (#1418)
+  * make drone ci use debian testing (#1413)
+  * dont bind inbound links as client (#1419)
+  * redo cpack for win32 (#1420)
+
+  [ Jason Rhinelander ]
+  * Crank clang version to 11 (#1422)
+
+  [ Jeff ]
+  * bugfixes for lokinetmon (#1426)
+  * more aggressive path building. (#1423)
+  * bump win32 gui build\  * add hashpin for gui  * add installer icon (#1424)
+  * handle libuv case when we don't have it (#1403)
+  * enable profiling on clients by default (#1421)
+  * bump version to 0.8.1 (#1425)
+
+  [ Jason Rhinelander ]
+  * CMake fixes: libuv static build, base_libs, shared lib install dir (#1431)
+
+  [ Jeff ]
+  * fix crashes on shutdown (#1433)
+  * use same directory for windows installer, remove version. (#1435)
+  * dont do native builds in static linux ci (#1434)
+  * allow for relative file paths in config (#1432)
+
+  [ Jeff Becker ]
+  * turn building shared libraries off by default because no one uses this right now
+
+  [ Jeff ]
+  * I have no words. (#1438)
+
+  [ Jason Rhinelander ]
+  * Move resolvconf from deb branches to contrib/ (#1439)
+
+  [ Jeff ]
+  * add exit.localhost.loki cname record (#1440)
+  * deny traffic to non whitelisted routers. (#1444)
+  * try fixing memory leak in path builder (#1442)
+  * update information in exit-setup.md (#1441)
+  * Bump win32 gui version (#1446)
+
+  [ DEADBLACKCLOVER ]
+  * Adding Russian translation (#1447)
+
+  [ Jeff ]
+  * profiles.dat is always relative so if you spawn lokinet in / then it will error about permissions. (#1449)
+  * fix path reference leak (#1451)
+
+  [ Jeff Becker ]
+  * fix path in uninstall command
+
+  [ Jeff ]
+  * try fixing deadlock (#1454)
+
+  [ Jeff Becker ]
+  * bump lokinet wi32 gui build
+
+  [ Jeff ]
+  * run without highdpi scaling on windows (#1456)
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 06 Nov 2020 15:11:51 -0400
+
+lokinet (0.8.0-4) unstable; urgency=medium
+
+  * Set default inbound link to best public interface
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 02 Oct 2020 23:38:37 -0300
+
+lokinet (0.8.0-3) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Shallow clone submodules
+
+  [ Jeff ]
+  * default upstream dns to cloudflare
+  * format
+
+  [ Jason Rhinelander ]
+  * Simplify k=v parsing code
+  * Allow empty values so that upstream= can disable the default
+  * Make upstream= override work; reject non-default upstream port
+  * Fix broken unbound resolver when including upstream port
+  * Make format
+
+  [ Jeff ]
+  * tweak configuration defaults
+  * un limit lmq
+  * update readme build info
+
+  [ Jeff Becker ]
+  * use size_left
+  * put pubkey_ed25519 in fields
+  * disable whitelist in unit test
+  * kill lmq before stopping links/
+  * fix decode version 0 rc when in version 1 mode
+
+  [ Thomas Winget ]
+  * remove unnecessary code
+
+  [ Jeff ]
+  * ping lokid every 30 second after starting up
+
+  [ Jason Rhinelander ]
+  * Make public-ip option work (#1380)
+  * make format (#1381)
+
+  [ Jeff ]
+  * disable rpc on relays by default (#1383)
+
+  [ Jason Rhinelander ]
+  * Add debconf warning when no public ip
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 02 Oct 2020 18:05:26 -0300
+
+lokinet (0.8.0-2) unstable; urgency=medium
+
+  * Fix broken motto in debs
+  * Add missing router mode flag to service file
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 02 Oct 2020 01:06:36 -0300
+
+lokinet (0.8.0-1) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Rename ufw rule to match the package name
+  * Fix ufw install rule
+  * Fix config file generation
+
+  [ Jeff ]
+  * ammend log levels for common spammy log events (#1375)
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 01 Oct 2020 19:44:16 -0300
+
+lokinet (0.8.0~pre2-1) unstable; urgency=medium
+
+  [ Jeff ]
+  * move pkgconfig requirement (#1355)
+  * revive android build system (#1339)
+  * make errors with service keyfile throw (#1358)
+
+  [ Jason Rhinelander ]
+  * Drone CI job shuffling (#1359)
+  * Allow -DWITH_SETCAP=OFF to disable setcap during make install (#1363)
+  * Support [dns] no-resolvconf option (ignored by lokinet) for deb compatibility (#1362)
+  * Refresh patches
+  * Disable setcap via new cmake variable
+  * Update deb deps
+  * Added nettle-dev, apparently needed for libunbound-dev
+  * More missing deps
+  * Add proper overridden test target
+  * Don't prepend /usr/lib/ccache
+  * Fix ninja check pwd
+  * ccache debug
+
+  [ Jeff ]
+  * use fs::path for service::Identity::EnsureKeys (#1364)
+  * use absolute path for route command (#1354)
+
+  [ Jason Rhinelander ]
+  * Add gpg public key
+  * Don't install recommended packages
+  * Dearmor gpg; 1 apt-get update; no explicit g++; no ccache reconf
+  * de-https so we don't need ca-certificates
+  * Allow binary
+
+  [ Jeff Becker ]
+  * make it compile
+
+  [ Jason Rhinelander ]
+  * Enable other arches
+  * Remove gcc-5 workaround (#1360)
+
+  [ Jeff ]
+  * resolve issue #1361 about peer stats excessive logging (#1365)
+
+  [ Jason Rhinelander ]
+  * Disable tests in deb builds
+  * DRY
+  * Don't build tests
+  * Try submodules --depth=1
+  * Add lokinet-vpn binary, disable shared libs
+
+  [ Jeff ]
+  * dont poke routes if we have no exit (#1352)
+
+  [ Thomas Winget ]
+  * New RC format (#1368)
+
+  [ Jeff ]
+  * dont serialize ephemeral members of service identity (#1370)
+  * make win32 exits work again (#1367)
+
+  [ Thomas Winget ]
+  * fix format string for size_t (#1371)
+
+  [ Jeff ]
+  * serialize auth codes in rpc (#1369)
+
+  [ Jason Rhinelander ]
+  * 0.8.0 version bump (#1373)
+
+  [ Jeff Becker ]
+  * bump lokimq submodule to 1.2.0
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 30 Sep 2020 17:23:55 -0300
+
+lokinet (0.8.0~pre1-1) unstable; urgency=medium
+
+  * dev snapshot build.
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 22 Sep 2020 13:04:27 -0300
+
+lokinet (0.7.1-3) sid; urgency=medium
+
+  * Fix stretch debs
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Sun, 31 May 2020 20:01:05 -0300
+
+lokinet (0.7.1-2) sid; urgency=medium
+
+  * Rediff patches
+  * Remove lokinetctl from binary package
+  * No LINUX variable in cmake
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 22 Apr 2020 12:03:59 -0300
+
+lokinet (0.7.1-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * [PATCH] update lokinetmon to work again with dns rebinding protection
+  * Add "deb-" into version tag
+
+  [ Ryan Tharp ]
+  * fix make static when TOOLCHAIN isn't set
+
+  [ Jeff Becker ]
+  * when we have an inbound session and we do a forward dns lookup we should not look up the descriptor on the network as we already have a session with them
+  * disable accedental fec in iwp outbound messages
+  * fix use after move
+  * remove un needed check
+  * add bounds check
+  * strict check of bounds
+  * cpack win32
+  * set license
+  * initial lokinet-bootstrap in powershell for windows
+  * make installer pull in tuntap driver
+  * update ci for windows installers
+  * allow fail
+  * update lokinet-bootstrap
+  * make gitlab pump out 32 bit installers, no lto for builds as that is cursed for now.
+  * move cmake unix down
+  * add mac target for release
+  * more macos installer bits
+  * fix gitlab ci file
+  * fix gitlab tag
+  * fix gitlab tag (again)
+  * use 64 bit windows target for now
+  * fix up cpack for macos
+  * remove god awful "packaging" cruft that is no longer used.
+  * make gitlab mac runner poop out mac pkg builds too
+  * static link on macos
+  * turn off optimizations for releases
+  * make apple builds build for older versions and embrace the bitrot
+  * tinker with release scripts to hopefully appease the apple gods.
+  * macos post install script that bootstraps, generates configs and registers plist
+  * add plist
+  * gut ui-*
+
+  [ Stephen Shelton ]
+  * MacOS installer / runtime nonsense
+  * Bundle gui in mac installer
+
+  [ Jason Rhinelander ]
+  * Consolidate cmake vars & definitions
+  * Build lokinet-gui with ExternalProject
+  * Add -DBUILD_PACKAGE=ON to make cpack code opt-in
+  * Change mac install prefix to /opt/lokinet
+  * Add simple installer readme
+  * codesigning and notarization
+  * Move release motto string into CMakeLists.txt
+  * Notarize has an "a" in it
+  * Pass CMAKE_PREFIX_PATH through to lokinet-gui
+  * NOTARIZE only has one O
+
+  [ Stephen Shelton ]
+  * Include macos uninstall script
+
+  [ Jason Rhinelander ]
+  * Add stapling after notarization
+  * Bump version to 0.7.1
+  * Disable thread safety annotations on AppleClang
+  * Remove unwanted defines
+
+  [ Stephen Shelton ]
+  * Handle no-explicitly-set-dns case in launchd script
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 21 Apr 2020 19:26:46 -0300
+
+lokinet (0.7.0-2) sid; urgency=medium
+
+  * Add lokinetmon package
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 24 Mar 2020 12:34:53 -0300
+
+lokinet (0.7.0-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * add an A Record for random.snode so that it works
+
+  [ jeff ]
+  * discard unknown fields in introset for future use
+
+  [ Jeff Becker ]
+  * fix memleak in jsonrpc
+  * cleanup
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 16 Mar 2020 14:07:07 -0300
+
+lokinet (0.7.0~rc3-2) sid; urgency=medium
+
+  * Remove obsolete setcap deps
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Sat, 14 Mar 2020 01:37:23 -0300
+
+lokinet (0.7.0~rc3-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Don't ignore .exe, .png, .gif
+
+  [ Jeff Becker ]
+  * bounds check in http headers
+  * bounds check on header value
+  * try fixing leak in libabyss
+
+  [ Stephen Shelton ]
+  * Reduce log verbosity when DNS RR decode fails
+
+  [ Jeff ]
+  * strip rr from dns reply for .snode and .loki (#1172)
+
+  [ Jason Rhinelander ]
+  * Fix IPv6 lookups to return empty response
+
+  [ Jeff Becker ]
+  * return NS record for localhost.loki to squash errors in host lookups
+  * prune nodedb as client and service node with no whitelist
+  * simplify logic
+  * add comment
+  * add additional case check and documentation comments for pruning logic
+  * typo fix
+  * typo fix
+  * limit path builds on snode sessions
+  * fully randomize hop selection
+  * code dedup
+  * remove dead code
+
+  [ Jeff ]
+  * only try fetching identity key once so we can interrupt lokinet (#1178)
+
+  [ Jeff Becker ]
+  * typo fix
+  * use for loop
+
+  [ Jeff ]
+  * add additional case  (#1180)
+
+  [ Jeff Becker ]
+  * squash commits
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 11 Mar 2020 21:22:58 -0300
+
+lokinet (0.7.0~rc2-1) sid; urgency=medium
+
+  [ Ryan Tharp ]
+  * bring gitlab ci up to date, mhas it make a static linux release tarball
+  * Combine tar and xz into one command
+  * update libsodium requirements
+  * remove unneeded packages
+  * include Jason's copy
+  * move linux-setup/readme to docs/
+
+  [ Jeff Becker ]
+  * allow building from source tarballs
+  * add gitattributes for git-archive-all
+  * operator presidence
+
+  [ Rick V ]
+  * fix libsodium cross compile
+  * finally fix cross-LTO on windows builds
+  * finally remove C++17 requirement on windows (only needed it for filesystem)
+  * some win32 cmake cleanup
+  * remove unused rule
+  * missing branch on option
+
+  [ Jeff Becker ]
+  * fix status line
+  * use size / 2 as the number of transit paths
+  * remove non public routers from nodedb
+
+  [ Jason Rhinelander ]
+  * Add systemd dev to build-deps
+  * Fix lookup filter to filter second, not first, lookup
+
+  [ Jeff Becker ]
+  * fix dns rebinding vuln in jsonrpc
+  * make gitlab-ci use recursive git
+
+  [ Rick V ]
+  * integrate lokinet qt5 UI and make its installation conditional on underlying platform support (Windows Vista or later)
+  * bump version
+  * try extracting dns bind addr from INI on windows
+  * use backport fork for release installer only
+  * bindaddr a common field on the machine-independent side
+  * bump for next release
+  * move these out of the way
+  * So as of GCC 9.2, std::random_device on Windows is RtlGenRandom()
+  * add new test suite
+  * fix logging
+  * remove unit tests
+
+  [ Jason Rhinelander ]
+  * gitlab-ci: Upgrade xenial cmake (via kitware repo)
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 05 Mar 2020 18:07:58 -0400
+
+lokinet (0.7.0~rc1-2) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+  * Checkout submodules
+  * Remove enable_testing() because ctest sucks (and thus we don't use it)
+  * Bump required sodium version
+
+  [ Jeff Becker ]
+  * std::vector reserve does not resize
+
+  [ Jason Rhinelander ]
+  * Switch systemd service files to notify
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 04 Mar 2020 00:00:15 -0400
+
+lokinet (0.7.0~rc1-1) sid; urgency=medium
+
+  [ Stephen Shelton ]
+  * Implement KeyManager tests
+  * Fix build
+  * Prefer ASSERT_EQ over ASSERT_TRUE when appropriate
+
+  [ Jason Rhinelander ]
+  * Separate json SN parsing definition/declaration
+  * Add support for lokid's "unchanged" response
+
+  [ Jeff Becker ]
+  * configurable log level
+  * reduce number of values for LogLevelFromString
+  * off -> none
+  * unsigned char
+  * don't deadlock when we want to remove lots of paths, flush queue instead when full
+  * unit tests for logging levels
+  * improve test cases
+
+  [ Stephen Shelton ]
+  * Add unit tests for LogLevelToName and LogLevelToString
+  * Add test to ensure config loading impacts runtime log level
+  * Remove dead code (AbstractRouter::EnsureRouter())
+
+  [ Jeff Becker ]
+  * dht fixes, disable iterative lookups on clients, revert "fixes" from 0.6.3, pass in recursion depth from introset lookup
+  * connect to closer nodes for introset lookups
+  * connect to closest for RC lookups too
+  * refactor single char variables in DHT (mostly)
+  * fix recursion depth on introset lookup
+  * return true
+  * monotonic time and run testnet at 20% realtime
+  * use static initialization for started times
+  * don't always use bootstrap when exploring
+
+  [ jeff ]
+  * router version
+  * router version
+  * dont inherit std::array
+
+  [ Jeff Becker ]
+  * make it compile
+  * operator !=
+  * don't use a pointer
+
+  [ jeff ]
+  * use double braces
+
+  [ Jeff Becker ]
+  * initial wack at 0.7.0 dht fixes
+  * make router version member optional on serialization
+  * make it compile
+  * initial dht key blinding
+  * does not work
+
+  [ Jason Rhinelander ]
+  * Derived key fixes
+  * Fix Recalculate()
+
+  [ Thomas Winget ]
+  * initial implementation of blinded sign -- not working yet
+  * NO CLAMPS YOU IDIOT!!!
+
+  [ Stephen Shelton ]
+  * Fix IsCompatableWith() logic WRT emptyRouterVersion, add unit tests
+  * Fix RouterVersion::IsEmpty() and RouterVersion::Clear()
+
+  [ Jeff Becker ]
+  * const correctness
+
+  [ Jason Rhinelander ]
+  * Silence unused parameter warning
+  * Use hash instead of random for signing hash data
+  * Fixed EncryptedIntroSet signing to use PrivateKey
+  * make format 😠 🤮
+
+  [ Stephen Shelton ]
+  * Fix buffer overflow when version encodes too many integers
+  * Make format
+
+  [ Jeff Becker ]
+  * use std::shared_ptr not a bare pointer to prevent memleak
+  * make format
+
+  [ Jason Rhinelander ]
+  * Remove unused ristretto includes
+
+  [ jeff ]
+  * mock lokid for loopback testnet
+  * use system packages in venv so system packages override
+
+  [ Jeff Becker ]
+  * correct key
+
+  [ Jason Rhinelander ]
+  * Abstract signing hash data location
+  * Bump libsodium required version to 1.0.18
+  * Fix libsodium 1.0.18 URL
+  * Use glob to find sodium source files
+
+  [ Jeff Becker ]
+  * don't drop messages with pathid zero which belong to snode to snode dht and path build requests.
+  * don't derive x25519 key from ed25519 key
+  * test/service/test_llarp_service_identity.cpp:
+  * notify delivery of path builds
+
+  [ Jason Rhinelander ]
+  * Switch primary builds from xenial to bionic
+  * Add arm64/s390x/ppc64le builds, reduce apt deps
+  * Remove travis_wait
+  * Zero-initialize test array
+
+  [ Stephen Shelton ]
+  * s/LogInfo/LogDebug/ @ explore message
+  * s/LogInfo/LogDebug/ @ 'updating SN list'
+  * s/LogInfo/LogDebug @ 'signed/verify encrypted introset'
+
+  [ Jeff Becker ]
+  * check for current introset being zero (initial state)
+  * * rename i to foundIntro * check for zero timestamp * use > not >=
+
+  [ Jason Rhinelander ]
+  * Use ExternalProject to build downloaded libsodium
+  * DOWNLOAD_SODIUM=FORCE to always download libsodium
+  * Older cmake workaround
+  * Move ppc64le/s390x to allow_failures and simplify it
+  * Disable stupid native windows builds
+  * Turn on -DDOWNLOAD_SODIUM for gcc trunk build
+  * Remove -Wshadow; it is far too aggressive under gcc
+  * DOWNLOAD_SODIUM in docker travis builds
+  * Disable router docker image
+  * Use -mcpu=native on ppc64le
+  * Big endian fixes
+  * Endian defines fix for macOS
+  * Another big-endian fix
+  * Remove s390x from allowed_failures
+
+  [ Jeff Becker ]
+  * update lokinet monitor to work with iwp
+  * dont flood dht with requests, if we know of a router don't look it up
+
+  [ Stephen Shelton ]
+  * Add IWP session stats to JSON API
+
+  [ Jeff Becker ]
+  * fix unit test
+  * if relayed try closer router if we don't have an intro
+  * handle end case by telling requester that it's not there
+  * move declaration of peer
+  * default recursion depth to 2 not 12
+  * always recurse to second closest if we don't have it
+  * fix comment
+  * logic simplification
+  * update lokinetmon
+  * add path speed metrics for lokinetmon
+
+  [ Stephen Shelton ]
+  * Leave IWP session JSON stats 'tx' and 'rx' for compat
+  * Use name 'StateToString()' instead of ambiguous 'toString()'
+  * Make format
+
+  [ Jeff Becker ]
+  * reduce number of multiack packets sent
+  * update lokinetmon
+  * make publishing introsets optional using reachable=false to disable
+  * make default endpoint non reachable by default
+  * only make default endpoint non-reachable if no keyfile option presented
+  * rc gossiping
+  * * get rid of dht explore for service nodes * add Time_t using std::chrono for future uses * make decaying hashset constructor with llarp_time_t explicit * add decaying hashset implicit constructor using Time_t * add timeouts for gossiper replay * allow regossip of our RC
+  * rc gossiping
+  * * get rid of dht explore for service nodes * add Time_t using std::chrono for future uses * make decaying hashset constructor with llarp_time_t explicit * add decaying hashset implicit constructor using Time_t * add timeouts for gossiper replay * allow regossip of our RC
+  * rename variables
+  * use Time_t
+  * remove include
+  * rename variable
+
+  [ Jason Rhinelander ]
+  * Fix signed/unsigned comparison warning and make more std::chrono-y
+
+  [ Stephen Shelton ]
+  * Print an error when BDecodeReadFromFile() fails before calling DumpBuffer()
+
+  [ Jason Rhinelander ]
+  * Switch abseil & nlohmann to submodules and update to latest stable
+  * Devendor gtest to a submodule
+  * Update deprecated gtest macros
+  * Devendor cxxopts to submodule
+  * ghc::filesystem devendor to submodule
+
+  [ Jeff Becker ]
+  * remove connect back logic for dead inbound sessions
+  * * add path::Path::UniqueEndpointSet_t * start using check2 for new unit tests * unit test for path::Path::UniqueEndpointSet_t
+  * redundant publish for service endpoint
+  * paralell publish and lookups
+  * log location
+  * refactor GetManyPathsWithUniqueEndpoints to go into service/endpoint_util.hpp
+  * revert change
+  * dont use optional
+
+  [ Stephen Shelton ]
+  * Big R, little r, what begins with R?
+  * Refactor DHT introset lookups to use redundant lookup strategy
+  * Serialize / deserialize relayOrder @ FindIntroMessage
+  * Remove relayOrder from MessageDecoder
+  * Make format
+  * Bencode/decode relayOrder in lexigraphical order, make it uint64_t
+
+  [ Jeff Becker ]
+  * dont collide variable names
+  * comparison fix
+
+  [ Jason Rhinelander ]
+  * Remove unused parameter
+  * Rework partial sorting code: use pointers, add lock
+  * Remove another unused randomize parameter
+  * clang format
+
+  [ Stephen Shelton ]
+  * Add NodeDB tests around FindClosestTo()
+
+  [ Jason Rhinelander ]
+  * Update ghc-filesystem to include rick's upstreamed patches
+
+  [ Jeff Becker ]
+  * make catch2 a submodule
+
+  [ Jason Rhinelander ]
+  * Reduce introset publishing interal to 2.5min instead of 1.25min
+
+  [ Jeff Becker ]
+  * spread out path builds
+  * ammend outbound context logic
+  * short circuit
+  * simplify
+
+  [ Jason Rhinelander ]
+  * Fix typo in option to disable submodule checks
+
+  [ Jeff Becker ]
+  * use endpoint path for lookup because outboundcontext does not implement pathset::HandleGotIntroMessage
+  * handover fixes
+  * add comment
+  * require router version in public routers
+
+  [ Jason Rhinelander ]
+  * Replace absl::optional with optional-lite
+
+  [ Jeff Becker ]
+  * add log statement
+
+  [ Stephen Shelton ]
+  * Propagate Introset publishing redundantly
+  * Minor improvements to DHT inroset propagation
+  * Make format
+
+  [ Jason Rhinelander ]
+  * Add missing header
+
+  [ Stephen Shelton ]
+  * Rework FindIntro logic per redundant strategy
+
+  [ Jason Rhinelander ]
+  * Remove llvm from travis-ci homebrew packages
+
+  [ Stephen Shelton ]
+  * Refactor: remove recursionDepth from DHT lookups
+
+  [ Jeff Becker ]
+  * handle multiple responses per hidden service lookup
+
+  [ Stephen Shelton ]
+  * Make format
+
+  [ Thomas Winget ]
+  * path builder prints hops, rest print short name
+  * const-y-ness and move-y-ness
+  * std move better
+  * PathBuildNumber -> NextPathBuildNumber because increment side-effect
+  * should probably build before committing...
+  * make path short name look nicer
+
+  [ Jason Rhinelander ]
+  * Update osx image to latest on travis
+  * Do a homebrew update
+  * Remove unneeded mingw homebrew dep
+
+  [ Stephen Shelton ]
+  * Make format
+
+  [ Jason Rhinelander ]
+  * De-abseil, part 2: mutex, locks, (most) time
+  * Vastly simplified llarp::util::memFn
+  * Removed empty cpp files
+  * Add return types to lambda
+  * Add an old xenial gcc build
+  * Fix and rename CaselessCmp -> CaselessLessThan
+  * De-abseil: Add our own llarp::TrimWhiteSpace
+  * Add cmake "check" target to run all tests
+  * Make C++ literals available everywhere in `llarp`
+  * Deabseil: remove absl::StrCat, de-templatize fromEnv
+  * Remove absl optimization
+  * Miscellaneous small absl removals
+  * Replace abseil date code with Hinnart's date.h
+  * Prettify uptime duration in log lines
+  * Remove all ABSL_ATTRIBUTE_UNUSED uses
+  * Replace absl string_view with string_view from lokimq
+  * Remove metric config parsing
+  * TrimWhiteSpace -> TrimWhitespace
+  * constexpr string_view fixes
+  * Fix format
+  * Remove old vendored ghc-filesystem
+  * Don't use double-underscores
+  * Final abseil purge
+  * gcc 5.x string_view workaround
+  * Rewrite generate expressions to make clang-7 happy
+  * Rewrite In6ToHUInt to be endian agnostic
+  * Avoid copies in mutators
+  * Make uint128_t use big/little endian layout internally
+  * Avoid wrong-order initialization on big endian
+  * Renamed uint128.h -> uint128.hpp
+  * Add gcc5 workaround for catch2 GENERATE(table
+  * Bump XSAN build to bionic and add status message
+  * Always pass XSAN to cmake
+  * Disable thread annotation when not under libc++
+  * Disable memory sanitizer build
+  * make format 🤦
+
+  [ Jeff Becker ]
+  * shift intro on introset update
+  * make decaying hashset use llarp::Time_t and move unit tests to use catch2
+  * llarp_time_t is now using std::chrono
+  * cast interval to std::chrono::milliseconds before dividing by 4
+
+  [ Jason Rhinelander ]
+  * Fix string_view C++17 compatibility
+
+  [ Jeff Becker ]
+  * use llarp_time_t instead of auto
+  * explictly use std::chrono::milliseconds
+  * remove Time_t, add operator overload for printing llarp_time_t and add to_json function for serializing llarp_time_t to json
+  * remove trailing "ms"
+  * reduce code use
+  * fix last commit
+
+  [ Jason Rhinelander ]
+  * gcc 5 compatibility workaround
+  * Another gcc 5 compat fix (plus small optimization)
+
+  [ Stephen Shelton ]
+  * Build endpoint paths at even[ish] intervals
+  * Make format
+  * Big I, little i, what begins with I?
+  * Make format
+  * Use existing 'lastBuild' var for spacing path builds
+  * Increase default path timeout from 10min to 20min
+  * Use constants for path build timing
+
+  [ Jason Rhinelander ]
+  * Default libsystemd support to enabled if found
+
+  [ Rick V ]
+  * systemd is linux only
+
+  [ Linux User ]
+  * 32-bit linux patches
+
+  [ despair ]
+  * we need XPG7 on netbsd
+
+  [ Jeff Becker ]
+  * systemd status
+  * remove uneeded members
+  * monkey patch upstream dns to rewrite .loki cname answers
+  * disable flawed unit test
+  * handle snode and clean up codepath for hooked dns
+  * use std::chrono
+
+  [ Jason Rhinelander ]
+  * Add EXCLUDE_FROM_ALL to subprojects
+  * Fix cmake LINUX variable around systemd enabling
+  * if(LINUX) doesn't work; just try to find libsystemd gently instead
+  * fix speeling mistack
+  * Fix systemd compilation & enable systemd on travis
+  * Shorten version and prefix with v
+
+  [ Stephen Shelton ]
+  * Remove 'clang-format off' and make format
+
+  [ Jeff Becker ]
+  * remove dht explore timer
+  * change function signature for dht context to exclude time parameter
+  * remove convotags on dead outbound context
+
+  [ Stephen Shelton ]
+  * Judicious removal of dead code
+  * Add some notes/comments about DHT message handling
+  * Require 'From' and 'relayed' in PublishIntroMessage ctor
+  * Properly deserialize PubIntroMessages' relayed var
+  * Remove dead code
+  * Handle PubIntro relayOrder logic on client-side
+  * Log when DHTSendTo fails @ Router::SendToOrQueue
+  * Calculate 'candidateNumber' when we should store Introset
+  * Remove dead unit tests
+  * Make format
+  * Implement PublishServiceJob::SendReply()
+
+  [ jeff ]
+  * remove uneeded code
+  * make format
+
+  [ Jason Rhinelander ]
+  * Add warns for introset publish failures
+  * Logic simplification
+
+  [ Jeff Becker ]
+  * dedup via txid not keyspace location
+  * make format
+  * revert
+
+  [ Jason Rhinelander ]
+  * Add min intro set paths, slightly increase spread speed
+  * De-static constants
+
+  [ Jeff Becker ]
+  * add local publish intro message to send reply down path
+  * wrong txid
+
+  [ Jason Rhinelander ]
+  * Avoid unnecessary copy
+  * Don't republish when we have extra paths
+  * Make IntroSet publish confirmed less verbose
+
+  [ Jeff Becker ]
+  * fix up introset lookups
+  * spelling is hard
+  * rename variable
+
+  [ Stephen Shelton ]
+  * Remove redundant lookup logic from relays
+
+  [ Jeff Becker ]
+  * revert relay side dedup parameter
+  * dont put multiple outbound contexts
+
+  [ Stephen Shelton ]
+  * Consolidate introset publishing constants
+  * Make format
+
+  [ Jeff Becker ]
+  * remote lookup limiting of 500ms per address
+  * change log
+
+  [ Stephen Shelton ]
+  * Set release motto for v0.7.0
+  * Remove re-propagation of introsets when we are wrong candidate
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 03 Mar 2020 12:02:23 -0400
+
+lokinet (0.6.4-2) sid; urgency=medium
+
+  * Fix broken testnet client service
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 24 Jan 2020 20:46:00 -0400
+
+lokinet (0.6.4-1) sid; urgency=medium
+
+  [ Stephen Shelton ]
+  * Fix HaveReceivedWhitelist() typo
+  * Include outbound message queue stats in dumpState API response
+  * Use std::max() and make format
+  * Lookup routers at maximum frequency of 10 minutes
+
+  [ Jeff Becker ]
+  * merge conflict fix
+
+  [ jeff ]
+  * use std::chrono
+  * fix typo
+
+  [ Stephen Shelton ]
+  * Bump RC expiration constants significantly
+  * Start stale router lookup 5 minutes before its expiration
+
+  [ Jeff Becker ]
+  * make format
+  * link layer message priority
+  * tail drop
+  * inform congestion on tail drop
+  * bump version for 0.6.4
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Sun, 19 Jan 2020 14:16:15 -0400
+
+lokinet (0.6.3-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+  * Enable cpu detection on amd64
+
+  [ Jeff Becker ]
+  * explore faster
+  * try doing lookup from close router, randomize when above lookup threshold
+  * always lookup introset from nearest router
+  * use shared_from_this
+  * dht timeout tweak
+  * variable lookup timeout on participants
+  * reduce disk io
+  * disable iterative lookup
+  * testnet patch
+  * periodic nodedb flush
+  * store RCs if valid
+  * make it compile
+  * check with rc handler before insert
+  * contrib/testnet: fix up testnet config generator to make super centralized topology llarp/context.cpp, llarp/nodedb.{h,c}pp: load netdb AFTER whitelist llarp/router/router.cpp: explore always llarp/router/{i,}rc_lookup_handler.{h,c}pp explore with whitelist, update routers with lookup before stale
+  * address feedback from tom
+  * use copy not move
+  * log invalid signatures
+  * check for zero'd rc
+
+  [ Stephen Shelton ]
+  * Randomize routers to explore in ExploreNetwork()
+  * Add warning when we found a null RC for a DHT lookup
+  * Don't respect whitelist when we haven't received it yet
+  * Make format (mutter mutter)
+
+  [ Jason Rhinelander ]
+  * Fix json api bind IP
+
+  [ Stephen Shelton ]
+  * Remove dead code in llarp_nodedb::Insert()
+  * Bump version (0.6.3)
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 16 Jan 2020 01:25:31 -0400
+
+lokinet (0.6.2-3) sid; urgency=medium
+
+  * Use systemd service capabilities instead of setcap
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 14 Jan 2020 18:58:54 -0400
+
+lokinet (0.6.2-2) sid; urgency=medium
+
+  * Enable cpu AVX2 detection on amd64
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 08 Jan 2020 22:18:52 -0400
+
+lokinet (0.6.2-1) sid; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Enable -avx2 -fma for ntru even when compiling without AVX2 support
+  * Modernize non-AVX2 tuning to haswell
+  * Simplify CRYPTO_FLAGS logic, remove RYZEN_HACK
+
+  [ Jeff Becker ]
+  * static link with docs
+  * fix up docs
+  * fixups for review
+  * add hashpinned curl tarball for static build
+  * make it build in normal mode too
+  * i hate curl
+  * use proper cmake call
+
+  [ Jason Rhinelander ]
+  * Fix ntru avx2 compilation when DOWNLOAD_SODIUM
+
+  [ Jeff Becker ]
+  * remove side effect from address detection assert
+  * dont update timestamp of last use using when we get exit only when we use it
+  * mark used on costructed so it doesn't go away
+  * m_LastUse shouldn't be 0 ever now
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+  [ Jeff Becker ]
+  * add bw stats to iwp sessions
+
+  [ Ryan Tharp ]
+  * when STATIC_LINK search for static versions of libraries, delay CURL detection until later
+  * bring in all updates from STATIC_RUNTIME
+  * support LIBCURL_ROOT, disable LIBUV includes
+  * macos release needs the include path
+  * daemon don't override the existing CURL
+
+  [ Jeff Becker ]
+  * dont close timers on closeall
+
+  [ Jason Rhinelander ]
+  * Fix for macos's decrepit old bash 3.x
+
+  [ Jeff Becker ]
+  * limit number of snode sessions client side
+
+  [ Jason Rhinelander ]
+  * Fix for macos's decrepit old bash 3.x
+
+  [ Jeff Becker ]
+  * client side perf improvement
+  * remove call to link manager
+  * Revert "remove call to link manager"
+  * limit client side path builds per ip
+  * add unit test for decaying hash set
+  * propagate error to client
+  * comments
+  * typofix
+  * use optional
+
+  [ Jason Rhinelander ]
+  * Fix for macos's decrepit old bash 3.x
+
+  [ Jeff Becker ]
+  * fix typo
+  * make static constant for decay interval
+
+  [ Rick V ]
+  * IX86 builds should only require SSE3, and this still allows debian release mgr to override the target selection flag
+
+  [ Jeff ]
+  * allow fail of docker build because docker is fail
+  * Update .gitlab-ci.yml
+  * Update .gitlab-ci.yml
+  * Update .gitlab-ci.yml
+  * disable failing gitlab ci
+
+  [ Jeff Becker ]
+  * dont static link for release
+  * enable profiling by default
+  * * clients expore dht faster * use random path when doing dht lookups for .loki
+  * randomize intro order on shift
+  * client side replay filter
+  * reduce cpu use
+  * * only profile as client * only explore churn as relay
+  * fix include file use
+  * typo fix
+  * more intellegent path failure profiling using LRSM
+  * shuffle intros when more than 1 exists
+
+  [ Rick V ]
+  * happy new year
+
+  [ Jeff Becker ]
+  * rename bloomfilter to replayfilter
+  * only ping lokid if a service node
+  * rpc clean up logic, dont fetch list as client AND dont ping lokid as client
+  * remove mutex
+  * relays do profiling and not hand out "shit" routers in explore
+  * make it compile
+  * actually connect to random routers
+  * diversify endpoints
+  * reduce logic calls
+  * don't queue on full write queue
+  * return result
+  * handle write failure
+  * fix up tcp connection logic
+  * if select_random_hop_excluding returns false we should probably break anyways so do that
+  * update readme to include pkg-config
+
+  [ Jeff ]
+  * version bump
+
+  [ Jason Rhinelander ]
+  * Lower compiler settings to -march=x86-64
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 08 Jan 2020 18:46:52 -0400
+
+lokinet (0.6.1-2) sid; urgency=medium
+
+  * Fix default testnet router config
+  * Fix bootstrap file assertion in service files
+  * Fix lokinet-router not enabling by default
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Sat, 28 Dec 2019 13:32:46 -0400
+
+lokinet (0.6.1-1) sid; urgency=medium
+
+  [ Ryan Tharp ]
+  * Update readme.md
+
+  [ Jason Rhinelander ]
+  * Use memcpy to extract hash value
+  * Disallow AlignedBuffer < 8 bytes; add oddball buffer sizes
+  * Enable DOWNLOAD_SODIUM for travis builds
+
+  [ Stephen Shelton ]
+  * Enable the JSON RPC API by default
+
+  [ Ryan Tharp ]
+  * remove win32 note per Jeff
+
+  [ Rick V ]
+  * why was this there
+
+  [ Jeff Becker ]
+  * make format
+  * version bump with intentional grammar troll motto for science related ventures.
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 26 Dec 2019 13:57:42 -0400
+
+lokinet (0.6.0+git20191219-1) sid; urgency=medium
+
+  [ Rick V ]
+  * update netid on windows side
+
+  [ Jason Rhinelander ]
+  * Add -DDOWNLOAD_SODIUM to re-enabled dl&build of sodium
+
+  [ Rick V ]
+  * do not hardcode version into user-agent string
+
+  [ Thomas Winget ]
+  * implement timers using libuv
+  * Change ILinkLayer::ScheduleTick to use new timer
+  * fix derp nested function call and derp merge error
+  * make dht context use new libuv timers
+  * remove obsolete timer-related code
+
+  [ Ryan Tharp ]
+  * Xenial compatibility
+  * try to fix gitlab CI (from 991)
+  * correct ninja binary case
+
+  [ Jeff Becker ]
+  * fix unit tests
+
+  [ Jason Rhinelander ]
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 19 Dec 2019 13:16:59 -0400
+
+lokinet (0.6.0-2) sid; urgency=medium
+
+  * Added default port lokinet ufw rule
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 17 Dec 2019 02:04:37 -0400
+
+lokinet (0.6.0-1) sid; urgency=medium
+
+  * Rediff patches
+  * Add -DDOWNLOAD_SODIUM to re-enabled dl&build of sodium
+  * Add ucf to depends for metapackages
+  * Enable lokid mode in auto-generated router configs
+
+  [ Jeff Becker ]
+  * stricter timeouts
+  * Revert "stricter timeouts"
+  * dont fail on 0 sized data fed to json parser
+  * allow multiple calls to FeedData
+  * update readme for freebsd
+  * remove abyss-exe
+  * freebsd fix
+  * require version
+  * more
+  * require pkgconf package in freebsd build
+  * use linux codepath for freebsd in filesystem.hpp
+
+  [ Rick V ]
+  * get ready for v0.6
+  * include all platform dependencies transitively
+  * add note
+  * don't be aggressive
+  * fix test suite
+  * Explicitly align to 16 bytes on Win32 targets
+  * add definitions for System5 and generic non-Apple BSD
+  * fix versiontag
+  * clang-format everything
+  * microsoft libc a shit
+  * the internal windows toolchain _already_ provides a default manifest
+  * nit
+
+  [ Jeff Becker ]
+  * netid update
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 16 Dec 2019 21:12:12 -0400
+
+lokinet (0.6.0~rc2+git20191215-3) sid; urgency=medium
+
+  * Disable NATIVE_BUILD
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 16 Dec 2019 15:20:58 -0400
+
+lokinet (0.6.0~rc2+git20191215-2) sid; urgency=medium
+
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 16 Dec 2019 00:18:47 -0400
+
+lokinet (0.6.0~rc2+git20191215-1) sid; urgency=medium
+
+  * Updated git tag in version
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Sun, 15 Dec 2019 23:36:23 -0400
+
+lokinet (0.6.0~rc2-3) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * increase ack window
+
+  [ Jason Rhinelander ]
+  * Don't include net/if.h to help xenial
+
+  [ Jeff Becker ]
+  * fix typo, reduce delivery timeout
+  * fix slow start bug
+  * change interval such that FEC is less often done
+  * remove internal limit on response size
+  * prune unused files.
+  * remove undeeded test case
+  * fix include
+
+  [ Jason Rhinelander ]
+  * Add default mainnet/testnet URLs
+  * curl: less verbose and fail on HTTP error response
+  * deb: add separate mainnet/testnet systemd services
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Sun, 15 Dec 2019 23:34:23 -0400
+
+lokinet (0.6.0~rc2-2) sid; urgency=medium
+
+  * Refreshed patches
+  * Add required libcurl dep
+  * added libsodium dep
+  * Pass debian version as GIT_VERSION
+  * Disable 1024 aligned buffer test
+  * lokinet-rcutil renamed to lokinetctl
+  * cherry-picked libabyss read fix
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Sun, 15 Dec 2019 13:24:58 -0400
+
+lokinet (0.6.0~rc2-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * tracy lock contention testing and other fun things
+  * dont nack replayed messages, tweak transmission parameters.
+
+  [ Michael ]
+  * Abort when a null mutex is locked from a different thread (in debug mode only)
+
+  [ Jeff Becker ]
+  * remove more locking and make it safe
+  * ensure no crash on quit
+  * make it compile
+  * change default url for bootstrap
+  * add multi-ack and change protocol handshake to pin identity key
+  * make it compile
+  * break it again just to be sure
+  * multithreaded iwp cryptography
+  * more async cryptography
+  * testnet
+  * more
+  * unstaged changed
+
+  [ jeff ]
+  * gut libutp and finish making things compile and pass tests
+  * try calling stuff in logic thread from event loop
+
+  [ Jeff Becker ]
+  * finish multithread cryptography first pass
+  * move it arround
+
+  [ jeff ]
+  * try fixing handover and add snapp traffic to multithreaded crypto workers
+
+  [ Ryan Tharp ]
+  * Change how webhooks are called
+
+  [ Michael ]
+  * Enable more sanitisers
+
+  [ Rick V ]
+  * Remove binaries, download them at runtime
+  * new http parser
+  * refactor lokinet-bootstrap
+  * we grab a prebuilt bootstrap at build time
+  * try set up environment for travis installer build
+  * try install .net manually
+  * ok let's see how we're locked up
+  * skip null adapters
+  * clang-format
+  * undo travis changes
+  * bump to 0.5.1
+  * bump to 0.5.2
+  * remove old bootstrap code
+  * build mbedtls from source JIT
+  * replace custom bootstrap with curl to match all other platforms
+  * specify host/target explicitly for cross-build
+  * add targets for release engineering
+  * fix static build
+  * fix command line parameters
+  * try running curl if we can't use native WebClient
+  * fix bootstrap command line
+  * fix license
+  * quote paths
+  * Revert "fix license", do the CRLF conversion at installer build time
+  * update URI shortcuts
+
+  [ Michael ]
+  * Add initial macOS app
+  * Try to fix windows build
+  * Fix static link with gcc
+  * Use a hardened build for macOS release
+  * Distinct ios build
+  * Use a hardened build for macOS release
+  * Improvements to app workflow
+
+  [ michael-loki ]
+  * Make Travis happy
+
+  [ jeff ]
+  * don't need that
+  * remove log level change
+  * fix windows port and make it compile
+  * use absl optional
+  * always use absl for string_view
+  * use static_cast
+  * revert to c++14 for non win32
+
+  [ Stephen Shelton ]
+  * Add a --version flag to lokinet CLI args
+
+  [ Michael ]
+  * Support version over jsonrcp
+
+  [ jeff ]
+  * flesh out vpn c api clean up cruft
+
+  [ Michael ]
+  * Introduce --background to only start JSON RPC
+
+  [ jeff ]
+  * update cmake
+
+  [ Michael ]
+  * Apply Jeff's comments
+  * Split cmake files for executables into src dirs
+
+  [ michael-loki ]
+  * Fixup
+
+  [ Michael ]
+  * Fix makefile location
+  * More CI fixes
+  * fixup ios
+
+  [ jeff ]
+  * initial jni wrapper stuff
+  * finish wiring up jni shizz
+  * try making it compile
+  * fix cmakelists.txt file paths
+  * typofix
+  * pass template arguments in, fix typo
+  * more fixups
+  * cast
+  * typofix
+  * typo fix
+  * more fixes, implemenmt missing functions
+  * close -> closeasync
+  * close async
+  * update comment
+
+  [ Jeff Becker ]
+  * remove unused file
+
+  [ Michael ]
+  * Convert RPC endpoint to be a lookup table
+  * Add rpc call to get current addresses for our node
+  * Use libcurl (optional dependency) to hit jsonrpc
+  * Review fixes
+  * Fix travis deps
+
+  [ Stephen Shelton ]
+  * Add comments to NullMutex implementation to express intent
+
+  [ jeff ]
+  * call read handler in logic thread
+
+  [ Stephen Shelton ]
+  * Add numNodesKnown to llarp.admin.dumpstate RPC endpoint
+  * Even more clarity to NullMutex comments
+
+  [ Jason Rhinelander ]
+  * Fix build on xenial
+
+  [ jeff ]
+  * revert to ed25519 for signing, this breaks everything (again).
+  * update cmakelists.txt to no longer build removed file
+  * use get_service_nodes rpc endpoint
+
+  [ Stephen Shelton ]
+  * Add missing #endif (presumably from 281fbff)
+
+  [ jeff ]
+  * fix #865 by not using logic if it is null in udp_tick
+  * make format
+  * disable DoH using mozilla's ISP backdoor record.
+  * use correct rpc call to lokid
+  * try making it work in the case that is broken on travis
+  * make it compile on windows
+  * add unit test for identity_keygen
+  * make it compile
+
+  [ Stephen Shelton ]
+  * Prevent in-source-builds with cmake macro
+
+  [ Ron ]
+  * Update readme.md
+
+  [ Jeff Becker ]
+  * fix event loop tcp connections so they are thread safe
+  * revert a few things
+  * make format
+  * make format
+  * fix compile error on freebsd
+  * fix crash
+  * make non copyable
+  * update _sz
+  * fix warnings and prevent bug that sends invalid traffic to user
+  * fix bounds check
+  * use data not begin
+  * make it compile
+
+  [ Ryan Tharp ]
+  * Fix whitespace formatting
+  * MacOS Installer: Generate default config
+
+  [ Jeff Becker ]
+  * devendor libsodium by default except for android
+  * finishing touches
+  * update travis
+  * use vendored libsodium if we dont have a good version
+  * set version in FindLibsodium.cmake
+  * use PACKAGE_FIND_VERFSION
+  * enable IOS on IOS
+  * fix typo
+  * disable abyss-main
+
+  [ Jason Rhinelander ]
+  * Fix cmake sodium version check
+
+  [ Jeff Becker ]
+  * try disabling extra calls for some reason sodium_memcmp destroys the stack and i have no idea why
+  * enable see2 when used
+  * if this works i'll be pissed at gcc
+
+  [ Rick V ]
+  * a. GCC LTO requires specifiying CXXFLAGS in LDFLAGS
+  * grab everything and the kitchen sink at build time instead
+  * we no longer need IDP (the runtime download plugin)
+  * ok release target now downloads the same known-good assets from public server
+  * lto not supported for cross compile targets
+  * ok implement libuv stubs for tcp connectors
+  * ok add the write handler here too
+  * emit libuv-like stub externally
+  * c-f everything
+  * make that a universal rule
+  * just write the data straight into the socket
+  * ok set write handler in event loop
+  * oops fix up some missing code
+  * manually merge #859
+  * restore crypto flags for binary builds
+  * fix windows
+  * add patchset for libsodium-upstream-stable so we can get rid of vendored lib
+  * add note
+  * undo change in preparation of removing this shit code
+  * remove vendored libsodium
+
+  [ Jeff Becker ]
+  * pull in libsodium if local version sucks
+
+  [ Jason Rhinelander ]
+  * Move sodium download into separate cmake include
+  * Fix download hash verification & version string
+
+  [ Rick V ]
+  * add patch for libsodium 1.0.17
+  * add cmake rule to patch libsodium on windows
+  * add patch for latest stable libzmq on windows with a configure note
+  * fix note
+
+  [ Jeff Becker ]
+  * fix issue #894
+  * add compile time override for libsodium tarball url using -DSODIUM_TARBALL_URL=https://whatever/tarball.tar.gz
+  * seek for version and set it before deserializing
+  * try fixing leak
+  * use <= not ==
+  * meh
+  * move calling of path build sccess hook to correct place
+  * flush link session encrypt queue immediately after handling plaintext packets
+  * Revert "move calling of path build sccess hook to correct place"
+  * changes from review
+  * try interchanging pump order
+  * call Router::PumpLL after every batch of packets from a link session
+  * make it compile
+
+  [ Jason Rhinelander ]
+  * Silence unused variable warnings in release build
+
+  [ Jeff Becker ]
+  * get rid of NON_PC_TARGET
+  * add forgotten file
+  * move it
+  * detect properly for mobile
+  * more
+  * exclude debian from setting CRYPTO_FLAGS
+  * move more stuff
+  * move it more
+  * disable gtest when no unit tests
+  * disable windows native in CI
+  * re-add windows to CI pipeline just allow fail
+  * fix patching command
+  * i hate windows
+  * make path builds work again
+  * remove printf
+  * make format
+  * make router give time directly
+
+  [ Thomas Winget ]
+  * Add per-path queues, prioritize control messages over traffic
+  * ban zero id for pathid; clarity and cleanup
+  * fix seg fault, fix uninitialized static member
+  * do...while; make format; remove erroneous GUARDED_BY
+  * remove our paths from outbound queues
+  * remove our paths from outbound queues
+  * fixes some logical errors in per-path queues
+
+  [ Jeff Becker ]
+  * prevent double free crap with shared_ptr
+  * iot seems that logic thread didn't work the way i remember it should make logic work the way it should
+  * make format
+  * make unit tests pass for iwp
+  * add warning when trying to queue onto full logic thread
+
+  [ Stephen Shelton ]
+  * Drop new inbound IWP sessions when the first packet can't be handled
+  * make format (and git commit --amend to re-trigger CI)
+  * Reduce log level of IWP session issues as they may be encountered frequently and normally
+
+  [ Jason Rhinelander ]
+  * Remove shell globbing of path
+  * clang-format fixes
+  * Don't pointlessly set conffname back to itself
+  * Fix runtime AVX2 detection
+
+  [ Stephen Shelton ]
+  * Stub out KeyManager class
+  * Replace bencode_write_version_entry with a more general-purpose function for writing bencoded dictionary entries
+
+  [ Jason Rhinelander ]
+  * Lower the ev tick interval to 10ms
+
+  [ Stephen Shelton ]
+  * Add "keyfile version" to RouterContact
+  * Rename bencode function for clarity
+
+  [ Jeff Becker ]
+  * contention killer
+  * make sure all calls of logic thread jobs are not having contention
+  * add trace log level for tracking logic thread jobs
+  * typo fix in release
+  * try fixing file log segfault
+  * make it compile
+  * make contention checker templated
+  * please the gods of valgrind
+  * remove use of void * in godawful old code from a time before happyness
+  * use lambda
+  * std::move
+  * initialize with zeros
+  * remove valgrind access errors
+  * work in progress
+  * flush quues of other paths
+  * make it compile
+
+  [ Stephen Shelton ]
+  * Implement code to move old key files out of the way
+
+  [ Jeff Becker ]
+  * fix "zero hop" bug
+  * make logic job queue 8 times bigger
+  * make job queue size configurable
+  * make master build release by default
+
+  [ Stephen Shelton ]
+  * Reorganize priv key file loading a bit and hook KeyManager into Router
+
+  [ Jeff Becker ]
+  * use curl to fetch from lokid rpc the identity key
+  * sleep
+  * move sleep
+  * update readme and disable curl on windows
+  * clear response between tries
+  * add check for identity key validity
+  * ping lokid rpc
+
+  [ Stephen Shelton ]
+  * Undo adding of crypto version to RouterContact, other fixes
+
+  [ Jeff Becker ]
+  * reduce number of jobs we put onto the logic thread
+  * add metrics tracking for logic jobs in debug mode
+  * prune members in timer context
+  * use timer guard for all jobs in debug mode
+  * prevent segfault
+
+  [ Thomas Winget ]
+  * Track and log UV event loop ticks in debug builds
+  * Show number of logic thread jobs in debug builds
+
+  [ Jason Rhinelander ]
+  * Don't flush here; we already have a tick flushing
+
+  [ Jeff Becker ]
+  * reduce calls in link pump
+  * process transit hops on flush
+  * dont process empty queues
+  * use lockless queues to gather results of transit traffic work
+  * only flush when no other jobs are executing
+  * flush in logic
+  * try async decrypt then verify
+  * batch and flush
+  * fix address mapping bug
+  * remove jenky call to logic thread in link server
+  * ammend previous commit
+  * call jobs in logic
+  * dont flood the logic queue
+  * style nitch
+
+  [ Jason Rhinelander ]
+  * Die if job queue full
+  * Set tun to non-blocking
+
+  [ Jeff Becker ]
+  * limit calls
+  * lower limit to 25ms
+  * limit calls to pumpll such that it gets called fast enough but not too much under load
+
+  [ Rick V ]
+  * crash on wine, we support linux, ucb_unix, svr4 natively ffs. i tested this patch on wine 4.4 on fuckin Solaris 11 snv_151
+  * fix error msg
+  * set default bootstrap-uri for legacy ui
+  * tick more often
+
+  [ Jeff Becker ]
+  * fix path resource leak
+  * limit connections
+  * break the world to make it faster
+  * make it compile
+  * dont use auto
+  * fix previous commit
+  * unconditionally bundle first fragment in xmit
+  * make format
+
+  [ Stephen Shelton ]
+  * Handle link transport key in KeyManager
+
+  [ Jeff Becker ]
+  * bump version and motto
+  * handle case with no git directory
+
+  [ Jeff ]
+  * fix readme for libcurl package name on linux
+
+  [ Stephen Shelton ]
+  * Fix bad merge
+  * Move lokid key API request to KeyManager
+
+  [ Jeff Becker ]
+  * make it compile
+
+  [ Jason Rhinelander ]
+  * Bump default netid to gamma for 0.6
+
+  [ Stephen Shelton ]
+  * Init key manager before InitOutboundLinks are configured
+
+  [ Jeff Becker ]
+  * remove unneeded log statement
+
+  [ Stephen Shelton ]
+  * Reinstate link test / update to use KeyManager
+
+  [ Jeff Becker ]
+  * close sessions to non essential nodes
+  * fix typo
+  * only close outbound links
+  * close links lazy
+  * more close changes
+  * reduce window
+
+  [ Stephen Shelton ]
+  * Make format
+  * Avoid trivial getters/setters in KeyManager
+
+  [ Jeff Becker ]
+  * add bootstrap list functionality and utility
+
+  [ Stephen Shelton ]
+  * Backup SNApp keys when migrating to new ed25519 crypto
+
+  [ Jeff Becker ]
+  * use ipv6 only with ipv6 packets
+
+  [ Jason Rhinelander ]
+  * Replace cppbackport with ghc-filesystem
+
+  [ Jeff Becker ]
+  * try fixing router lockup
+  * squash possible race condition
+  * add absl annotations
+  * add systemd watchdog if enabled on compile time
+  * disable absl decorator in release
+  * add deadlock checker and revert bencode change from long ago
+  * fix last commit
+  * use correct format string
+  * reduce log levels at runtime
+  * disable metrics by default
+
+  [ Jason Rhinelander ]
+  * Remove unused argument
+
+  [ Jeff Becker ]
+  * make format and make tests compile
+  * remove callsto Router::PumpLL and stuff gets faster (or stuff)
+  * use faster hashing
+  * fix unit tests
+  * fixes for travis
+  * more travis fixes
+  * another attempt at travis fix
+  * clang fixes
+  * allow windows to fail
+  * more travis config tweaks
+  * prevent crash on exit
+  * make logic and net thread one in the same
+  * call timers with queuer if set
+  * limit timer calls
+  * more cleanup
+  * use thread queue
+  * trypushback
+  * fixes for travis
+  * more travis fixes
+  * another attempt at travis fix
+  * clang fixes
+  * allow windows to fail
+  * more travis config tweaks
+  * prevent crash on exit
+  * make logic and net thread one in the same
+  * call timers with queuer if set
+  * limit timer calls
+  * more cleanup
+  * use thread queue
+  * trypushback
+
+  [ Stephen Shelton ]
+  * Optimize AlignedBuffer:::IsZero()
+
+  [ Jeff Becker ]
+  * make libuv on win32 work
+  * finish remaining changes
+  * more
+  * final change
+  * fug
+  * remove mutexes
+  * consolidate versions
+
+  [ Stephen Shelton ]
+  * Remove typo in version changes
+
+  [ Jason Rhinelander ]
+  * Add missing ev_libuv (now needed everywhere)
+  * Put version info into a compiled file
+  * Simplify AlignedBuffer alignment implementation
+  * Change alignment to std::max_align_t
+
+  [ Stephen Shelton ]
+  * Fix for travis-ci xenial build
+  * Another attempt to make travis-ci's xenial happy
+  * Comment-out ios build for now
+  * make format (or format-verify, at least)
+  * Include error code in log output in Identity::EnsureKeys()
+  * Make format (on recent version-related code)
+  * Use vendored fs::filesystem on all platforms
+  * Remove FS_LIB conditionals
+
+  [ Jason Rhinelander ]
+  * Offer ritual sacrifice to clang-format
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 13 Dec 2019 16:07:08 -0400
+
+lokinet (0.5.2-4) sid; urgency=medium
+
+  * Rename split packages to lokinet{,-bin,-router}
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 29 Oct 2019 16:18:08 -0300
+
+lokinet (0.5.2-3) sid; urgency=medium
+
+  * Fix broken RequireFileExists systemd directive
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 29 Oct 2019 15:13:13 -0300
+
+lokinet (0.5.2-2) sid; urgency=medium
+
+  * Split client and router config/services into separate packages
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 29 Oct 2019 14:06:58 -0300
+
+lokinet (0.5.2-1) sid; urgency=medium
+
+  [ Ryan Tharp ]
+  * Add libuv
+
+  [ Michael ]
+  * Statically link releases
+
+  [ jeff ]
+  * remove libutp and all such code related to utp
+
+  [ Jeff Becker ]
+  * try fixing handover
+
+  [ jeff ]
+  * handover should be fixed now
+  * final touches
+  * bump version and motto
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 20 Sep 2019 18:32:38 -0300
+
+lokinet (0.5.1-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * disable link layer locking because there was no contention
+
+  [ Michael ]
+  * Abort when a null mutex is locked from a different thread (in debug mode only)
+
+  [ Rick V ]
+  * auto config has been removed for months now
+  * some people set the netid explicitly, and set it to default anyway
+  * 0.6 relate and other general updates to MacOS packaging
+  * fix
+  * Update distribution.xml
+
+  [ Jeff Becker ]
+  * disable rc expiration
+  * reduce logging and make format
+  * try more ranges
+
+  [ Jason Rhinelander ]
+  * Move default user/group define into a debian patch
+  * Fix x86-isms in debs
+
+  [ Jeff Becker ]
+  * prune dht peers every router tick
+
+  [ Jason Rhinelander ]
+  * Add lokinet DNS for systemd-resolved and resolvconf
+  * Add no-resolvconf hack for deb install to deb config file
+  * Bump version to 0.5.1 for minor fixes for 0.5.0
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 10 Sep 2019 19:44:51 -0300
+
+lokinet (0.5.0-2) sid; urgency=medium
+
+  * Patch lokinet-bootstrap to use system bootstrap path when run as root
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 04 Sep 2019 15:54:48 -0300
+
+lokinet (0.5.0-1) sid; urgency=medium
+
+  [ Rick V ]
+  * add build option for constrained node ops and make sure everything is now target-optimised in all configurations (allows debugging on the target using the debug build config)
+  * new cmake module
+  * bump version for release
+  * if cppbackport is built, make that consistent too
+  * add description to lokinet svc manifest
+  * undo utf8 conversion
+  * set point-to-point mode on TAP
+  * iconv 🅱roke
+  * move non-string version info to common header
+  * derp
+  * make format crypto/
+  * clang-format remaining code, use __asm__ for avx2 port since we insist on straight C99 without extensions (asm isn't special in C99, __asm__ is)
+  * this kills the TAP
+  * add config edit button, and see if this fixes the pipe read bug
+  * add config file options
+
+  [ Michael ]
+  * Move logging to subdirectory
+  * Move meta programming to subdirectory
+  * Move metrics to subdirectory
+  * Move thread stuff to subdirectory
+  * Fix windows
+
+  [ Rick V ]
+  * oops
+
+  [ Jeff ]
+  * Update motto.txt
+  * Update lokinet-bootstrap
+
+  [ Jeff Becker ]
+  * change default url for bootstrap
+  * update default netid
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 04 Sep 2019 13:37:57 -0300
+
+lokinet (0.5.0~pre20190902-1) sid; urgency=medium
+
+  [ Jeff ]
+  * try fixing handover drop bug
+  * make osx unit tests compile on old gcc
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 02 Sep 2019 21:00:41 -0300
+
+lokinet (0.5.0~pre20190830-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * optimize
+
+  [ Jason Rhinelander ]
+  * Make sure /etc/loki exists during postinst
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 30 Aug 2019 13:13:47 -0300
+
+lokinet (0.5.0~pre20190829-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * prepare for 0.5.0
+  * make it compile
+  * make format
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 29 Aug 2019 13:19:27 -0300
+
+lokinet (0.5.0~pre20190828-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * bump path build handover window, check cooldown on build.
+  * use estimated build time instead of expiration time for delta when determining when to space out builds
+  * add short data fragments and rx replay filter
+  * please the CI gods, wololo
+  * correct constructors on llarp_buffer_t and check rc on regen
+  * quick little fixes
+  * fix explore
+  * get rid of dead code
+  * fix sign
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 28 Aug 2019 12:39:29 -0300
+
+lokinet (0.5.0~pre20190827-2) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * fix log level
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 27 Aug 2019 16:41:25 -0300
+
+lokinet (0.5.0~pre20190827-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * initial mempipe implementation
+
+  [ Michael ]
+  * docker-compose fixes
+  * Give explicit names to builds so we know wtf failed
+  * Fix static linking on macOS
+  * Find libatomic fix cmake magics
+  * Fix on compilers which aren't C++11 by default
+  * Replace StatusObject with underlying JSON type
+  * Use ToString instead
+  * Use ToString over ToHex
+  * Dump more info from router contact
+  * replace endl with '\n in config.cpp
+
+  [ Jeff Becker ]
+  * more
+  * initial iwp
+  * default to iwp
+  * update iwp , add NACK
+  * mark alive on nack
+  * don't crash
+  * send keep alive on pump when needed
+  * disable log spew
+  * lower log level for renegotiate
+  * use std::make_tuple
+  * silence clang errors
+  * silence clang errors again
+  * default to no implementation on pipe for pleasing win32
+  * ignore test on win32
+
+  [ Rick V ]
+  * reeeee
+  * header got stripped
+  * fix log colours on old win32 platforms
+  * add new and improved 32-bit lokinet-rcutil to install pkg
+  * override print
+  * ok use clang-format v8
+
+  [ Jeff Becker ]
+  * code review fixes:
+  * more fixups
+
+  [ Michael ]
+  * Partial fixes for shadow
+  * Fix docker-compose isolated network
+
+  [ Rick V ]
+  * sun fix
+
+  [ despair ]
+  * fix cmake (restore crypto opts)
+
+  [ Rick V ]
+  * add native build option
+
+  [ Jeff Becker ]
+  * add likn layer delivery timeout notification for iwp
+  * add forgotten bits
+  * use correct constructor for llarp_buffer_t
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 27 Aug 2019 11:48:39 -0300
+
+lokinet (0.5.0~pre20190814-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * try adding proper limits
+  * add limits files
+  * include header
+  * limit connections in outbound session maker
+  * more
+  * pump to make stuff speed up if stuck
+  * ensure timestamp is not in future
+  * use llarp::path::default_len to inform how many routers we need
+
+  [ Jason Rhinelander ]
+  * Refresh patches
+
+  [ Jeff Becker ]
+  * correct header?
+
+  [ Michael ]
+  * Use the right version of clang-tidy
+  * Fix make install
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 14 Aug 2019 16:12:26 -0300
+
+lokinet (0.5.0~pre20190813-1) sid; urgency=medium
+
+  [ Michael ]
+  * Set fast_finish so we don't need to wait for the sloooow 'make windows' target
+  * WIP on docker-compose workflow
+
+  [ Jeff Becker ]
+  * drop missmatched convotags
+
+  [ Michael ]
+  * Fix a deadlock when link fails to establish
+
+  [ Jeff ]
+  * don't expire based on reply intro
+
+  [ Michael ]
+  * Fix suspicious thread-unsafety
+  * Make format
+
+  [ Jeff Becker ]
+  * also check if we are a public router when checking for timeout in read direction
+  * make it compile
+  * move convotag missmatch check to the right place
+  * make format
+  * more consise utp timeout logic
+  * make it compile
+  * lokinet monitor
+  * when pushing large amounts per tick try not to bottleneck on utp_writev
+  * pumpwrite -> pump
+  * make sure stats are called every 1s
+  * redo commit
+
+  [ Michael ]
+  * CI to catch missing `make format`
+  * Test make windows on macOS, and avoid timeouts
+  * clang-tidy modernize pass
+  * Fix format verify
+  * Bump version of cxxopts
+  * Update rcutil and add to build
+  * Include json output
+  * make format
+  * Add missing header
+  * Dump config
+  * make windows fixes
+  * try with clang-format 7
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Tue, 13 Aug 2019 10:58:15 -0300
+
+lokinet (0.5.0~pre20190805-1) sid; urgency=medium
+
+  [ Rick V ]
+  * add debug helper lib for core dump generation on all supported windows targets
+  * ok use exception filter
+  * back out for now
+  * enable SetThreadName (#689)
+  * fix single-arch install config
+  * fix header case
+  * add make windows config command line
+  * fix sun
+  * really fix #689 this time
+  * fix netbsd
+  * this is new, intro'd with the libuv refactor
+  * clang-format
+  * namespace
+  * why isn't cmake picking this up
+  * this is getting hairy
+  * fix thread naming on windows
+  * get our TAP ifindex to pass to ipv6(1) on old platforms
+  * fix a crash on some win32 systems
+
+  [ Michael ]
+  * Add fail-able docker build for gcc trunk
+  * Fix gcc trunk warnings
+  * fixup! Fix gcc trunk warnings
+
+  [ Jeff Becker ]
+  * dont close socket on bad state
+
+  [ Michael ]
+  * Jeff's fixes
+
+  [ Jeff Becker ]
+  * don't time out clients based on downstream traffic
+  * always regen expired rc
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Mon, 05 Aug 2019 21:19:05 -0300
+
+lokinet (0.5.0~pre20190801.1-1) sid; urgency=medium
+
+  [ Jeff Becker ]
+  * have IPPacket::srcv6 and IPPacket::dstv6 check for ipv4 packets and expand them to ipv6
+  * call path build fail stuff in logic thread
+  * properly close dropped inbound sessions on utp
+  * remove limit
+  * mark addresses as active when we use them
+  * remove session->Close()
+  * close dropped session later in event loop
+  * always rewrite address
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 01 Aug 2019 21:02:48 -0300
+
+lokinet (0.5.0~pre20190801-3) sid; urgency=medium
+
+  * Fix "boostrap.signed" misnaming in deb postinst
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 01 Aug 2019 16:59:52 -0300
+
+lokinet (0.5.0~pre20190801-2) sid; urgency=medium
+
+  * Replace tmpdir in generated config file
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 01 Aug 2019 16:38:19 -0300
+
+lokinet (0.5.0~pre20190801-1) sid; urgency=medium
+
+  [ Michael ]
+  * Use travis_wait because builds/linkers are slow
+
+  [ michael-loki ]
+  * Try bumping to 30 minutes wait
+  * Go back to 20 minutes, don't let this job block CI
+  * ugh travis
+
+  [ Jason Rhinelander ]
+  * Fix lokinet.ini permissions; clean up during purge
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 01 Aug 2019 13:19:30 -0300
+
+lokinet (0.5.0~pre20190731-1) sid; urgency=medium
+
+  [ Thomas Winget ]
+  * Adds Link-Relay Status Messages
+  * make TransitHop self-destruct if path is invalidated
+
+  [ Jeff Becker ]
+  * run main in it's own thread and set its process name.
+  * try deferred resolve for exit handler
+  * add link layer delivery feedback
+  * make travis happy
+  * propagate all utp link errors
+  * make it compile
+  * * increase utp buffers * disallow inbound traffic on outbound utp link * const correctness
+  * use size_t
+  * fix compile for tests
+  * on logic queue overflow put job on timer instead
+  * correct cmake paramter for shellhooks
+  * * const correctness * use std::map's upper_bound to find many closer entries * randomize key for exploration to allow many explore jobs in paralell
+  * fix crashes in testnet
+  * const correctness
+  * const correctness
+
+  [ Michael ]
+  * Initial experiment with a docker-based CI
+  * try to make some windows
+  * Abandon debian
+  * Fixup
+  * Use __cpp_lib_filesystem
+  * or not
+
+  [ Jeff Becker ]
+  * revert dht stuff
+  * fix dht exploration ;~;
+  * remove -1
+  * use std::min
+  * use ipv4 address on snodes for now
+
+  [ Michael ]
+  * Add ASAN CI
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Wed, 31 Jul 2019 23:45:23 -0300
+
+lokinet (0.5.0~pre20190726-1) sid; urgency=medium
+
+  [ Thomas Winget ]
+  * make travis happy again *and* don't break message sending
+
+  [ Jeff Becker ]
+  * fix crash of clients and propagate lookup failures
+
+  [ Jason Rhinelander ]
+  * lokinet-bootstrap improvements
+  * Remove unneeded git dependency
+  * Deb updates & fixes
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Fri, 26 Jul 2019 18:21:31 -0300
+
+lokinet (0.5.0~pre20190725-1) sid; urgency=medium
+
+  [ Jeff Becker (probably not evil) ]
+  * bug fix release
+
+  [ Jeff Becker ]
+  * i am a potatoe
+  * aaaaaaaaaaAAAah
+  * potatoe
+  * mor potatoe
+  * don't kill bootstrap
+  * aaaaaaA
+  * disable
+  * connect out to committed routers if we don't have a session each tick
+  * don't kill nodes as service node
+  * null check
+  * prevent crash
+  * more
+  * attempt every time
+  * use 1 for dht exploration
+  * fix
+  * const
+  * don't resize frames
+  * meh
+  * fix
+  * more
+  * fuck
+  * whatever
+
+  [ Michael ]
+  * Fixup MSVC build
+
+  [ Jeff Becker ]
+  * revert breaking change
+  * re-enable unit test
+  * hax to make it work.
+  * hard code range for now as a /16 don't revert me
+  * add comment
+  * pick newer intros only
+
+  [ Rick V ]
+  * really remove line break
+  * move tun autoconfig from config parser to tun setup
+  * fix ui
+  * fix UI again
+
+  [ Jeff Becker ]
+  * more hax
+  * shift introduction
+  * fix
+
+  [ Michael ]
+  * Fix ASAN build
+  * More explicit error when keyfile is not a valid file
+  * Convert router diskworker to use a modern ThreadPool
+  * Drain diskworker pool on close
+  * Change ExecShellHookBackend to use a modern thread pool
+
+  [ Jeff Becker ]
+  * commit recent stuff
+
+  [ Michael ]
+  * Apply rule of zero to code base
+
+  [ Jeff Becker ]
+  * make format and revert stupid alloc changes
+  * try allowing ip addresses in bind section
+
+  [ Michael ]
+  * Minor warnings fixes in python/javascript code
+
+  [ Jeff Becker ]
+  * more docs
+  * don't move, instead copy
+
+  [ Ryan Tharp ]
+  * osx pkg updates
+
+  [ Michael ]
+  * Replace dict_reader/list_reader with version which doesn't involve indirection
+
+  [ Rick V ]
+  * bump version
+  * fix
+  * jeff forgot to bump
+
+  [ Jeff Becker ]
+  * add docs on debs
+  * revert
+  * move llarp::Logic to std::shared_ptr
+  * make format
+  * use limited size queue for logic and singled threaded threadpool
+  * fixit
+  * fix
+
+  [ Michael ]
+  * Fix thread safety issue in service::Endpoint::ProcessDataMessage
+
+  [ Jeff Becker ]
+  * DRY
+  * more
+  * double path build timeout
+
+  [ Michael ]
+  * Remove all use of IBEncodeMessage
+
+  [ Jeff Becker ]
+  * update docs and discard pending traffic on connect timeout to prevent memleak
+  * prefer inbound links over outbound links
+  * * don't lookup routers in sendtoorqueue * don't lookup routers that are not public when committing
+
+  [ Jeff ]
+  * Update high-level.txt
+
+  [ Jeff Becker ]
+  * use for each loop
+  * delete inbound messages right after being handled
+  * close timed out sessions
+  * more strict connection timeouts
+  * only check for ready paths when counting in future
+  * update munin script
+  * fix
+  * more
+  * more
+  * add missing lines
+  * gfdi
+  * aaAaAAaaaa
+  * add member to rpc response indicating weither or not a peer is a service node
+  * don't log ips
+  * differentiate between clients and service nodes
+  * explicitly lookup router if not connected to it on LRCM forward.
+  * uncomment
+  * make format and introduce new function EnsureRouter on router to check nodedb or do dht lookup
+  * set lifetime of paths
+  * fix previous commit
+
+  [ Michael ]
+  * Add CryptoManager class to provide a guard-style class to manage the current Crypto instance
+  * Port code to use CryptoManager over passing Crypto pointers
+  * Move tests to use top-level LlarpTest
+  * Fix crypto build derp
+
+  [ Ryan Tharp ]
+  * try to configure travis
+  * Travis attempt #2
+  * Need GCC-6 for C++17
+  * change default compiler to gcc-6
+  * Oh actually install the apt packages in docker, impressed it gets this far
+  * win/mac, xenial and make test at the end
+  * xenial doesn't have a gcc-6 without ubuntu-toolchain-r
+  * install gcc6 after some basics
+  * give up an xenial too many overrides, bionic it is
+  * add IRC support
+  * well if IRC isn't going to work, add discord webhooks
+  * Add travis badge
+
+  [ Michael ]
+  * Initial No-Op Crypto implementation
+  * Update LinkLayer tests to use no-op crypto
+
+  [ Jeff Becker ]
+  * make format
+  * make debian stable happy
+
+  [ Michael ]
+  * Move gtest to vendor dir
+  * Update cmake to point to vendor dir
+
+  [ Jeff Becker ]
+  * revert modification to libutp
+  * ingore paths that drop exit traffic
+  * fix previous commit
+  * use libuv
+
+  [ Michael ]
+  * Create util::MemFn and memFn to make binding callbacks easier
+  * Convert to use memFn
+
+  [ Jeff Becker ]
+  * use timers not idle
+  * try fixing tcp
+  * more libuv jizz
+  * make tcp work with libuv probably
+  * fix travis and gitlab
+
+  [ Ryan Tharp ]
+  * Add static link to CI
+  * add more makefile options
+  * actually test the variables
+  * disable extras for production day
+
+  [ Jeff Becker ]
+  * add rc expiration (again)
+  * fix
+  * use reply intro for inbound sessions
+  * revert
+  * use latest tag not oldest tag in inbound convos
+  * dont use timers use check for tick
+  * please don't work
+  * please don't work
+
+  [ Ryan Tharp ]
+  * build a router config not a client
+
+  [ Jeff Becker ]
+  * try switching logic
+  * fix
+  * eh
+  * fix
+  * update RC expiration logic, lookup more often and remove stale entries
+  * use timetamps
+  * put deltas in timestamps
+  * try addressing issue #642
+  * try fixing freebsd build
+  * again
+  * another freebsd fix
+  * (more freebsd fixes)
+  * try linking for freebsd
+  * ammend previous commit
+  * another fix for freebsd
+  * ipv6
+  * more
+  * make exits support v6 probably
+  * handle ipv6 exit traffic
+  * fix exit traffic for v6
+
+  [ cathugger ]
+  * net/ip: cleanup
+  * net/ip: IPv6 TCP/UDP delta chksum funcs
+
+  [ Michael ]
+  * Log when we publish to metrictank
+  * Tidy up metric code
+  * Unfuck metrics
+  * Unfuck integer metrics
+
+  [ cathugger ]
+  * net/ip: IPv6 packet deltachecksum
+  * net/ip: update names
+  * fix stuff
+  * make format
+
+  [ Jeff Becker ]
+  * typofixes
+
+  [ cathugger ]
+  * net/ip: skip IPv6 option headers
+  * net/ip: correct IPv6 fragment processing, also check for length before modifying
+
+  [ Jeff Becker ]
+  * fix tpyos and pass event loop by l value
+  * make format
+  * update for win32 parts
+  * reverse dns for ipv6
+  * swap intros on message rejection
+  * swap intros on message rejection
+  * add guard
+  * add release key files
+  * update readme with libuv dependancy
+  * json logging option
+
+  [ Ryan Tharp ]
+  * attempt freebsd build
+  * fix fbsd tag
+  * fix typo
+  * fix freebsd tag
+  * Update .gitlab-ci.yml
+
+  [ Michael ]
+  * Introduce tag types
+  * Introduce tags for metrics
+  * Publish metric tags
+
+  [ Ryan Tharp ]
+  * fix freebsd artifact
+
+  [ Rick V ]
+  * remove all disused platform-specific event loops
+  * we libuv now
+
+  [ Jeff Becker ]
+  * differentiate between inbound and outbound convos
+  * pass in path
+
+  [ Michael ]
+  * Move local publishers to their own files
+  * Fix event loop tests post-libuv
+
+  [ Jeff Becker ]
+  * try not spamming network with builds
+  * store looked up routers
+  * make format
+  * remove libuv variable from makefile
+  * add handover window to router contact updating
+  * save all nodedb entries in memory on exit
+
+  [ Rick V ]
+  * fix legacy windows console logger
+  * try fixing libabyss Why does abyss not inherit the include folders used by the rest of the lokinet build?
+  * restore llarp_make_ev_loop() as we only use libuv now; separate function is now ded code
+  * make format
+  * fix windows native console
+  * I _think_ this is a decent compromise for LTO vs non-LTO builds
+
+  [ Jeff Becker ]
+  * check for expiration
+  * make freebsd compile
+
+  [ Michael ]
+  * Refactor path build code
+
+  [ Rick V ]
+  * now i remember why i had to open /dev/tun twice on solaris
+  * fix callback hell
+  * finally fix solaris
+
+  [ Jeff ]
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+  * Update readme.md
+
+  [ Jeff Becker ]
+  * fix borken unit tests
+
+  [ Michael ]
+  * Move exit messages to match header
+  * Move remaining messages around
+
+  [ Jeff ]
+  * Update readme.md
+
+  [ Michael ]
+  * Move subset of messages to right directory
+  * Move exit messages
+  * Move other messages
+  * Tweak link message parser
+  * Merge changes from upstream
+  * Rename InboundMessageParser to LinkMessageParser
+
+  [ Ryan Tharp ]
+  * Update README.md
+
+  [ Michael ]
+  * Rename message files
+  * Send netid to metrictank
+
+  [ Jeff Becker ]
+  * fix comparision
+
+  [ Michael ]
+  * Tidy up pathbuilder code
+
+  [ Jeff Becker ]
+  * fix up libuv close logic
+  * fix up libuv close logic
+  * =default
+  * only kill rcs as client
+  * try fixing issue number 17 (not done)
+  * finish up issue 17
+  * continue using llarp::openfilestream
+  * try fixing issue number 17 (not done)
+  * finish up issue 17
+  * continue using llarp::openfilestream
+  * make it compile and make it secure files
+  * reset errno and make unit tests pass
+  * explore faster via all peers
+  * fix fs stuff
+  * fix freebsd build
+
+  [ Ryan Tharp ]
+  * copy travis to temp fix linux build
+  * run update first
+  * gitlabci: actually install the package
+
+  [ Jeff Becker ]
+  * tweak
+
+  [ Michael ]
+  * Remove cppbackport from vendor dir
+  * Find libuv for Ryan
+
+  [ Jeff Becker ]
+  * update docs
+  * handle reply intro
+  * choose first timestamp
+  * outbound context build more
+  * fix previous commit
+  * oooof
+  * check for zero
+  * swap intros only on path build success
+  * correct comparison
+  * fix convotag inbound state setting
+  * set outbound context to be outbound session
+  * fix order
+  * add more metrics
+  * track drop in metrics
+
+  [ Michael ]
+  * Revert "Merge pull request #668 from michael-loki/remove_cppbackport"
+
+  [ Jeff Becker ]
+  * do direct lookup when in endgame scenario as client when looking for router
+  * better logging
+  * start seperating tun and endpoint
+  * start work on seperating ips out of endpoint
+  * close after 30 seconds of dead
+  * close after 30 seconds of dead
+  * pump write when handshaking
+  * ping on send idle not recv idle
+  * relax timeouts for handshake and make format
+  * pick ready paths for reply
+  * swap path on inbound convo if expires soon
+
+  [ Michael ]
+  * Add in-source version of std::filesystem::permissions
+  * Move config class to its own dir
+  * Move ini parser as well
+  * Convert to load config in config loader
+  * Fix tests
+
+  [ Jeff Becker ]
+  * disable rpc by default
+  * actually set config for network
+
+  [ Thomas Winget ]
+  * Reverts #678 #677 and #669 with hashes:
+
+  [ Jeff ]
+  * Update readme.md
+  * Update api_v0.txt
+
+  [ Jeff Becker ]
+  * remove threadpool.hpp
+  * remove threadpool.hpp
+  * don't lock when visiting links
+  * use sane defaults and deprecated "auto" as it's horribly bad style
+  * * fix testnet codepath
+
+  [ Jeff ]
+  * make it work
+
+  [ Jeff Becker ]
+  * * fix testnet codepath
+
+  [ Jeff ]
+  * make it work
+
+  [ Jeff Becker ]
+  * try fix for localhost.loki
+  * fix last commit
+
+  [ Michael ]
+  * Revert "Merge pull request #679 from tewinget/revert-config-refactor"
+  * Fix llvm 8 build
+  * Fixup and add tests
+  * Fix macos build after rebase
+  * Set netid before doing anything else
+
+  [ Jeff Becker ]
+  * fix
+  * make format
+  * whitespace fix
+  * initialize tun with 0 and set defaults in correct places
+
+  [ Michael ]
+  * Move router config to be encapsulated
+  * Have fromSection return void
+  * Allow override of some config via env variables
+  * Allow override of the rest of the config
+  * Add function to set threadname, and use from threadpool impl
+
+  [ Jeff Becker ]
+  * make threadpool consice
+  * lel
+  * make it compile
+  * make it compile
+  * correct name
+  * use logical or instead of bitwise or
+  * use const reference and don't log invalid packets
+  * use logical or not bitwise or and change function name to be plural
+  * remove comment that is wrong
+  * * pump after stopping hidden service context
+
+  [ Michael ]
+  * Remove redundant else blocks
+  * Address Jeff's comment
+
+  [ Jeff Becker ]
+  * make it compile
+  * fix freebsd build
+
+  [ Michael ]
+  * Add missing cppbackport fs::path constructor
+
+  [ Jeff Becker ]
+  * use correct function from free bsd pthread
+  * use elseif
+  * fix freebsd build for real
+
+  [ Michael ]
+  * Fixup two minor warnings
+
+  [ Jeff Becker ]
+  * typo fix lel
+  * disable shell hooks by default
+  * use correct uint128 functions when doing endian flipping
+  * make format
+  * change order of configuration
+  * try bailing when configration failed
+  * more logging
+
+  [ Jeff ]
+  * correct worker threads amounts
+  * fix previous commit
+
+  [ Michael ]
+  * Add FindLibUV and migrate
+
+  [ Jeff Becker ]
+  * use std::string instead of fs::path
+
+  [ Michael ]
+  * Refactor endpoint state management to a new class
+
+  [ Jeff Becker ]
+  * try fixing bootstrap
+  * durable write for nodedb
+  * only update if newer
+  * use static lookup timeout
+  * unconditional insert so that we dont run out of peers
+  * always ask peers for next closest
+
+  [ Michael ]
+  * Matrix build for travis
+  * Fix config builds
+  * Fix Ubuntu builds
+  * Update ubuntu dockerfile to use static linking
+  * always build release
+  * Attempt macOS build
+  * Set PIC everywhere
+  * Remove matrix build of NETNS
+  * Drop xcode11 for now
+  * Install make too
+  * fix formatting
+  * Use ccache to speed up builds
+  * Install gold on ubuntu
+  * Disable matrix builds on build type
+  * Matrix build debug and release, since we care about both
+
+  [ Ricardo Jesus Malagon Jerez ]
+  * Update readme.md to include readme_es.md link
+  * Create readme_es.md spanish translation
+
+  [ Jeff Becker ]
+  * make cross compile happen in makefile
+
+  [ Ricardo Jesus Malagon Jerez ]
+  * Update readme_es.md
+
+  [ Jeff Becker ]
+  * * fix arm cross compile on ubuntu disco
+  * add forgotten file
+  * add ppc64le toolchain
+  * add cross compile docs
+  * update cross compiler docs
+  * fix network interface iteration infinite loop
+  * reduce logging
+  * make it compile
+  * when lastSend is zero don;t time out
+  * set timestamps to zero
+  * revert
+  * only issue deferred utp acks before timeout checks in pump
+  * make hop count and length configurable
+  * set limits correctly
+  * do lookup for RC to neighboor even if we have them in our DHT buckets so we get an updated RC in reply
+  * fix testnet scripts
+
+  [ Ricardo Jesus Malagon Jerez ]
+  * Create release_es.md
+  * Create CONTRIBUTING_es.md
+  * Update CONTRIBUTING.md
+
+  [ rjmalagon ]
+  * Basic docs translations to spanish, more to go later
+
+  [ Michael ]
+  * Test windows support in travis
+  * Try installing make and ninja
+  * Fixup fs
+  * Try with clang?!
+  * Bump cmake version maybe
+  * use whatever vcvarsall is
+  * exceptions BE GONE
+  * Explictly enable catching exceptions
+  * try to fix pid_t issue
+  * Try forcing avx2
+  * include cctype
+  * Fix some string_view problems
+  * fix fs.cpp
+  * fix str.cpp
+  * Fix more headers for fs.cpp
+  * more fs.cpp
+  * fixup printer.cpp
+  * Don't use LoadFromString
+  * Change ConfigParser too
+  * Try building tests on windows
+  * Silence spammy threadpool warning
+  * build gtest/gmock in shared mode
+  * Try to silence some warnings to reduce noise
+  * Try to link shared again
+  * try actually reading the gtest docs
+  * Change manifest ids
+  * fix test.rc
+  * Delete ev loop tests
+  * Fixup some tests
+  * try to ensure on windows, but don't fail
+  * Skip 3 tests on windows
+  * fix test.rc
+  * Normalise build
+  * Tidy up cmake files
+  * Introduce a couple more builds, fixup notifications maybe
+
+  [ Jeff Becker ]
+  * make android compile
+  * fix android compile, have makefile pull in libuv for cmake on android
+
+  [ Thomas Winget ]
+  * Refactor Router code into more classes
+  * change log level of message send success
+  * add debug-level log message on path build success
+  * revert change that made travis happy because it broke things
+
+ -- Jason Rhinelander <jason@imaginary.ca>  Thu, 25 Jul 2019 17:29:26 -0300
+
+lokinet (0.4.1) disco; urgency=medium
+
+
+  [ Jeff Becker (probably not evil) ]
+  * MANDITORY UPGRADE FOR TOYNET (again)
+  
+  * crypto protocol fixes in utp preventing fragment replaying
+  
+  * rewrite dns subsystem
+
+  * snode tld resolution to service nodes
+
+  * random.snode CNAME records giving a random service node
+
+  * localhost.loki A and CNAME records for giving IP and Hostnames (respectively) for all locally owned endpoints
+
+  * stability tweaks
+
+  * crash fixes
+
+  * much refactoring
+
+  * such documentation updates
+
+  * many C++ 17 isms
+
+  * very vendor updates
+
+  * wow !
+
+ -- Jeff Becker (probably not evil) <jeff@i2p.rocks>  Sat, 11 May 2019 10:45:46 -0400
+
+lokinet (0.2.3) bionic; urgency=medium
+
+  [ Jeff Becker (probably not evil) ]
+  * MANDITORY UPGRADE FOR TOYNET
+
+  * remove iwp and replace with utp
+
+  * use sntrup for introset public key (backwards incompatable)
+
+  * hidden service tags (backwards incompatable)
+
+  * add nicknames to RC (backwards incompatable)
+
+  * change kdf for path keys (backwards incompatable)
+
+  * various dht fixes
+
+  * various dns fixes (still unused in lokinet executable)
+
+  * hidden services should sorta work (no client interfacing code yet)
+
+  * initial win32 port (may sorta work)
+
+  * initial android point (should compile)
+
+  * fix shadow testnet
+
+  * moved netloop and logic into same thread
+
+  * update motto
+
+  * debian packaging
+
+  * windows port
+
+  * cross compile targets
+
+  * continous integration
+
+  * android port
+
+  * android glue code ( will be moved later ) 
+
+  * snap network namespace isolation, untested
+
+  [ jeff ]
+
+  * bump versions
+
+  * add lokinet-bootstrap script
+
+  * dns automapping
+
+  * hidden serivce junk
+ 
+  * systemd unit
+  * 0.4.0
+
+ -- jeff <jeff@i2p.rocks>  Thu, 28 Feb 2019 08:44:59 -0500

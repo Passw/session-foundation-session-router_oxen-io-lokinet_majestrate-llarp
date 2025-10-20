@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" = purge ]; then
+    ucf --purge /etc/session-router/client.ini
+    ucfr --purge session-router-client /etc/session-router/client.ini
+    rm -f /etc/session-router/client.ini
+    rm -rf /var/lib/session-router/client/nodedb
+fi
+
+#DEBHELPER#
+
