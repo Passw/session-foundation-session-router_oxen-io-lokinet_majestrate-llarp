@@ -1,0 +1,38 @@
+#!/bin/sh -e
+
+set -e
+. /usr/share/debconf/confmodule
+
+if [ "$1" = configure ]; then
+    mkdir -p /etc/session-router
+    datadir=/var/lib/session-router/router
+    mkdir -p $datadir
+    su -s /bin/sh _session -c "test -O $datadir && test -G $datadir" || \
+        chown _session:_session $datadir
+
+    tmpdir=$(mktemp --tmpdir -d session-router.XXXXXXXXXX)
+    /usr/bin/session-router -r -g $tmpdir/relay.ini
+    sed -i -e "s!#data-dir=.*!data-dir=$datadir!" $tmpdir/relay.ini
+    chmod 640 $tmpdir/relay.ini
+    chgrp _session $tmpdir/relay.ini
+    ucf --debconf-ok $tmpdir/relay.ini /etc/session-router/relay.ini
+    ucfr session-router-relay /etc/session-router/relay.ini
+
+    # If this system has only private IPs and warn the user that they need to update the config file
+    if ! grep -q '^public-\(ip\|address\)=' /etc/session-router/relay.ini; then
+        if ! ip -4 addr show | perl -le '
+            while (<>) {
+                next if !m{^ +inet +(\d+)\.(\d+)\.(\d+)\.(\d+)/};
+                exit 0 if not ($1 == 0 or $1 == 10 or ($1 == 100 and ($2 >= 64 and $2 <= 127)) or $1 == 127 or
+                    ($1 == 169 and $1 == 254) or ($1 == 172 and $2 >= 16 and $2 <= 31) or ($1 == 192 and $2 == 168) or $1 >= 224);
+            }
+            exit 1'; then
+
+            db_reset session-router-relay/no-public-ip || true
+            db_input critical session-router-relay/no-public-ip || true
+            db_go || true
+        fi
+    fi
+fi
+
+#DEBHELPER#
