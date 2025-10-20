@@ -1,0 +1,25 @@
+#!/bin/sh -e
+
+set -e
+
+if [ "$1" = configure ]; then
+    mkdir -p /etc/session-router
+    datadir=/var/lib/session-router/client
+    mkdir -p $datadir
+    su -s /bin/sh _session -c "test -O $datadir && test -G $datadir" || \
+        chown _session:_session $datadir
+
+    tmpdir=$(mktemp --tmpdir -d session-router.XXXXXXXXXX)
+    /usr/bin/session-router -g $tmpdir/client.ini
+    sed -i -e "s!#data-dir=.*!data-dir=$datadir!" $tmpdir/client.ini
+    chmod 640 $tmpdir/client.ini
+    chgrp _session $tmpdir/client.ini
+    ucf $tmpdir/client.ini /etc/session-router/client.ini
+    ucfr session-router-client /etc/session-router/client.ini
+
+    if [ -x /bin/systemctl ] && /bin/systemctl --quiet is-active systemd-resolved.service; then
+        /bin/systemctl restart systemd-resolved.service
+    fi
+fi
+
+#DEBHELPER#
