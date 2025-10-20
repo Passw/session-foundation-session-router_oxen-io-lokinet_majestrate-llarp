@@ -1,0 +1,53 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# See debhelper(7) (uncomment to enable)
+# output every command that modifies files on the build system.
+#export DH_VERBOSE = 1
+
+include /usr/share/dpkg/pkg-info.mk
+include /usr/share/dpkg/architecture.mk
+
+ifeq ($(DEB_TARGET_ARCH),$(filter $(DEB_TARGET_ARCH),amd64 i386))
+    DEB_CMAKE_ARCH_OPTIONS=-DCMAKE_CXX_FLAGS="-march=x86-64 -mtune=haswell" -DCMAKE_C_FLAGS="-march=x86-64 -mtune=haswell"
+else ifeq ($(DEB_TARGET_ARCH),arm64)
+    DEB_CMAKE_ARCH_OPTIONS=-DNON_PC_TARGET=ON -DCMAKE_CXX_FLAGS="-march=armv8-a+crc -mtune=cortex-a72" -DCMAKE_C_FLAGS="-march=armv8-a+crc -mtune=cortex-a72"
+else ifeq ($(DEB_TARGET_ARCH),armhf)
+    DEB_CMAKE_ARCH_OPTIONS=-DNON_PC_TARGET=ON -DCMAKE_CXX_FLAGS="-marm -march=armv6 -mtune=cortex-a53 -mfloat-abi=hard -mfpu=vfp" -DCMAKE_C_FLAGS="-marm -march=armv6 -mtune=cortex-a53 -mfloat-abi=hard -mfpu=vfp"
+else
+    DEB_CMAKE_ARCH_OPTIONS=
+endif
+
+%:
+	dh $@ --buildsystem=cmake+ninja --with-systemd
+
+ifneq (,$(filter noopt,$(DEB_BUILD_OPTIONS)))
+    CFLAGS += -O0
+else
+    CFLAGS += -O2
+endif
+ifeq (,$(filter nostrip,$(DEB_BUILD_OPTIONS)))
+    INSTALL_PROGRAM += -s
+endif
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+    NUMJOBS = $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+    MAKEFLAGS += -j$(NUMJOBS)
+endif
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release \
+		-DVERSIONTAG="deb$(DEB_VERSION)" \
+		$(DEB_CMAKE_ARCH_OPTIONS) \
+		-DWITH_TESTS=OFF -DBUILD_SHARED_LIBS=OFF \
+		-DNATIVE_BUILD=OFF -DUSE_AVX2=OFF -DWITH_SETCAP=OFF
+
+override_dh_install:
+	dh_install
+
+override_dh_installsystemd:
+	dh_installsystemd --name=session-router-client
+	dh_installsystemd --name=session-router-relay
+
+override_dh_auto_test:
+	true
+	#cd obj-${DEB_HOST_GNU_TYPE} && ninja check

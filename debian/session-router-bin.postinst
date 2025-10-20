@@ -1,0 +1,32 @@
+#!/bin/sh -e
+
+set -e
+
+if [ "$1" = configure ]; then
+    # Create the loki_ group (shared with oxend)
+    if ! getent group _loki >/dev/null; then
+        addgroup --force-badname --system --quiet _loki
+    fi
+
+    # Create _session user and group if it doesn't exist
+    if ! getent passwd _session >/dev/null; then
+        adduser --force-badname --system --quiet --home /var/lib/session-router --group --gecos "Session daemon system user" _session
+    fi
+
+    # Add the _session user to the _loki group so that a relay can access the rpc sock
+    if ! id -Gn _session | grep -qw _; then
+        adduser --force-badname --quiet _session _loki
+    fi
+fi
+
+#DEBHELPER#
+
+# Also restart the session-router-relays.target (from session-multi-sn) on upgrade if it is active
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+    if [ -n "$2" ] && [ -d /run/systemd/system ]; then
+        systemctl --system daemon-reload >/dev/null || true
+        if systemctl --quiet is-active session-router-relays.target; then
+            deb-systemd-invoke restart session-router-relays.target >/dev/null || true
+        fi
+    fi
+fi
