@@ -17,6 +17,7 @@ Build-Depends:
     liboxen-quic-dev (>= 1.6.0),
     nlohmann-json3-dev,
     libevent-dev,
+    libzstd-dev,
     libjemalloc-dev
 Standards-Version: 3.9.6
 Homepage: https://getsession.org/
