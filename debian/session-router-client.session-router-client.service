@@ -12,8 +12,8 @@ WorkingDirectory=/var/lib/session-router/client
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 ExecStart=/usr/bin/session-router /etc/session-router/client.ini
-ExecStartPost=+/usr/sbin/session-router-resolvconf add /var/lib/session-router/client.ini
-ExecStopPost=+/usr/sbin/session-router-resolvconf remove /var/lib/session-router/client.ini
+ExecStartPost=+/usr/sbin/session-router-resolvconf add /etc/session-router/client.ini
+ExecStopPost=+/usr/sbin/session-router-resolvconf remove /etc/session-router/client.ini
 Restart=always
 RestartSec=5s
 
