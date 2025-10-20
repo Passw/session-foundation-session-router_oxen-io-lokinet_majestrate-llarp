@@ -1,0 +1,65 @@
+Source: session-router
+Section: net
+Priority: optional
+Maintainer: Jason Rhinelander <jason@session.foundation>
+Build-Depends:
+    debhelper (>= 11),
+    g++,
+    cmake (>= 3.10),
+    pkg-config,
+    git,
+    libunbound-dev,
+    libsodium-dev (>= 1.0.18),
+    libsystemd-dev,
+    liboxenmq-dev (>= 1.3.0),
+    liboxenc-dev (>= 1.5.0),
+    liboxen-logging-dev (>= 1.2.0),
+    liboxen-quic-dev (>= 1.6.0),
+    libfmt-dev (>= 10.0.0),
+    libspdlog-dev (>= 1.12.0),
+    nlohmann-json3-dev,
+    libcli11-dev (>= 2.3.0),
+    libevent-dev,
+    libjemalloc-dev
+Standards-Version: 3.9.6
+Homepage: https://getsession.org/
+Vcs-Git: git://github.com/session-foundation/session-router.git
+Vcs-Browser: https://github.com/session-foundation/session-router
+
+Package: session-router-bin
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, lsb-base, curl
+Description: Session network anonymous, decentralized onion routing network -- binaries
+ Session Router is an IP packet onion routing network that powers low-latency,
+ anonymous IP routing, as used on the Session messenger network.
+ .
+ This package contains the session-router binaries; most users will want to
+ install the session-router-client or session-router-relay packages to include
+ service files to run Session Router as a system service.
+
+Package: session-router-client
+Architecture: all
+Depends: session-router-bin (=${binary:Version}), adduser, ucf
+Recommends: resolvconf
+Description: Session network anonymous, decentralized onion routing network -- client service
+ Session Router is an IP packet onion routing network that powers low-latency,
+ anonymous IP routing, as used on the Session messenger network.
+ .
+ This package contains contains the configuration needed to run a Session
+ Router client as a system service to allow the local system to access session
+ router either as an anonymous client or as a Session service "snapp".
+ .
+ Most users looking to access Session Router want to install this package.
+
+Package: session-router-relay
+Architecture: all
+Depends: session-router-bin (=${binary:Version}), oxend, adduser, ucf
+Description: Session network anonymous, decentralized onion routing network -- service node relay
+ Session Router is an IP packet onion routing network that powers low-latency,
+ anonymous IP routing, as used on the Session messenger network.
+ .
+ This package contains contains the configuration needed to run Session Router
+ as a Session staked service node relay to carry network traffic.
+ .
+ Users just looking to access Session Router want the 'session-router-client'
+ package instead.
