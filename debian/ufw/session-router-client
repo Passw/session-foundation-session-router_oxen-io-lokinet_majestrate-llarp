@@ -1,4 +1,4 @@
-[session-router-sn]
+[session-router-client]
 title=Session Router client
 description=Session Router - default client port for Session Router traffic
 ports=1191/udp
