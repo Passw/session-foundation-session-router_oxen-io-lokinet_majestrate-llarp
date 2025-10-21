@@ -1,3 +1,9 @@
+session-router (1.0.0-3~deb14) unstable; urgency=medium
+
+  * Oxen 11.6 transition mechanism for RID set
+
+ -- Jason Rhinelander <jason@session.foundation>  Tue, 21 Oct 2025 20:24:57 -0300
+
 session-router (1.0.0-2~deb14) unstable; urgency=medium
 
   * Fix race condition in tun IP assignment
