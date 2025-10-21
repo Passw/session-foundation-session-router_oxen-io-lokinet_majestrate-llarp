@@ -1,3 +1,34 @@
+session-router (1.0.0-1~deb11) unstable; urgency=medium
+
+  [ Thomas Winget ]
+  * check for mistaken public-ip in relay config
+  * minor config default fixups
+  * make DNS FullClientOnly
+  * fix dns lookup for localhost.loki recursing
+  * fix some logs/levels and comments
+  * fix more log levels
+  * on inbound session, if we have one, always replace
+
+  [ Jason Rhinelander ]
+  * package updates for rebrand
+  * drop ninja
+  * adding missing libzstd dep
+  * more renames
+  * fix ufw filename
+  * fix resolvconf helper path
+  * fix log message
+  * Fix bootstrap loading to allow an empty override
+  * fix empty bootstrap override, part 2
+  * gcc-10 Session formatter workaround
+  * Drop unwanted resolved.conf.d override
+  * show deb info in build job
+  * Fix resolved dbus DNS settings
+  * Drop non-amd64 builds from bullseye
+  * fix ufw rules
+  * Add session-router mainnet bootstrap
+
+ -- Jason Rhinelander <jason@session.foundation>  Tue, 21 Oct 2025 15:05:14 -0300
+
 session-router (1.0.0-0~rc1~deb11) unstable; urgency=medium
 
   * Session Router
