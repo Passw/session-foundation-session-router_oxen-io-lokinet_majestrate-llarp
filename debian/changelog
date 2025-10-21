@@ -1,3 +1,9 @@
+session-router (1.0.0-2~ubuntu2510) unstable; urgency=medium
+
+  * Fix race condition in tun IP assignment
+
+ -- Jason Rhinelander <jason@session.foundation>  Tue, 21 Oct 2025 17:40:39 -0300
+
 session-router (1.0.0-1~ubuntu2510) unstable; urgency=medium
 
   [ Thomas Winget ]
