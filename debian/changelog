@@ -1,3 +1,10 @@
+session-router (1.0.0-1) unstable; urgency=medium
+
+  * fix ufw rules
+  * Add session-router mainnet bootstrap
+
+ -- Jason Rhinelander <jason@session.foundation>  Tue, 21 Oct 2025 15:04:29 -0300
+
 session-router (1.0.0-0+rc1) unstable; urgency=medium
 
   * Session Router
