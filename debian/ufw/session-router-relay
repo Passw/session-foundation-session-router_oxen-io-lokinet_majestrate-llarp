@@ -1,4 +1,4 @@
-[session-router-sn]
+[session-router-relay]
 title=Session Router relay
 description=Session Router - default relay port for Session Router traffic
 ports=1190/udp
