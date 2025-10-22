@@ -1,3 +1,9 @@
+session-router (1.0.0-4~ubuntu2404) unstable; urgency=medium
+
+  * fix datadir in generated config file
+
+ -- Jason Rhinelander <jason@session.foundation>  Wed, 22 Oct 2025 00:31:41 -0300
+
 session-router (1.0.0-3~ubuntu2404) unstable; urgency=medium
 
   * Oxen 11.6 transition mechanism for RID set
