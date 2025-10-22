@@ -5,7 +5,7 @@ set -e
 
 if [ "$1" = configure ]; then
     mkdir -p /etc/session-router
-    datadir=/var/lib/session-router/router
+    datadir=/var/lib/session-router/relay
     mkdir -p $datadir
     su -s /bin/sh _session -c "test -O $datadir && test -G $datadir" || \
         chown _session:_session $datadir
