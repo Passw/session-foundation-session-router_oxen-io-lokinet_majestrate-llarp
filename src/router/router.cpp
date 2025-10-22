@@ -200,7 +200,8 @@ namespace srouter
 
         nlohmann::json stats{
             {"running", true},
-            {"version", srouter::SROUTER_VERSION_FULL},
+            {"version", srouter::VERSION},
+            {"version_full", srouter::VERSION_FULL},
             {"uptime", to_json(Uptime())},
             // {"numPathsBuilt", pathsCount},
             // {"numPeersConnected", peers},
@@ -818,7 +819,7 @@ namespace srouter
     {
         auto now = srouter::time_now_ms();
         return "v{} {}: {}"_format(
-            srouter::SROUTER_VERSION_FULL, is_service_node ? "relay" : "client", _stats_line(now));
+            fmt::join(srouter::VERSION, "."), is_service_node ? "relay" : "client", _stats_line(now));
     }
 
     void Router::_relay_tick([[maybe_unused]] std::chrono::milliseconds now)
