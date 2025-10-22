@@ -44,9 +44,6 @@ namespace srouter
         // Is this gross thing really needed?
         static std::optional<IPPacket> try_making(std::span<const std::byte> buf);
 
-        // TESTNET: debug methods
-        // uint16_t checksum() const { return _is_v4 ? header()->checksum : 0; }
-
         ip_header& header() { return *reinterpret_cast<ip_header*>(data()); }
         const ip_header& header() const { return *reinterpret_cast<const ip_header*>(data()); }
 
@@ -64,13 +61,13 @@ namespace srouter
         }
 
         bool is_ipv4() const { return _buf.size() >= sizeof(ip_header) && header().version == 4; }
-        bool is_ipv6() const { return _buf.size() >= sizeof(ipv6_header) && ipv6_header().version == 6; }
+        bool is_ipv6() const { return _buf.size() >= sizeof(ipv6_header) && v6_header().version == 6; }
         bool is_ip() const { return is_ipv4() || is_ipv6(); }
 
         net::IPProtocol protocol() const
         {
             return is_ipv4() ? net::IPProtocol{header().protocol}
-                : is_ipv6()  ? net::IPProtocol{ipv6_header().protocol}
+                : is_ipv6()  ? net::IPProtocol{v6_header().protocol}
                              : net::IPProtocol{};
         }
 
@@ -104,13 +101,13 @@ namespace srouter
         std::optional<ipv6> source_ipv6() const
         {
             if (is_ipv6())
-                return ipv6{ipv6_header().src};
+                return ipv6{v6_header().src};
             return std::nullopt;
         }
         std::optional<ipv6> dest_ipv6() const
         {
             if (is_ipv6())
-                return ipv6{ipv6_header().dest};
+                return ipv6{v6_header().dest};
             return std::nullopt;
         }
 
@@ -134,9 +131,6 @@ namespace srouter
 
         std::span<std::byte> span() { return _buf; }
         std::span<const std::byte> span() const { return _buf; }
-
-        std::span<uint8_t> u8span() { return {reinterpret_cast<uint8_t*>(data()), size()}; }
-        std::span<const uint8_t> u8span() const { return {reinterpret_cast<const uint8_t*>(data()), size()}; }
 
         bool empty() const { return _buf.empty(); }
 

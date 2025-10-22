@@ -40,17 +40,11 @@ namespace srouter::handlers
         ipv4_net _local_net;
         IPv4RangeIterator _local_range_iterator{_local_net};
 
-        std::optional<ipv6_net> _local_ipv6_net;
-        std::optional<IPv6RangeIterator> _local_ipv6_range_iterator;
-
-        /// Our local Network Address holding our network pubkey
-        NetworkAddress _local_netaddr;
+        ipv6_net _local_ipv6_net;
+        IPv6RangeIterator _local_ipv6_range_iterator{_local_ipv6_net};
 
         /// list of strict connect addresses for hooks
         // std::vector<IpAddress> _strict_connect_addrs;
-
-        /// use v6?
-        bool ipv6_enabled = false;
 
         std::string _if_name;
 
@@ -92,16 +86,15 @@ namespace srouter::handlers
 
         // Returns the Session Router tun IPv4 address
         const ipv4& get_ipv4() const;
-        // Returns the Session Router tun IPv6 address by pointer, or nullptr if ipv6 is not configured.
-        const ipv6* get_ipv6() const;
+        // Returns the Session Router tun IPv6 address
+        const ipv6& get_ipv6() const;
 
-        // Returns the Session Router tun IPv4 network; the address is set to this tun device's local
-        // address (i.e. the .1 address).
+        // Returns the Session Router tun IPv4/6 network; the address is set to this tun device's
+        // local address (i.e. typically the .1 address).
         const ipv4_net& get_ipv4_network() const;
+        const ipv6_net& get_ipv6_network() const;
 
         nlohmann::json ExtractStatus() const;
-
-        bool supports_ipv6() const;
 
         bool should_hook_dns_message(const dns::Message& msg) const;
 
@@ -135,9 +128,7 @@ namespace srouter::handlers
         // remote address with it.  If the mapping already exists, this returns the existing IP,
         // otherwise it assigns a new one.  The association persists until unmapped.  Returns the
         // mapped ipv4 address, or nullptr if one could not be assigned.
-        std::optional<ipv4> map(const NetworkAddress& remote) override;
-        // TODO:
-        // std::optional<ipv6> map_address_to_local_ipv6(const NetworkAddress& remote);
+        std::optional<std::pair<ipv4, ipv6>> map(const NetworkAddress& remote) override;
 
         // Removes any mapped IP for the given remote from the tun IP map.
         void unmap(const NetworkAddress& remote) override;

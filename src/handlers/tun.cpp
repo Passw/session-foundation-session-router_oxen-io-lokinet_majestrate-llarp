@@ -274,17 +274,11 @@ namespace srouter::handlers
 
         _exit_policy = net_conf.traffic_policy;
 
-        ipv6_enabled = net_conf.enable_ipv6;
-        if (ipv6_enabled)
-        {
-            _local_ipv6_net = net_conf._local_ipv6_net;
-            if (_local_ipv6_net)
-                _local_ipv6_range_iterator.emplace(*_local_ipv6_net);
-        }
-
         _if_name = net_conf._if_name.value_or("");
         if (net_conf._local_ip_net)
             _local_net = *net_conf._local_ip_net;
+        if (net_conf._local_ipv6_net)
+            _local_ipv6_net = *net_conf._local_ipv6_net;
 
         if (net_conf.addr_map_persist_file)
         {
@@ -297,27 +291,23 @@ namespace srouter::handlers
         for (auto& [remote, local] : net_conf._reserved_local_ipv6)
             _local_ipv6_mapping.insert_or_assign(local, remote);
 
-        log::debug(logcat, "Tun constructing IPRange iterator on local network: {}", _local_net);
+        log::debug(logcat, "Tun constructing IPRange iterator on local networks: {}, {}", _local_net, _local_ipv6_net);
         _local_range_iterator = IPRangeIterator{_local_net};
+        _local_ipv6_range_iterator = IPv6RangeIterator{_local_ipv6_net};
 
-        _local_netaddr = NetworkAddress{_router.id(), !_router.is_service_node};
-        _local_ipv4_mapping.insert_or_assign(_local_net.ip, std::move(_local_netaddr));
+        NetworkAddress me{_router.id(), !_router.is_service_node};
+        _local_ipv4_mapping.insert_or_assign(_local_net.ip, me);
+        _local_ipv6_mapping.insert_or_assign(_local_ipv6_net.ip, std::move(me));
 
         vpn::InterfaceInfo info;
         info.ifname = _if_name;
         info.addrs.emplace_back(_local_net);
-
-        if (ipv6_enabled and _local_ipv6_net)
-        {
-            log::info(logcat, "{} using ipv6 range:{}", name(), *_local_ipv6_net);
-            info.addrs.emplace_back(*_local_ipv6_net);
-        }
+        info.addrs.emplace_back(_local_ipv6_net);
 
         log::debug(logcat, "{} setting up network...", name());
 
         log::info(logcat, "{} using IPv4 address range {}", name(), _local_net);
-        if (ipv6_enabled && _local_ipv6_net)
-            log::info(logcat, "{} using IPv6 address range {}", name(), _local_ipv6_net);
+        log::info(logcat, "{} using IPv6 address range {}", name(), _local_ipv6_net);
 
         _net_if = router().vpn_platform()->create_interface(std::move(info), &_router);
         _if_name = _net_if->interface_info().ifname;
@@ -603,14 +593,15 @@ namespace srouter::handlers
         */
         /*else*/ if (msg.questions[0].qtype == dns::qTypeA || msg.questions[0].qtype == dns::qTypeAAAA)
         {
-            auto reply_with_mapped_address = [reply, msg](const std::optional<ipv4>& maybe_ip) mutable {
-                if (maybe_ip)
+            auto reply_with_mapped_address = [reply, msg](const std::optional<std::pair<ipv4, ipv6>>& ips) mutable {
+                if (ips)
                 {
-                    msg.add_IN_reply(maybe_ip->addr);
-                    reply(msg);
-                    return;
+                    msg.add_IN_reply(ips->first);
+                    msg.add_IN_reply(ips->second);
                 }
-                msg.add_nx_reply();
+                else
+                    msg.add_nx_reply();
+
                 reply(msg);
             };
 
@@ -673,7 +664,9 @@ namespace srouter::handlers
                 */
 
                 msg.add_CNAME_reply(our_name, 1);
-                msg.add_IN_reply(_local_net.ip.addr);
+                msg.add_IN_reply(_local_net.ip);
+                msg.set_IN_reply_rr_name(our_name);
+                msg.add_IN_reply(_local_ipv6_net.ip);
                 msg.set_IN_reply_rr_name(our_name);
                 reply(msg);
             }
@@ -804,8 +797,6 @@ namespace srouter::handlers
         return true;
     }
 
-    bool TunEndpoint::supports_ipv6() const { return ipv6_enabled; }
-
     // FIXME: pass in which question it should be addressing
     bool TunEndpoint::should_hook_dns_message(const dns::Message& msg) const
     {
@@ -825,8 +816,7 @@ namespace srouter::handlers
                 {
                     if (auto* v4 = std::get_if<ipv4>(&*ip))
                         return _local_net.contains(*v4);
-                    if (_local_ipv6_net)
-                        return _local_ipv6_net->contains(std::get<ipv6>(*ip));
+                    return _local_ipv6_net.contains(std::get<ipv6>(*ip));
                 }
                 return false;
             }
@@ -844,9 +834,10 @@ namespace srouter::handlers
     std::string TunEndpoint::get_if_name() const { return _if_name; }
 
     const ipv4& TunEndpoint::get_ipv4() const { return _local_net.ip; }
-    const ipv6* TunEndpoint::get_ipv6() const { return _local_ipv6_net ? &_local_ipv6_net->ip : nullptr; }
+    const ipv6& TunEndpoint::get_ipv6() const { return _local_ipv6_net.ip; }
 
     const ipv4_net& TunEndpoint::get_ipv4_network() const { return _local_net; }
+    const ipv6_net& TunEndpoint::get_ipv6_network() const { return _local_ipv6_net; }
 
     bool TunEndpoint::is_service_node() const { return _router.is_service_node; }
 
@@ -928,31 +919,55 @@ namespace srouter::handlers
 
     std::optional<ipv6> TunEndpoint::get_next_local_ipv6()
     {
-        if (!_local_ipv6_range_iterator || !_local_ipv6_net)
-            return std::nullopt;
-
-        return get_next_local_ipvX(*_local_ipv6_range_iterator, *_local_ipv6_net, _local_ipv6_mapping);
+        return get_next_local_ipvX(_local_ipv6_range_iterator, _local_ipv6_net, _local_ipv6_mapping);
     }
 
-    std::optional<ipv4> TunEndpoint::map(const NetworkAddress& remote)
+    std::optional<std::pair<ipv4, ipv6>> TunEndpoint::map(const NetworkAddress& remote)
     {
-        std::optional<ipv4> ret = std::nullopt;
+        auto ret = std::make_optional<std::pair<ipv4, ipv6>>();
+        auto& [ret4, ret6] = *ret;
 
-        // first: check if we have a config value for this remote
+        bool ins4 = false, ins6 = false;
+        // first: check if we already have a mapping for this remote
         if (auto maybe_ip = _local_ipv4_mapping.get_local(remote))
         {
-            ret = maybe_ip;
-            log::debug(logcat, "Local IP for session to remote ({}) pre-loaded from config: {}", remote, *maybe_ip);
+            ret4 = std::move(*maybe_ip);
+            log::debug(logcat, "Local IP for session to remote ({}) already assigned ({})", remote, ret4);
         }
         // Otherwise go find a new local IP for it
         else if (auto maybe_next_ip = get_next_local_ipv4())
         {
-            log::debug(logcat, "Local IP for session to remote ({}) assigned: {}", remote, *maybe_next_ip);
-            ret = maybe_next_ip;
-            _local_ipv4_mapping.insert_or_assign(*maybe_next_ip, remote);
+            ret4 = std::move(*maybe_next_ip);
+            log::debug(logcat, "Local IP for session to remote ({}) assigned: {}", remote, ret4);
+            ins4 = true;
         }
         else
-            log::error(logcat, "TUN device failed to assign local private IP for remote: {}", remote);
+        {
+            log::error(logcat, "TUN device could not find a local private IPv4 for remote: {}", remote);
+            return std::nullopt;
+        }
+
+        if (auto maybe_ipv6 = _local_ipv6_mapping.get_local(remote))
+        {
+            ret6 = std::move(*maybe_ipv6);
+            log::debug(logcat, "Local IP for session to remote ({}) already assigned ({})", remote, ret6);
+        }
+        else if (auto maybe_next = get_next_local_ipv6())
+        {
+            ret6 = std::move(*maybe_next);
+            log::debug(logcat, "Local IP for session to remote ({}) assigned: {}", remote, ret6);
+            ins6 = true;
+        }
+        else
+        {
+            log::error(logcat, "TUN device could not find a local private IPv6 for remote: {}", remote);
+            return std::nullopt;
+        }
+
+        if (ins4)
+            _local_ipv4_mapping.insert_or_assign(ret4, remote);
+        if (ins6)
+            _local_ipv6_mapping.insert_or_assign(ret6, remote);
 
         return ret;
     }
@@ -971,36 +986,53 @@ namespace srouter::handlers
     // handles an outbound packet going OUT from user -> network
     void TunEndpoint::handle_outbound_packet(IPPacket pkt)
     {
-        ipv4 src, dest;
-        if (!pkt.is_ipv4())
+        const bool is_v4 = pkt.is_ipv4();
+
+        if (!is_v4 && !pkt.is_ipv6())
         {
-            if (pkt.is_ipv6())
-            {
-                log::debug(logcat, "Dropping IPv6 packet: not yet supported");
-                return;
-            }
             log::debug(logcat, "Dropping non-IP packet");
+            log::trace(logcat, "Packet: {}", buffer_printer{pkt.span()});
             return;
         }
 
         log::trace(logcat, "outbound packet: {}: {}", pkt.info_line(), buffer_printer{pkt.span()});
 
-        src = *pkt.source_ipv4();
-        dest = *pkt.dest_ipv4();
+        ipv4 src4, dest4;
+        ipv6 src6, dest6;
 
-        log::trace(logcat, "src:{}, dest:{}", src, dest);
+        if (is_v4)
+        {
+            src4 = *pkt.source_ipv4();
+            dest4 = *pkt.dest_ipv4();
+            log::trace(logcat, "src:{}, dest:{}", src4, dest4);
+        }
+        else
+        {
+            src6 = *pkt.source_ipv6();
+            dest6 = *pkt.dest_ipv6();
+            log::trace(logcat, "src:{}, dest:{}", src6, dest6);
+        }
 
         if constexpr (srouter::platform::is_apple)
         {
-            if (dest == _local_net.ip)
+            if (is_v4)
             {
-                rewrite_and_send_packet(std::move(pkt), std::move(src), std::move(dest));
+                if (dest4 == _local_net.ip)
+                {
+                    rewrite_and_send_packet(std::move(pkt), std::move(src4), std::move(dest4));
+                    return;
+                }
+            }
+            else if (dest6 == _local_ipv6_net.ip)
+            {
+                rewrite_and_send_packet(std::move(pkt), std::move(src6), std::move(dest6));
                 return;
             }
         }
 
         // we pass `dest` because that is our local private IP on the outgoing IPPacket
-        if (auto maybe_remote = _local_ipv4_mapping.get_remote(dest))
+        auto maybe_remote = is_v4 ? _local_ipv4_mapping.get_remote(dest4) : _local_ipv6_mapping.get_remote(dest6);
+        if (maybe_remote)
         {
             auto& remote = *maybe_remote;
             pkt.clear_addresses();
@@ -1136,9 +1168,9 @@ namespace srouter::handlers
         {
             log::trace(logcat, "inbound return exit pkt: {}", pkt.info_line());
             if (pkt.is_ipv4())
-                return rewrite_and_send_packet(std::move(pkt), *pkt.source_ipv4(), _local_net.ip);
-            if (_local_ipv6_net)
-                return rewrite_and_send_packet(std::move(pkt), *pkt.source_ipv6(), _local_ipv6_net->ip);
+                rewrite_and_send_packet(std::move(pkt), *pkt.source_ipv4(), _local_net.ip);
+            else
+                rewrite_and_send_packet(std::move(pkt), *pkt.source_ipv6(), _local_ipv6_net.ip);
             return;
         }
 
@@ -1148,10 +1180,10 @@ namespace srouter::handlers
             if (auto src = obtain_src_for_ipv4_remote(remote))
                 return rewrite_and_send_packet(std::move(pkt), *src, _local_net.ip);
         }
-        else if (_local_ipv6_net)
+        else
         {
             if (auto src = obtain_src_for_ipv6_remote(remote))
-                return rewrite_and_send_packet(std::move(pkt), *src, _local_ipv6_net->ip);
+                return rewrite_and_send_packet(std::move(pkt), *src, _local_ipv6_net.ip);
         }
     }
 

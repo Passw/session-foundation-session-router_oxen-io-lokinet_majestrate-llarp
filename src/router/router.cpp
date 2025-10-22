@@ -532,22 +532,15 @@ namespace srouter
             }
             log::info(logcat, "Session Router IPv4 local network is {}", *netconf._local_ip_net);
 
-            if (netconf.enable_ipv6)
+            if (!netconf._local_ipv6_net || (!netconf._local_ipv6_net->ip.hi && !netconf._local_ipv6_net->ip.lo))
             {
-                if (!netconf._local_ipv6_net || (!netconf._local_ipv6_net->ip.hi && !netconf._local_ipv6_net->ip.lo))
-                {
-                    if (auto maybe =
-                            net()->find_free_ipv6_net(netconf._local_ipv6_net ? netconf._local_ipv6_net->mask : 64))
-                        netconf._local_ipv6_net = std::move(*maybe);
-                    else
-                        throw std::runtime_error("cannot find free IPv6 address range!");
-                }
-                log::info(logcat, "Session Router IPv6 local network is {}", *netconf._local_ipv6_net);
-                log::warning(
-                    logcat,
-                    "Session Router IPv6 support is a work-in-progress and unsupported; enabling it is not "
-                    "recommended");
+                if (auto maybe =
+                        net()->find_free_ipv6_net(netconf._local_ipv6_net ? netconf._local_ipv6_net->mask : 64))
+                    netconf._local_ipv6_net = std::move(*maybe);
+                else
+                    throw std::runtime_error("cannot find free IPv6 address range!");
             }
+            log::info(logcat, "Session Router IPv6 local network is {}", *netconf._local_ipv6_net);
 
             // Make sure any reserved addresses are within our local network range:
             std::erase_if(netconf._reserved_local_ipv4, [&netconf](const auto& addr_ip) {

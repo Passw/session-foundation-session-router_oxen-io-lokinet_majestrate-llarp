@@ -16,7 +16,7 @@ namespace srouter::handlers
 
         virtual void start_poller() = 0;
 
-        virtual std::optional<ipv4> map(const NetworkAddress& remote) = 0;
+        virtual std::optional<std::pair<ipv4, ipv6>> map(const NetworkAddress& remote) = 0;
         virtual void unmap(const NetworkAddress& remote) = 0;
 
         virtual void handle_inbound_packet(IPPacket pkt, uint8_t type, NetworkAddress remote) = 0;

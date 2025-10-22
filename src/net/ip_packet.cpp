@@ -1,6 +1,7 @@
 #include "ip_packet.hpp"
 
 #include "net/policy.hpp"
+#include "net/utils.hpp"
 #include "util/buffer.hpp"
 #include "util/logging.hpp"
 #include "util/logging/buffer.hpp"
@@ -82,7 +83,7 @@ namespace srouter
                     {
                         auto* tcp_hdr = reinterpret_cast<tcp_header*>(payload);
                         tcp_hdr->checksum =
-                            utils::ipv4_tcp_checksum_diff(tcp_hdr->checksum, hdr.src, hdr.dest, src, dst);
+                            utils::update_ipv4_tcp_checksum(tcp_hdr->checksum, hdr.src, hdr.dest, src, dst);
                     }
                     break;
                 case net::IPProtocol::UDP:
@@ -91,15 +92,7 @@ namespace srouter
                     {
                         auto* udp_hdr = reinterpret_cast<udp_header*>(payload);
                         udp_hdr->checksum =
-                            utils::ipv4_udp_checksum_diff(udp_hdr->checksum, hdr.src, hdr.dest, src, dst);
-                    }
-                    break;
-                case net::IPProtocol::DCCP:
-                    if (frag_off <= UDP_CSUM_OFF || payload_size >= UDP_CSUM_OFF - frag_off + 2)
-                    {
-                        auto* tcp_hdr = reinterpret_cast<tcp_header*>(payload);
-                        tcp_hdr->checksum =
-                            utils::ipv4_tcp_checksum_diff(tcp_hdr->checksum, hdr.src, hdr.dest, src, dst);
+                            utils::update_ipv4_udp_checksum(udp_hdr->checksum, hdr.src, hdr.dest, src, dst);
                     }
                     break;
                 default:
@@ -108,7 +101,7 @@ namespace srouter
             }
         }
 
-        hdr.checksum = utils::ipv4_checksum_diff(hdr.checksum, hdr.src, hdr.dest, src, dst);
+        hdr.checksum = utils::update_ipv4_checksum(hdr.checksum, hdr.src, hdr.dest, src, dst);
 
         // set new IP addresses
         hdr.src = oxenc::host_to_big(src.addr);
@@ -126,13 +119,16 @@ namespace srouter
         if (flowlabel.has_value())
             hdr.flowlabel(*flowlabel);
 
-        // IPv6 address
+        std::array<uint32_t, 4> old_src, old_dest;
+        std::memcpy(old_src.data(), hdr.src.s6_addr, 16);
+        std::memcpy(old_dest.data(), hdr.dest.s6_addr, 16);
         hdr.src = static_cast<in6_addr>(src);
         hdr.dest = static_cast<in6_addr>(dst);
+        std::span<const uint32_t, 4> new_src{reinterpret_cast<const uint32_t*>(hdr.src.s6_addr), 4},
+            new_dest{reinterpret_cast<const uint32_t*>(hdr.dest.s6_addr), 4};
 
         // TODO IPv6 header options
-        auto* pld = reinterpret_cast<const uint8_t*>(data()) + sizeof(ipv6_header);
-        auto psz = sz - sizeof(ipv6_header);
+        auto payload = span().subspan<sizeof(ipv6_header)>();
 
         size_t fragoff = 0;
         auto nextproto = hdr.protocol;
@@ -144,12 +140,11 @@ namespace srouter
                 case 43:  // Routing Header
                 case 60:  // Destination Options
                 {
-                    nextproto = pld[0];
-                    auto addlen = (size_t(pld[1]) + 1) * 8;
-                    if (psz < addlen)
+                    nextproto = static_cast<uint8_t>(payload[0]);
+                    auto addlen = (static_cast<size_t>(payload[1]) + 1) * 8;
+                    if (payload.size() < addlen)
                         return;
-                    pld += addlen;
-                    psz -= addlen;
+                    payload = payload.subspan(addlen);
                     break;
                 }
 
@@ -161,12 +156,11 @@ namespace srouter
            |                         Identification                        |
            +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
                      */
-                    nextproto = pld[0];
-                    fragoff = (uint16_t(pld[2]) << 8) | (uint16_t(pld[3]) & 0xFC);
-                    if (psz < 8)
+                    nextproto = static_cast<uint8_t>(payload[0]);
+                    fragoff = (static_cast<uint16_t>(payload[2]) << 8) | (static_cast<uint16_t>(payload[3]) & 0xFC);
+                    if (payload.size() < 8)
                         return;
-                    pld += 8;
-                    psz -= 8;
+                    payload = payload.subspan(8);
 
                     // jump straight to payload processing
                     if (fragoff != 0)
@@ -179,37 +173,25 @@ namespace srouter
         }
     endprotohdrs:
 
-        uint16_t chksumoff{0};
-        uint16_t chksum{0};
-
-        bool is_udp = false;
-
+        std::optional<uint16_t> csum_off;
         switch (static_cast<net::IPProtocol>(nextproto))
         {
             case net::IPProtocol::TCP:
-                chksumoff = 16;
-                [[fallthrough]];
-            case net::IPProtocol::DCCP:
-                chksum = tcp_checksum_ipv6(&hdr.src, &hdr.dest, hdr.payload_len, 0);
-                // ones-complement addition fo 0xFFff is 0; this is verboten
-                if (chksum == 0xFFff)
-                    chksum = 0x0000;
-
-                chksumoff = chksumoff == 16 ? 16 : 6;
+                csum_off = 16;
+                break;
+            case net::IPProtocol::ICMP6:
+                csum_off = 2;
                 break;
             case net::IPProtocol::UDP:
-            case net::IPProtocol::UDP_LITE:  // UDP-Lite - same checksum place, same 0->0xFFff condition
-                chksum = udp_checksum_ipv6(&hdr.src, &hdr.dest, hdr.payload_len, 0);
-                is_udp = true;
+            case net::IPProtocol::UDP_LITE:
+                csum_off = 6;
                 break;
             default:
                 // do nothing
                 break;
         }
-
-        auto check = is_udp ? (uint16_t*)(pld + 6) : (uint16_t*)(pld + chksumoff - fragoff);
-
-        *check = chksum;
+        if (csum_off)
+            utils::update_ipv6_proto_checksum(payload, fragoff, *csum_off, old_src, old_dest, new_src, new_dest);
     }
 
     std::optional<IPPacket> IPPacket::make_icmp_unreachable() const

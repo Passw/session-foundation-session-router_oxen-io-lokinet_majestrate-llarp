@@ -42,9 +42,7 @@ namespace srouter::handlers
         {
             // raw IPv4/IPv6/exit traffic all require a full tun interface.
 
-            protocols = protocol_flag::IPV4;
-            if (netconf.enable_ipv6)
-                protocols |= protocol_flag::IPV6;
+            protocols = protocol_flag::IPV4 | protocol_flag::IPV6;
             if (router.is_exit_node())
                 protocols |= protocol_flag::EXIT;
         }
@@ -889,7 +887,7 @@ namespace srouter::handlers
         return false;
     }
 
-    std::optional<std::variant<ipv4, ipv6>> SessionEndpoint::map_session(const session::Session& s)
+    std::optional<std::pair<ipv4, ipv6>> SessionEndpoint::map_session(const session::Session& s)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
@@ -897,16 +895,16 @@ namespace srouter::handlers
         {
             log::debug(logcat, "Successfully mapped inbound session; mapping session to local TUN IP");
 
-            if (auto maybe_ipv4 = tun->map(s.remote()))
+            if (auto maybe_ips = tun->map(s.remote()))
             {
                 log::info(
                     logcat,
-                    "TUN device successfully mapped session (remote: {}) to local ip: {}",
+                    "TUN device successfully mapped session (remote: {}) to local ips: {}, {}",
                     s.remote(),
-                    *maybe_ipv4);
-                return maybe_ipv4;
+                    maybe_ips->first,
+                    maybe_ips->second);
+                return maybe_ips;
             }
-            // TODO: ipv6
 
             // TODO: if this fails, we should close the session
             log::warning(logcat, "TUN device failed to map session (remote: {}) to local ip", s.remote());

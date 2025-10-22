@@ -615,58 +615,64 @@ namespace srouter
             "network",
             "ifaddr",
             NotEmbedded,
+            MultiValue,
             Comment{
-                "Local IP and netmask for Session Router traffic. For example, 172.16.0.1/16 to use",
-                "172.16.0.1 for this Session Router instance and 172.16.x.y for remote peers. If omitted",
-                "then Session Router will attempt to automatically select an unused private range.",
-                "If you specify an all-0 address with range (e.g. 0.0.0.0/12) then Session Router will",
-                "auto-select a private range of the given size.",
+                "Private IP and netmask to use to map Session Router traffic to local addresses.",
+                "",
+                "The IPs (one IPv4, one IPv6) given here will be the IPs that remote Session",
+                "Router clients will access if attempting to establish connections to this",
+                "Session Router instance, and the remainder of the IP range will be the addresses",
+                "that this Session Router uses to send traffic to remote relay and client peers.",
+                "That is, a remote client attempting to connect to you through Session Router",
+                "will be tunneled to the IPv4 or IPv6 address specified here.",
+                "",
+                "For example, 172.16.0.1/16 will use 172.16.0.1 for this Session Router",
+                "instance's IPv4 address and 172.16.x.y will be used to map connections to remote",
+                "peer addresses.  For IPv6, fd2e:6c6f:6b69::1/64 will use fd2e:6c6f:6b69::1 for",
+                "this Session Router instance, and will map other lokinet instances to addresses",
+                "in fd2e:6c6f:6b69:0:w:x:y:z.  (These two ranges are the defaults if not",
+                "specified *and* they are not already in use on the system).",
+                "",
+                "This option can be given twice: once to set an IPv4 address and range, and once",
+                "to set an IPv6 address and range.  If one or the other is omitted then an unused",
+                "private range (/16 for IPv4, and /64 for IPv6) will be automatically detected",
+                "and used.",
+                "",
+                "An \"all-zero\" address can be used with a custom netmask to use auto-detection",
+                "with a custom size: for instance \"0.0.0.0/10\" will auto-detect an unused /10",
+                "IPv4 private address range, and \"::/56\" would look for an unused /56 IPv6",
+                "address range.",
+                "",
+                "If you intend to run network daemons for others to connect to (for example",
+                "HTTP), then it is recommended that you specify explicit IPv4 and IPv6 addresses",
+                "here and set up network servers (such as nginx to serve HTTP traffic) to listen",
+                "on those two addresses.  If you are only using Session Router to connect to",
+                "remote instances then you can typically leave this blank to auto-select an",
+                "unused network range.",
             },
             [this](std::string arg) {
                 try
                 {
-                    _local_ip_net = parse_ipv4_net(arg);
+                    auto ip_net = parse_ip_net(arg, 16, 64);
+                    if (auto* in4 = std::get_if<ipv4_net>(&ip_net))
+                    {
+                        if (_local_ip_net)
+                            throw std::runtime_error{"cannot specify multiple IPv4 addresses"};
+                        _local_ip_net = std::move(*in4);
+                    }
+                    else
+                    {
+                        if (_local_ipv6_net)
+                            throw std::runtime_error{"cannot specify multiple IPv6 addresses"};
+                        auto& n = std::get<ipv6_net>(ip_net);
+                        if (n.mask > 64)
+                            throw std::runtime_error{"local address IPv6 net mask must be /64 or smaller"};
+                        _local_ipv6_net = std::move(n);
+                    }
                 }
                 catch (const std::exception& e)
                 {
                     throw std::invalid_argument{"[network]:ifaddr invalid value '{}': {}"_format(arg, e.what())};
-                }
-            });
-
-        conf.define_option<std::string>(
-            "network",
-            "ipv6-network",
-            NotEmbedded,
-            Hidden,
-            Comment{
-                "Enables internal IPv6 traffic for session_router.  Can be set to:",
-                "  - false to disable IPv6 support.  This is the default if omitted",
-                "  - true to enable IPv6 support and auto-detect a free private /64 network range",
-                "  - ::/80 to auto-detect a free private range of netmask 80 (change as needed) ",
-                "    instead of the default 64",
-                "  - An explicit private address and range to use, such as: fd00:abcd:1234::1/56",
-                "",
-                "Currently experimental and not supported.",
-            },
-            [this](std::string arg) {
-                if (arg.empty())
-                {
-                    enable_ipv6 = false;
-                    return;
-                }
-                if (auto b = parse_boolean(arg))
-                {
-                    enable_ipv6 = *b;
-                    return;
-                }
-                try
-                {
-                    _local_ipv6_net = parse_ipv6_net(arg);
-                    enable_ipv6 = true;
-                }
-                catch (const std::exception& e)
-                {
-                    throw std::invalid_argument{"[network]:ipv6-addr invalid value '{}': {}"_format(arg, e.what())};
                 }
             });
 
