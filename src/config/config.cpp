@@ -703,36 +703,52 @@ namespace srouter
             FullClientOnly,
             MultiValue,
             Comment{
-                "Map a remote `.loki` address to always use a fixed local IP. For example:",
-                "    mapaddr=<pubkey>.loki:172.16.0.10",
-                "maps `<pubkey>.loki` to `172.16.0.10` instead of using the next available IP.",
-                "The given IP address must be inside the range configured by ifaddr=, and the",
-                "remote `.loki` cannot be an ONS address"},
+                "Map a remote `.loki` or `.snode` address to always use a fixed local IPv4, IPv6, or both",
+                "(separated by a comma). For example:",
+                "    mapaddr=kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.loki:172.16.0.42,fd2e:6c6f:6b69::42",
+                "    mapaddr=55fxrybf3jtausbnmxpgwcsz9t8qkf5pr8t5f4xyto4omjrkorpy.snode:fd2e:6c6f:6b69::deca:f20",
+                "reserves the given IPv4/IPv6 address for the indicated pubkeys.",
+                "",
+                "Session Router addresses that are *not* explicitly mapped will use the next available IP",
+                "(excluding any reserved by other mapaddr config lines).",
+                "",
+                "The given IP address(es) must be inside the ranges configured by ifaddr=, and ONS addresses",
+                "cannot be used."},
             [this](std::string arg) {
                 if (arg.empty())
                     return;
 
                 const auto pos = arg.find(":");
-
                 if (pos == std::string::npos)
                     throw std::invalid_argument{
-                        "[endpoint]:mapaddr invalid entry '{}'; expected 'ADDR:IP'"_format(arg)};
+                        "[network]:mapaddr invalid entry '{}': expected 'ADDR:IP' or 'ADDR:IP,IP'"_format(arg)};
 
                 auto addr_arg = std::string_view{arg}.substr(0, pos);
-                auto ip_arg = arg.substr(pos + 1);
+                auto ips = split(std::string_view{arg}.substr(pos + 1), ",", true);
+                if (ips.size() < 1 || ips.size() > 2)
+                    throw std::invalid_argument{
+                        "[network]:mapaddr invalid entry '{}': expected single IPv4, IPv6, or both with comma-separators"_format(
+                            arg)};
 
                 try
                 {
                     NetworkAddress raddr{addr_arg};
-                    // ipv6
-                    if (ip_arg.find(':') != std::string_view::npos)
-                        _reserved_local_ipv6.emplace(raddr, ip_arg);
-                    else
-                        _reserved_local_ipv4.emplace(raddr, ip_arg);
+                    for (const auto& ip : ips)
+                    {
+                        std::string ip_arg{ip};
+                        bool inserted;
+                        if (ip_arg.find(':') != std::string_view::npos)
+                            inserted = _reserved_local_ipv6.emplace(raddr, ip_arg).second;
+                        else
+                            inserted = _reserved_local_ipv4.emplace(raddr, ip_arg).second;
+
+                        if (!inserted)
+                            throw std::invalid_argument{"Duplicate entry for pubkey"};
+                    }
                 }
                 catch (const std::exception& e)
                 {
-                    throw std::invalid_argument{"[endpoint]:mapaddr invalid entry '{}': {}"_format(arg, e.what())};
+                    throw std::invalid_argument{"[network]:mapaddr invalid entry '{}': {}"_format(arg, e.what())};
                 }
             });
 
