@@ -100,7 +100,6 @@ session_router_add_library(session-router-contact
 session_router_add_library(session-router-ip
   net/ip_packet.cpp
   net/policy.cpp
-  net/utils.cpp
 )
 
 # Addressing and event loop files used by session-router-core and other libraries

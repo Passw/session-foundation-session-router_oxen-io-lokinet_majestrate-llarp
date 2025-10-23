@@ -1,7 +1,6 @@
 #include "ip_packet.hpp"
 
 #include "net/policy.hpp"
-#include "net/utils.hpp"
 #include "util/buffer.hpp"
 #include "util/logging.hpp"
 #include "util/logging/buffer.hpp"
@@ -16,15 +15,133 @@ namespace srouter
 {
     static auto logcat = log::Cat("ip_packet");
 
-    // constexpr auto IP_CSUM_OFF = offsetof(struct ip_header, checksum);
-    // constexpr auto IP_DST_OFF = offsetof(struct ip_header, dest);
-    // constexpr auto IP_SRC_OFF = offsetof(struct ip_header, src);
-    // constexpr auto IP_PROTO_OFF = offsetof(struct ip_header, protocol);
-    // constexpr auto TCP_DATA_OFF = oxenc::host_to_big<uint32_t>(0xF0000000);
-    constexpr auto TCP_CSUM_OFF = offsetof(struct tcp_header, checksum);
-    constexpr auto UDP_CSUM_OFF = offsetof(struct udp_header, checksum);
-    // auto TCP_DATA_OFFSET = htonl(0xF0000000);
-    // constexpr auto IS_PSEUDO = 0x10;
+    namespace
+    {
+        constexpr size_t TCP_CSUM_OFF = offsetof(struct tcp_header, checksum);
+        constexpr size_t UDP_CSUM_OFF = offsetof(struct udp_header, checksum);
+        constexpr size_t ICMP_CSUM_OFF = 2;
+        constexpr size_t ICMPv4_HEADER_SIZE = 8;
+        constexpr size_t ICMPv6_HEADER_SIZE = 4;
+
+        constexpr uint32_t add32_cs(uint32_t x) { return uint32_t{x & 0xFFff} + uint32_t{x >> 16}; }
+        constexpr uint32_t add32_cs(const ipv4& x) { return add32_cs(oxenc::host_to_big(x.addr)); }
+
+        constexpr uint32_t sub32_cs(uint32_t x) { return add32_cs(~x); }
+        constexpr uint32_t sub32_cs(const ipv4& x) { return sub32_cs(oxenc::host_to_big(x.addr)); }
+
+        constexpr uint32_t add32x4_cs(std::span<const uint32_t, 4> x)
+        {
+            return add32_cs(x[0]) + add32_cs(x[1]) + add32_cs(x[2]) + add32_cs(x[3]);
+        }
+        constexpr uint32_t sub32x4_cs(std::span<const uint32_t, 4> x)
+        {
+            return sub32_cs(x[0]) + sub32_cs(x[1]) + sub32_cs(x[2]) + sub32_cs(x[3]);
+        }
+
+        uint16_t ip_checksum(const uint8_t* buf, size_t sz)
+        {
+            uint32_t sum = 0;
+
+            while (sz > 1)
+            {
+                sum += *(uint16_t*)(buf);
+                sz -= sizeof(uint16_t);
+                buf += sizeof(uint16_t);
+            }
+
+            if (sz != 0)
+            {
+                uint16_t x = 0;
+                *(uint8_t*)&x = *buf;
+                sum += x;
+            }
+
+            sum = (sum & 0xFFff) + (sum >> 16);
+            sum += sum >> 16;
+
+            return uint16_t((~sum) & 0xFFff);
+        }
+
+        uint16_t update_ipv4_checksum(
+            uint16_t old_sum, uint32_t old_src, uint32_t old_dest, const ipv4& new_src, const ipv4& new_dest)
+        {
+            uint32_t sum = old_sum + add32_cs(old_src) + add32_cs(old_dest) + sub32_cs(new_src) + sub32_cs(new_dest);
+
+            sum = (sum & 0xFFff) + (sum >> 16);
+            sum += sum >> 16;
+
+            return uint16_t(sum & 0xFFff);
+        }
+
+        uint16_t update_ipv4_tcp_checksum(
+            uint16_t old_sum, uint32_t old_src, uint32_t old_dest, const ipv4& new_src, const ipv4& new_dest)
+        {
+            auto new_sum = update_ipv4_checksum(old_sum, old_src, old_dest, new_src, new_dest);
+            // With 1's complement, 0xffff is -0 but that can never actually appear in a checksum
+            // with any non-zero bytes (which will always be present here), so this corrects it to
+            // the proper 0x000 (+0) value that it should have:
+            return new_sum == 0xFFff ? 0x0000 : new_sum;
+        }
+
+        uint16_t update_ipv4_udp_checksum(
+            uint16_t old_sum, uint32_t old_src, uint32_t old_dest, const ipv4& new_src, const ipv4& new_dest)
+        {
+            if (old_sum == 0x0000)
+                return old_sum;  // 0 is used to indicate "no checksum", don't change
+
+            return update_ipv4_checksum(old_sum, old_src, old_dest, new_src, new_dest);
+        }
+
+        uint16_t update_ipv6_checksum(
+            uint16_t old_sum,
+            std::span<const uint32_t, 4> old_src,
+            std::span<const uint32_t, 4> old_dest,
+            std::span<const uint32_t, 4> new_src,
+            std::span<const uint32_t, 4> new_dest)
+        {
+            // It seems a little counterintuitive that we aren't doing endian conversions here, but
+            // that's actually okay because even if we have a "wrong" byte order interpretation, we
+            // have the same wrong interpretation for old_sum, and because we're using 1's
+            // complement, it all works out in the end regardless of endianness.
+            uint32_t sum = uint32_t{old_sum} + add32x4_cs(old_src) + add32x4_cs(old_dest) + sub32x4_cs(new_src)
+                + sub32x4_cs(new_dest);
+
+            sum = (sum & 0xFFff) + (sum >> 16);
+            sum += sum >> 16;
+
+            return static_cast<uint16_t>(sum & 0xFFff);
+        }
+
+        // Modifies the payload's checksum at `checksumoff` to account for a change in source and
+        // destination IPv6 addresses.  Unlike IPv4 which has a checksum over source and dest, IPv6
+        // does not, and some protocols require it under IPv6 (such as UDP where it can be optional
+        // under IPv4, and ICMP(v4) which doesn't checksum addresses at all, unlike ICMPv6).
+        void update_ipv6_proto_checksum(
+            std::span<std::byte> payload,
+            size_t fragoff,
+            size_t chksumoff,
+            std::span<const uint32_t, 4> old_src,
+            std::span<const uint32_t, 4> old_dest,
+            std::span<const uint32_t, 4> new_src,
+            std::span<const uint32_t, 4> new_dest)
+        {
+            if (fragoff > chksumoff || payload.size() < chksumoff - fragoff + 2)
+                return;
+
+            auto& check = *reinterpret_cast<uint16_t*>(payload.data() + chksumoff - fragoff);
+
+            // Unlike UDP in IPv4, in IPv6 the UDP checksum is always required, thus we don't
+            // special-case it being set to 0x0000 here as we do for IPv4 UDP.
+
+            check = update_ipv6_checksum(check, old_src, old_dest, new_src, new_dest);
+
+            // With 1's complement, 0xffff is -0 but that can never actually appear in a checksum
+            // with any non-zero bytes (which will always be present here), so this corrects it to
+            // the proper 0x000 (+0) value that it should have:
+            if (check == 0xFFff)
+                check = 0x0000;
+        }
+    }  // namespace
 
     IPPacket::IPPacket(size_t sz)
     {
@@ -82,8 +199,7 @@ namespace srouter
                     if (frag_off <= TCP_CSUM_OFF && payload_size >= TCP_CSUM_OFF - frag_off + 2)
                     {
                         auto* tcp_hdr = reinterpret_cast<tcp_header*>(payload);
-                        tcp_hdr->checksum =
-                            utils::update_ipv4_tcp_checksum(tcp_hdr->checksum, hdr.src, hdr.dest, src, dst);
+                        tcp_hdr->checksum = update_ipv4_tcp_checksum(tcp_hdr->checksum, hdr.src, hdr.dest, src, dst);
                     }
                     break;
                 case net::IPProtocol::UDP:
@@ -91,8 +207,7 @@ namespace srouter
                     if (frag_off <= UDP_CSUM_OFF && payload_size >= UDP_CSUM_OFF + 2)
                     {
                         auto* udp_hdr = reinterpret_cast<udp_header*>(payload);
-                        udp_hdr->checksum =
-                            utils::update_ipv4_udp_checksum(udp_hdr->checksum, hdr.src, hdr.dest, src, dst);
+                        udp_hdr->checksum = update_ipv4_udp_checksum(udp_hdr->checksum, hdr.src, hdr.dest, src, dst);
                     }
                     break;
                 default:
@@ -101,7 +216,7 @@ namespace srouter
             }
         }
 
-        hdr.checksum = utils::update_ipv4_checksum(hdr.checksum, hdr.src, hdr.dest, src, dst);
+        hdr.checksum = update_ipv4_checksum(hdr.checksum, hdr.src, hdr.dest, src, dst);
 
         // set new IP addresses
         hdr.src = oxenc::host_to_big(src.addr);
@@ -177,35 +292,35 @@ namespace srouter
         switch (static_cast<net::IPProtocol>(nextproto))
         {
             case net::IPProtocol::TCP:
-                csum_off = 16;
+                csum_off = TCP_CSUM_OFF;
                 break;
             case net::IPProtocol::ICMP6:
-                csum_off = 2;
+                csum_off = ICMP_CSUM_OFF;
                 break;
             case net::IPProtocol::UDP:
             case net::IPProtocol::UDP_LITE:
-                csum_off = 6;
+                csum_off = UDP_CSUM_OFF;
                 break;
             default:
                 // do nothing
                 break;
         }
         if (csum_off)
-            utils::update_ipv6_proto_checksum(payload, fragoff, *csum_off, old_src, old_dest, new_src, new_dest);
+            update_ipv6_proto_checksum(payload, fragoff, *csum_off, old_src, old_dest, new_src, new_dest);
     }
 
     std::optional<IPPacket> IPPacket::make_icmp_unreachable() const
     {
         if (is_ipv4())
         {
-            const auto& header = *reinterpret_cast<const ip_header*>(data());
+            const auto& header = this->header();
             auto ip_hdr_sz = header.header_len * 4;
 
             // ICMP unreachable includes a carbon copy of the illiciting packet prefix include *at
             // least* the header; we also include the first 8 bytes after the header:
             std::span orig_prefix{_buf.data(), std::min<size_t>(ip_hdr_sz + 8, _buf.size())};
 
-            size_t pkt_size = sizeof(ip_header) + ICMP_HEADER_SIZE + orig_prefix.size();
+            size_t pkt_size = sizeof(ip_header) + ICMPv4_HEADER_SIZE + orig_prefix.size();
 
             IPPacket pkt{pkt_size};
 
@@ -233,7 +348,7 @@ namespace srouter
             // not us).  We leave this all as zero (and buf is already 0 initialized).
             itr += (1 + 1 + 2);
 
-            assert(itr == pkt.data() + sizeof(ip_header) + ICMP_HEADER_SIZE);
+            assert(itr == pkt.data() + sizeof(ip_header) + ICMPv4_HEADER_SIZE);
 
             // carbon copy the original packet prefix:
             std::memcpy(itr, orig_prefix.data(), orig_prefix.size());
@@ -242,11 +357,10 @@ namespace srouter
             assert(itr == pkt.data() + pkt_size);
 
             // calculate checksum of ip header
-            pkt.header().checksum = utils::ip_checksum(reinterpret_cast<const uint8_t*>(pkt.data()), sizeof(ip_header));
+            pkt.header().checksum = ip_checksum(reinterpret_cast<const uint8_t*>(pkt.data()), sizeof(ip_header));
 
             // calculate icmp checksum from everything from icmp header (inclusive) to the end.
-            *checksum =
-                utils::ip_checksum(reinterpret_cast<const uint8_t*>(icmp_begin), std::distance(icmp_begin, itr));
+            *checksum = ip_checksum(reinterpret_cast<const uint8_t*>(icmp_begin), std::distance(icmp_begin, itr));
 
             log::debug(logcat, "Constructed ICMP unreachable packet");
             return pkt;
@@ -280,7 +394,7 @@ namespace srouter
 
         ip_hdr->src = oxenc::host_to_big(src.to_ipv4().addr);
         ip_hdr->dest = oxenc::host_to_big(dest.to_ipv4().addr);
-        ip_hdr->checksum = utils::ip_checksum(reinterpret_cast<uint8_t*>(ip_hdr), sizeof(ip_header));
+        ip_hdr->checksum = ip_checksum(reinterpret_cast<uint8_t*>(ip_hdr), sizeof(ip_header));
 
         udp_hdr->src = oxenc::host_to_big(src.port());
         udp_hdr->dest = oxenc::host_to_big(dest.port());
