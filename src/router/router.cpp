@@ -482,7 +482,7 @@ namespace srouter
 
             // default listen port for clients is a specific port, we want 0 for embedded,
             // but perhaps the default should be 0 for all clients?
-            if (_config.links.listen_addr && embedded())
+            if (!_config.links.listen_addr && embedded())
                 _listen_address.set_port(0);
 
             log::info(log_global, "Session Router client connection using {}", _listen_address);
