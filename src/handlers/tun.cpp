@@ -1051,43 +1051,9 @@ namespace srouter::handlers
             {
                 log::debug(logcat, "No session for remote: {} for outbound packet, attempting to create one!", remote);
 
-                // TODO FIXME: this lookup is not right to initiate a new lookup on each packet:
-                // rather, since we don't have a session, we need to initiate one, and let *it* do
-                // the lookup.
-                if (remote.client())
-                {
-                    _router.session_endpoint().lookup_client_intro(
-                        remote.router_id(),
-                        [this, remote, pkt = std::move(pkt)](std::optional<srouter::ClientContact> cc) mutable {
-                            if (cc)
-                            {
-                                log::debug(logcat, "client intro for {} found: {}", remote, *cc);
-                                auto s = _router.session_endpoint().initiate_remote_session(remote, nullptr);
-                                s->send_session_data_message(pkt.span(), pkt.protocol());
-                                return;
-                            }
-                            log::debug(logcat, "It appears {} has no contact information available.", remote);
-                            if (auto icmp = pkt.make_icmp_unreachable())
-                                send_packet_to_net_if(std::move(*icmp));
-                        });
-                }
-                else
-                {
-                    _router.session_endpoint().lookup_relay_contact(
-                        remote.router_id(),
-                        [this, remote, pkt = std::move(pkt)](std::optional<srouter::RelayContact> rc) mutable {
-                            if (rc)
-                            {
-                                log::debug(logcat, "Relay contact for {} found: {}", remote, *rc);
-                                auto s = _router.session_endpoint().initiate_remote_session(remote, nullptr);
-                                s->send_session_data_message(pkt.span(), pkt.protocol());
-                                return;
-                            }
-                            log::debug(logcat, "It appears {} has no contact information available.", remote);
-                            if (auto icmp = pkt.make_icmp_unreachable())
-                                send_packet_to_net_if(std::move(*icmp));
-                        });
-                }
+                auto s = _router.session_endpoint().initiate_remote_session(remote, nullptr);
+                if (s)
+                    s->send_session_data_message(pkt.span(), pkt.protocol());
             }
         }
         else
