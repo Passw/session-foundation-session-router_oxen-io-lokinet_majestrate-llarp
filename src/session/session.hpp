@@ -100,11 +100,11 @@ namespace srouter
 
             std::unique_ptr<TCPTunnel> tcp_tunnel{nullptr};
 
-            std::chrono::milliseconds last_activity = srouter::time_now_ms();
+            sys_ms last_activity = srouter::time_now_ms();
 
             // only currently useful for outbound client sessions, but more convenient here
             // than an overload on all inbound traffic functions for that one case
-            std::chrono::milliseconds last_inbound_activity = srouter::time_now_ms();
+            sys_ms last_inbound_activity = srouter::time_now_ms();
 
             void update_active();
 
@@ -210,7 +210,7 @@ namespace srouter
 
             virtual void recv_close();
 
-            bool is_expired(std::chrono::milliseconds now) const;
+            bool is_expired(sys_ms now) const;
 
             virtual std::string to_string() const = 0;
 
@@ -219,7 +219,7 @@ namespace srouter
             // Called periodically (somewhere under Router::tick) to handle anything needed on the
             // session, but also sometimes called in other places (e.g. if we need new paths ASAP
             // rather than waiting for the next tick)
-            virtual void tick(std::chrono::milliseconds now);
+            virtual void tick(sys_ms now);
 
             virtual std::vector<std::pair<std::string, std::string>> current_path() const { return {}; };
         };
@@ -243,13 +243,13 @@ namespace srouter
                 std::vector<std::pair<path::Path*, HopID>>&& good,
                 std::vector<std::pair<path::Path*, HopID>>&& fallback);
 
-            void tick(std::chrono::milliseconds now) override;
+            void tick(sys_ms now) override;
 
             virtual void select_new_current() = 0;
 
             // Closes non-active paths that are close to expiry, i.e. any paths that we would not
             // select if we need to switch paths.
-            void close_old_paths(std::chrono::milliseconds now);
+            void close_old_paths(sys_ms now);
 
             void send_path_data_message(std::vector<std::byte>&& data, SymmNonce&& nonce) override;
             void send_path_control_message(std::vector<std::byte>&& data, SymmNonce&& nonce, bool path_switch) override;
@@ -265,9 +265,9 @@ namespace srouter
 
             std::string make_session_init(path::Path& path);
 
-            void fire_waiting(std::chrono::milliseconds now);
+            void fire_waiting(sys_ms now);
 
-            using active_item = std::pair<std::chrono::milliseconds, std::function<void(OutboundSession& session)>>;
+            using active_item = std::pair<sys_ms, std::function<void(OutboundSession& session)>>;
             struct on_established_sorter
             {
                 bool operator()(const active_item& a, const active_item& b) const { return a.first > b.first; }
@@ -315,7 +315,7 @@ namespace srouter
                 std::function<void(OutboundSession& session)> on_established,
                 std::optional<std::chrono::milliseconds> establish_timeout = std::nullopt);
 
-            void update_paths(std::chrono::milliseconds now) override;
+            void update_paths(sys_ms now) override;
 
             void recv_close() override;
 
@@ -342,7 +342,7 @@ namespace srouter
             bool _intro_update_processed = false;
             bool updating_intros = false;
 
-            std::chrono::milliseconds last_cc_update = 0s;
+            sys_ms last_cc_update = sys_ms::min();
             bool cc_ok = false;
 
             // Chooses the next router id to pivot to, based on introset and current paths.  Returns
@@ -361,7 +361,7 @@ namespace srouter
             // there already is intros, to refresh/replace them.
             void refresh_intros();
 
-            void tick(std::chrono::milliseconds now) override;
+            void tick(sys_ms now) override;
 
             // Called with a client contact to replace the current set of client intros used by this
             // session with the ones in the given client contact.  This is called by
@@ -369,7 +369,7 @@ namespace srouter
             // when receiving intro updates through an existing session).
             void update_intros(const ClientContact& cc);
 
-            void update_paths(std::chrono::milliseconds now) override;
+            void update_paths(sys_ms now) override;
 
             void recv_close() override;
 

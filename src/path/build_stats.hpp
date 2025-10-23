@@ -1,6 +1,6 @@
 #include <nlohmann/json_fwd.hpp>
+#include <util/time.hpp>
 
-#include <chrono>
 #include <cstdint>
 
 namespace srouter::path
@@ -17,11 +17,11 @@ namespace srouter::path
         uint64_t path_fails{0};   // path failures post-build
         uint64_t timeouts{0};
 
-        std::chrono::milliseconds last_warn_time{0ms};
+        sys_ms last_warn_time{sys_ms::min()};
 
         nlohmann::json ExtractStatus() const;
 
-        void update(std::chrono::milliseconds now);
+        void update(sys_ms now);
 
         std::string to_string() const;
         static constexpr bool to_string_formattable = true;

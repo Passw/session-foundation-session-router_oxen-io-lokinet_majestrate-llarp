@@ -83,7 +83,7 @@ namespace srouter::handlers
         return stats;
     }
 
-    std::array<int, 3> SessionEndpoint::path_stats(std::chrono::milliseconds now) const
+    std::array<int, 3> SessionEndpoint::path_stats(sys_ms now) const
     {
         std::array<int, 3> stats{0};
         auto& [in, out_r, out_c] = stats;
@@ -151,7 +151,7 @@ namespace srouter::handlers
         return false;
     }
 
-    void SessionEndpoint::tick(std::chrono::milliseconds now)
+    void SessionEndpoint::tick(sys_ms now)
     {
         log::trace(logcat, "SessionEndpoint ticking sessions...");
         for (const auto& [addr, session] : _sessions)
@@ -213,7 +213,7 @@ namespace srouter::handlers
         return fuzz;
     }
 
-    void SessionEndpoint::update_paths(std::chrono::milliseconds now)
+    void SessionEndpoint::update_paths(sys_ms now)
     {
         int have = num_paths(now);
         // If you ask for more than 10 inbound paths (which is only possible via an undocumented
@@ -352,7 +352,7 @@ namespace srouter::handlers
         // expiries.  All of the above still holds with respect to slots, it's just that where we
         // write "+Nm" it's actually "+Nm+fuzz[0,3m]".
 
-        std::vector<std::chrono::seconds> expiries;
+        std::vector<std::chrono::sys_seconds> expiries;
         expiries.reserve(needed);
         {
             const int slots = std::min(_target_paths, path::MAX_LIFETIME_SLOTS);

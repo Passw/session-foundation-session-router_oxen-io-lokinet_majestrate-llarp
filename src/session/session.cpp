@@ -791,7 +791,7 @@ namespace srouter::session
         cc_ok = false;
     }
 
-    bool Session::is_expired(std::chrono::milliseconds now) const { return now - last_activity > SESSION_TIMEOUT; }
+    bool Session::is_expired(sys_ms now) const { return now - last_activity > SESSION_TIMEOUT; }
 
     std::string OutboundSession::to_string() const
     {
@@ -837,7 +837,7 @@ namespace srouter::session
         // TODO: kick off path builds immediately
     }
 
-    void OutboundSession::fire_waiting(std::chrono::milliseconds now)
+    void OutboundSession::fire_waiting(sys_ms now)
     {
         // If we're established then we can immediately fire everything in the queue, otherwise we
         // fire callbacks that have reached their timer (to signal a non-established timeout).
@@ -863,7 +863,7 @@ namespace srouter::session
             srouter::time_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
     }
 
-    void Session::tick(std::chrono::milliseconds now)
+    void Session::tick(sys_ms now)
     {
         if (is_expired(now))
         {
@@ -872,7 +872,7 @@ namespace srouter::session
         }
     }
 
-    void OutboundSession::tick(std::chrono::milliseconds now)
+    void OutboundSession::tick(sys_ms now)
     {
         Session::tick(now);
         if (_is_closed)
@@ -883,7 +883,7 @@ namespace srouter::session
         fire_waiting(now);
     }
 
-    void OutboundClientSession::tick(std::chrono::milliseconds now)
+    void OutboundClientSession::tick(sys_ms now)
     {
         OutboundSession::tick(now);
         if (_is_closed)
@@ -978,7 +978,7 @@ namespace srouter::session
         send_path_control_impl(_current_path, *this, std::move(data), std::move(nonce), path_switch);
     }
 
-    void OutboundSession::close_old_paths(std::chrono::milliseconds now)
+    void OutboundSession::close_old_paths(sys_ms now)
     {
         // cf. select_new_current
         //
@@ -1109,7 +1109,7 @@ namespace srouter::session
         select_new_current_impl(std::move(good), std::move(fallback));
     }
 
-    void OutboundRelaySession::update_paths(std::chrono::milliseconds /*now*/)
+    void OutboundRelaySession::update_paths(sys_ms /*now*/)
     {
         int needed = _target_paths - num_paths();
         if (needed <= 0)
@@ -1191,7 +1191,7 @@ namespace srouter::session
         update_paths(last_cc_update);
     }
 
-    void OutboundClientSession::update_paths(std::chrono::milliseconds now)
+    void OutboundClientSession::update_paths(sys_ms now)
     {
         // - If we have any current path to a pivot that is no longer in the client contact, kill
         //   it.

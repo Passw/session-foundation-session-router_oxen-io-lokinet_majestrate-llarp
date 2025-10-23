@@ -23,8 +23,7 @@ namespace srouter::path
 
     size_t Path::next_path_log_id = 0;
 
-    Path::Path(
-        Router& rtr, std::span<const RelayContact> hop_rcs, PathHandler& handler, std::chrono::milliseconds expiry_ts)
+    Path::Path(Router& rtr, std::span<const RelayContact> hop_rcs, PathHandler& handler, sys_ms expiry_ts)
         : handler{handler.weak_from_this()}, _router{rtr}, _expiry{expiry_ts}, path_log_id{++next_path_log_id}
     {
         hops.resize(hop_rcs.size());
@@ -70,7 +69,7 @@ namespace srouter::path
         if (p.ping_responses == 0)
             return "0.0%";
 
-        double mean = (double)p.ping_cumulative.count() / p.ping_responses;
+        double mean = (double)p.ping_cumulative.time_since_epoch().count() / p.ping_responses;
         double success_pct = p.ping_responses / (double)(p.ping_responses + p.ping_timeouts) * 100.0;
         if (p.ping_responses == 1)
             return "{:.1f}%, {:.0f}ms avg"_format(success_pct, mean);
@@ -79,7 +78,7 @@ namespace srouter::path
         return "{:.1f}%, {:.0f}ms avg, {:.1f}ms s.d."_format(success_pct, mean, sd);
     }
 
-    void Path::do_ping(std::chrono::milliseconds start_time)
+    void Path::do_ping(sys_ms start_time)
     {
         if (!is_active() || start_time < next_ping)
             return;
@@ -94,7 +93,7 @@ namespace srouter::path
                 auto sself = wself.lock();
                 if (!sself)
                     return;
-                std::chrono::milliseconds now = srouter::time_now_ms();
+                sys_ms now = srouter::time_now_ms();
                 auto time_taken = now - start_time;
                 if (resp.ok())
                 {
@@ -321,7 +320,7 @@ namespace srouter::path
         auto now = srouter::time_now_ms();
 
         nlohmann::json obj{
-            {"lastRecvMsg", to_json(last_recv_msg)},
+            {"lastRecvMsg", to_json(last_recv_msg.time_since_epoch())},
             {"expired", is_expired(now)},
             {"ready", is_active()},
         };

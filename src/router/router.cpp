@@ -754,14 +754,14 @@ namespace srouter
         }
     }
 
-    bool Router::should_report_stats(std::chrono::milliseconds now) const
+    bool Router::should_report_stats(sys_ms now) const
     {
         return now >= _started_at + 10s
             and now >= _last_stats_report
                 + (log::get_level(logcat) <= log::Level::debug ? REPORT_STATS_INTERVAL_DEBUG : REPORT_STATS_INTERVAL);
     }
 
-    std::string Router::_stats_line(std::chrono::milliseconds now) const
+    std::string Router::_stats_line(sys_ms now) const
     {
         using namespace fmt::literals;
         auto [rcs, rids, bs] = _node_db->db_stats();
@@ -822,7 +822,7 @@ namespace srouter
             fmt::join(srouter::VERSION, "."), is_service_node ? "relay" : "client", _stats_line(now));
     }
 
-    void Router::_relay_tick([[maybe_unused]] std::chrono::milliseconds now)
+    void Router::_relay_tick([[maybe_unused]] sys_ms now)
     {
         assert(_config.relay());
 #ifndef SROUTER_EMBEDDED_ONLY
@@ -865,7 +865,7 @@ namespace srouter
 #endif
     }
 
-    void Router::_client_tick(std::chrono::milliseconds now)
+    void Router::_client_tick(sys_ms now)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
@@ -904,8 +904,8 @@ namespace srouter
 
         const auto now = srouter::time_now_ms();
 
-        if (const auto delta = now - _last_tick;
-            _last_tick != 0s and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
+        if (const auto delta = now - _last_tick; _last_tick != sys_ms::min()
+            and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
         {
             // TODO: this, if needed?
             // we detected a time skip into the futre, thaw the network
@@ -985,13 +985,7 @@ namespace srouter
         tick();
     }
 
-    std::chrono::milliseconds Router::Uptime() const
-    {
-        const std::chrono::milliseconds now = srouter::time_now_ms();
-        if (_started_at > 0s && now > _started_at)
-            return now - _started_at;
-        return 0s;
-    }
+    std::chrono::milliseconds Router::Uptime() const { return time_now_ms() - _started_at; }
 
     bool Router::is_connected() const
     {

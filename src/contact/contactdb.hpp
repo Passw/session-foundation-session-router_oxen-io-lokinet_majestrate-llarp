@@ -38,7 +38,7 @@ namespace srouter
         size_t num_ccs() const;
 
       private:
-        void purge_ccs(std::chrono::milliseconds now = srouter::time_now_ms());
+        void purge_ccs(sys_ms now = srouter::time_now_ms());
     };
 
 }  // namespace srouter

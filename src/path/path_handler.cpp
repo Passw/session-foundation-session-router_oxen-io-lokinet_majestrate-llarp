@@ -56,7 +56,7 @@ namespace srouter::path
         return &*std::next(active_paths().begin(), std::uniform_int_distribution<int>{0, n_paths - 1}(srouter::csrng));
     }
 
-    void PathHandler::ping_paths(std::chrono::milliseconds now)
+    void PathHandler::ping_paths(sys_ms now)
     {
         Lock_t l{paths_mutex};
 
@@ -65,7 +65,7 @@ namespace srouter::path
                 p->do_ping(now);
     }
 
-    void PathHandler::expire_paths(std::chrono::milliseconds now)
+    void PathHandler::expire_paths(sys_ms now)
     {
         Lock_t lock{paths_mutex};
 
@@ -112,7 +112,7 @@ namespace srouter::path
         return nullptr;
     }
 
-    void PathHandler::tick(std::chrono::milliseconds now)
+    void PathHandler::tick(sys_ms now)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
@@ -204,7 +204,7 @@ namespace srouter::path
         return selected;
     }
 
-    int PathHandler::num_active_paths(std::chrono::milliseconds expiry_ts) const
+    int PathHandler::num_active_paths(sys_ms expiry_ts) const
     {
         Lock_t l(paths_mutex);
 
@@ -215,7 +215,7 @@ namespace srouter::path
         return n;
     }
 
-    int PathHandler::num_paths(std::chrono::milliseconds expiry_ts) const
+    int PathHandler::num_paths(sys_ms expiry_ts) const
     {
         Lock_t l(paths_mutex);
 
@@ -449,8 +449,7 @@ namespace srouter::path
         return true;
     }
 
-    std::shared_ptr<Path> PathHandler::build_init_path(
-        std::span<const RelayContact> hops, std::chrono::milliseconds expiry_ts)
+    std::shared_ptr<Path> PathHandler::build_init_path(std::span<const RelayContact> hops, sys_ms expiry_ts)
     {
         auto path = std::make_shared<path::Path>(router, hops, *this, expiry_ts);
 
@@ -609,7 +608,7 @@ namespace srouter::path
         std::span<const std::byte, path::BUILD_FRAME_SIZE> frame,
         const Router& r,
         const std::variant<RouterID, quic::ConnectionID>& src,
-        std::chrono::milliseconds now)
+        sys_ms now)
     {
         std::pair<std::shared_ptr<path::TransitHop>, SymmNonce> ret;
         auto& [hop_ptr, dh_nonce] = ret;
@@ -676,7 +675,7 @@ namespace srouter::path
     }
 
     // TODO FIXME: investigate return type?
-    Path* PathHandler::build(std::span<const RelayContact> hops, std::chrono::milliseconds expiry_ts)
+    Path* PathHandler::build(std::span<const RelayContact> hops, sys_ms expiry_ts)
     {
         Lock_t lock{paths_mutex};
 
@@ -771,7 +770,7 @@ namespace srouter::path
         on_path_build_success(build_id, p);
     }
 
-    bool PathHandler::cooldown(std::chrono::milliseconds now) const
+    bool PathHandler::cooldown(sys_ms now) const
     {
         if (_consecutive_failures < BACKOFF_THRESHOLD)
             return false;

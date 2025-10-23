@@ -12,7 +12,7 @@ namespace srouter::util
     {
         DecayingHashTable(std::chrono::milliseconds cacheInterval = 1h) : m_CacheInterval(cacheInterval) {}
 
-        void Decay(std::chrono::milliseconds now)
+        void Decay(sys_ms now)
         {
             EraseIf([&](const auto& item) { return item.second.second + m_CacheInterval <= now; });
         }
@@ -22,9 +22,9 @@ namespace srouter::util
 
         /// return true if inserted
         /// return false if not inserted
-        bool Put(Key_t key, Value_t value, std::chrono::milliseconds now = 0s)
+        bool Put(Key_t key, Value_t value, sys_ms now = 0s)
         {
-            if (now == 0s)
+            if (now == sys_ms::min())
                 now = srouter::time_now_ms();
             return m_Values.try_emplace(std::move(key), std::make_pair(std::move(value), now)).second;
         }

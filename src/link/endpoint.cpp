@@ -204,7 +204,7 @@ namespace srouter::link
         });
     }
 
-    void Endpoint::close_redundant(std::chrono::milliseconds now)
+    void Endpoint::close_redundant(sys_ms now)
     {
         for (auto it = relay_bidir.begin(); it != relay_bidir.end();)
         {

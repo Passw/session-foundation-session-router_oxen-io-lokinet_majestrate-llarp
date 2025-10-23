@@ -32,10 +32,7 @@ namespace srouter
             std::chrono::steady_clock::now() - started_at_steady);
     }
 
-    std::chrono::milliseconds time_now_ms()
-    {
-        return uptime() + time_since_epoch<std::chrono::milliseconds, std::chrono::system_clock>(started_at_system);
-    }
+    sys_ms time_now_ms() { return std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now()); }
 
     nlohmann::json to_json(const std::chrono::milliseconds& t) { return to_milliseconds(t); }
 

@@ -16,7 +16,7 @@ namespace srouter::path
             {"success", success}, {"attempts", attempts}, {"timeouts", timeouts}, {"fails", build_fails}};
     }
 
-    void BuildStats::update(std::chrono::milliseconds now)
+    void BuildStats::update(sys_ms now)
     {
         if (attempts > 50 && attempts >= (success * 4) && now - last_warn_time > 5s)
         {

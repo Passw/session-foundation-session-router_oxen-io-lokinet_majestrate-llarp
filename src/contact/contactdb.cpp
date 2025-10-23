@@ -23,7 +23,7 @@ namespace srouter
         _purge_ticker = _router.loop.call_every(30s, [this]() { purge_ccs(); }, true);
     }
 
-    void ContactDB::purge_ccs(std::chrono::milliseconds now)
+    void ContactDB::purge_ccs(sys_ms now)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 

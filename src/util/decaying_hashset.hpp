@@ -18,9 +18,9 @@ namespace srouter::util
 
         /// return true if inserted
         /// return false if not inserted
-        bool Insert(const Val_t& v, std::chrono::milliseconds now = 0s)
+        bool Insert(const Val_t& v, sys_ms now = sys_ms::min())
         {
-            if (now == 0s)
+            if (now == sys_ms::min())
                 now = srouter::time_now_ms();
             return m_Values.try_emplace(v, now).second;
         }
@@ -29,9 +29,9 @@ namespace srouter::util
         void Upsert(const Val_t& v) { m_Values[v] = srouter::time_now_ms(); }
 
         /// decay hashset entries
-        void Decay(std::chrono::milliseconds now = 0s)
+        void Decay(sys_ms now = sys_ms::min())
         {
-            if (now == 0s)
+            if (now == sys_ms::min())
                 now = srouter::time_now_ms();
             EraseIf([&](const auto& item) { return (m_CacheInterval + item.second) <= now; });
         }
