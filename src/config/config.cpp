@@ -654,10 +654,31 @@ namespace srouter
                 try
                 {
                     auto ip_net = parse_ip_net(arg, 16, 64);
+
+                    std::visit(
+                        []<typename IPNet>(IPNet& in) {
+                            if (in.ip != IPNet{}.ip && in.ip == in.to_range().ip)
+                            {
+                                if (auto next = in.ip.next_ip(); next and in.contains(*next))
+                                {
+                                    log::warning(
+                                        logcat,
+                                        "Invalid host IP '{}' in [network]:ifaddr (the network zero address is "
+                                        "invalid); using '{}' instead",
+                                        in.ip,
+                                        *next);
+                                    in.ip = std::move(*next);
+                                }
+                            }
+                        },
+                        ip_net);
+
                     if (auto* in4 = std::get_if<ipv4_net>(&ip_net))
                     {
                         if (_local_ip_net)
                             throw std::runtime_error{"cannot specify multiple IPv4 addresses"};
+                        if (in4->ip == in4->broadcast())
+                            throw std::runtime_error{"Cannot bind to the IPv4 network broadcast address"};
                         _local_ip_net = std::move(*in4);
                     }
                     else
