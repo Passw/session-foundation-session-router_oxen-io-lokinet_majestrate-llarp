@@ -232,7 +232,7 @@ namespace srouter
             // Called periodically (somewhere under Router::tick) to handle anything needed on the
             // session, but also sometimes called in other places (e.g. if we need new paths ASAP
             // rather than waiting for the next tick)
-            virtual void tick([[maybe_unused]] std::chrono::milliseconds now) {}
+            virtual void tick(std::chrono::milliseconds now);
         };
 
         class OutboundSession : public path::PathHandler, public Session
