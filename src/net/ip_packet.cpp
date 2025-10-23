@@ -316,9 +316,10 @@ namespace srouter
             const auto& header = this->header();
             auto ip_hdr_sz = header.header_len * 4;
 
-            // ICMP unreachable includes a carbon copy of the illiciting packet prefix include *at
-            // least* the header; we also include the first 8 bytes after the header:
-            std::span orig_prefix{_buf.data(), std::min<size_t>(ip_hdr_sz + 8, _buf.size())};
+            // ICMP unreachable includes a carbon copy of the illiciting packet prefix including *at
+            // least* the header, but can also include some of the body: we also include the first
+            // 32 bytes after the header.
+            std::span orig_prefix{_buf.data(), std::min<size_t>(ip_hdr_sz + 32, _buf.size())};
 
             size_t pkt_size = sizeof(ip_header) + ICMPv4_HEADER_SIZE + orig_prefix.size();
 
@@ -339,7 +340,7 @@ namespace srouter
             std::byte* itr = pkt.data() + sizeof(ip_header);
             auto* icmp_begin = itr;
             *itr++ = std::byte{3};  // ICMP type 3 = 'destination unreachable'
-            *itr++ = std::byte{7};  // ICMP code 7 = 'Destination host unknown error'
+            *itr++ = std::byte{1};  // ICMP code 1 = 'host unreachable error'
 
             // 2 byte checksum (we'll come back to this later)
             auto* checksum = reinterpret_cast<uint16_t*>(itr);
@@ -366,7 +367,70 @@ namespace srouter
             return pkt;
         }
 
-        // TODO FIXME: ipv6
+        if (is_ipv6())
+        {
+            const auto& header = v6_header();
+
+            // ICMP unreachable includes a carbon copy of the illiciting packet prefix including *at
+            // least* the header, but can also include some of the body: we also include the first
+            // 32 bytes after the header, reduce it to the nearest multiple of 4 if required
+            // (because keeping it a multiple of 4 simplifies the checksum calculation).
+            std::span orig_prefix{_buf.data(), std::min<size_t>(sizeof(ipv6_header) + 32, _buf.size())};
+            if (orig_prefix.size() % 4 != 0)
+                orig_prefix = orig_prefix.subspan(0, orig_prefix.size() - (orig_prefix.size() % 4));
+            log::critical(logcat, "orig_p size = {}", orig_prefix.size());
+
+            // The +4 here is an unused 32-bit value that precedes the carbon copied incoming packet
+            // prefix:
+            uint16_t payload_size = ICMPv6_HEADER_SIZE + 4 + orig_prefix.size();
+
+            IPPacket pkt{sizeof(ipv6_header) + payload_size};
+
+            auto& hdr = pkt.v6_header();
+            hdr.version = 0x06;
+            hdr.payload_len = ntohs(payload_size);
+            hdr.protocol = 58;  // ICMPv6
+            hdr.hoplimit = header.hoplimit;
+            hdr.src = header.dest;
+            hdr.dest = header.src;
+
+            std::span<std::byte, 4> icmp_header{pkt.data() + sizeof(hdr), 4};
+            icmp_header[0] = std::byte{1};  // ICMPv6 type 1 = 'destination unreachable'
+            icmp_header[1] = std::byte{3};  // ICMPv6 code 3 = 'address unreachable'
+
+            // The ICMPv6 body for destination unreachable consists of an unused (all-0) 4-byte
+            // value, followed by the carbon copy the original packet prefix after the icmp header:
+            std::memcpy(icmp_header.data() + icmp_header.size() + 4, orig_prefix.data(), orig_prefix.size());
+
+            // 2 byte checksum; leave it at 0 initially
+            uint16_t& checksum = *reinterpret_cast<uint16_t*>(&icmp_header[2]);
+
+            uint32_t sum = 0;
+
+            // Checksum first starts with a pseudo-header calculation over 40 bytes:
+            // [src(16B)] [dest(16B)] [payloadlen(4B)] [0(3B)] [58(1B)]
+            sum += add32x4_cs(std::span<const uint32_t, 4>{reinterpret_cast<const uint32_t*>(hdr.src.s6_addr), 4});
+            sum += add32x4_cs(std::span<const uint32_t, 4>{reinterpret_cast<const uint32_t*>(hdr.dest.s6_addr), 4});
+            sum += hdr.payload_len;
+            sum += oxenc::little_endian ? 0x3a00 : 0x003a;  // == 58 (the ICMPv6 protocol value)
+
+            // After the pseudo-header the checksum covers the IPv6 payload (i.e. the entirety of
+            // the ICMPv6 header and body), leaving the checksum in the ICMP header at 0 for the
+            // calculation:
+            assert(payload_size % 4 == 0);
+            for (uint32_t x :
+                 std::span{reinterpret_cast<const uint32_t*>(pkt.data() + sizeof(hdr)), size_t{payload_size} / 4})
+                sum += add32_cs(x);
+
+            sum = (sum & 0xFFff) + (sum >> 16);
+            sum += sum >> 16;
+
+            checksum = uint16_t((~sum) & 0xFFff);
+
+            log::debug(logcat, "Constructed ICMPv6 unreachable packet");
+            log::critical(logcat, "Constructed ICMPv6 unreachable packet: {}", buffer_printer{pkt.span()});
+            return pkt;
+        }
 
         return std::nullopt;
     }
