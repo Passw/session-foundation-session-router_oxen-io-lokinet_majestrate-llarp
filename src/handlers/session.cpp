@@ -1086,7 +1086,9 @@ namespace srouter::handlers
         std::optional<std::chrono::milliseconds> timeout)
     {
         return router.loop.call_get([this, &remote, &on_attempted, &timeout] {
-            auto& s = _sessions[remote];
+            std::shared_ptr<session::Session> s{nullptr};
+            if (_sessions.contains(remote))
+                s = _sessions[remote];
             if (s && !s->is_closed())
             {
                 if (on_attempted)
@@ -1106,13 +1108,21 @@ namespace srouter::handlers
             else
             {
                 auto tag = next_tag();
-                if (remote.client())
-                    s = router.loop.make_shared<session::OutboundClientSession>(
-                        remote, *this, tag, std::move(on_attempted), timeout);
-                else
-                    s = router.loop.make_shared<session::OutboundRelaySession>(
-                        remote, *this, tag, std::move(on_attempted), timeout);
-                _session_tags.emplace(tag, s);
+                try
+                {
+                    if (remote.client())
+                        s = router.loop.make_shared<session::OutboundClientSession>(
+                            remote, *this, tag, std::move(on_attempted), timeout);
+                    else
+                        s = router.loop.make_shared<session::OutboundRelaySession>(
+                            remote, *this, tag, std::move(on_attempted), timeout);
+                    _session_tags.emplace(tag, s);
+                    _sessions[remote] = s;
+                }
+                catch (const std::exception& e)
+                {
+                    log::warning(logcat, "Error creating session to remote {}: {}", remote, e.what());
+                }
             }
 
             return s;
