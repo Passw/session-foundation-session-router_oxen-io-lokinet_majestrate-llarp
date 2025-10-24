@@ -675,8 +675,11 @@ namespace srouter::handlers
                 // DNS lookup implies we want a session, so make one (NOP if we have one)
                 // This also means if we don't use that session the IP mapping will release when
                 // it expires, which it wouldn't otherwise without a tedious periodic check.
-                _router.session_endpoint().initiate_remote_session(*maybe_netaddr, nullptr);
-                reply_with_mapped_address(map(*maybe_netaddr));
+                if (_router.session_endpoint().initiate_remote_session(*maybe_netaddr, nullptr))
+                    reply_with_mapped_address(map(*maybe_netaddr));
+                else
+                    reply_with_mapped_address(std::nullopt);
+
                 return true;
             }
             else if (tld == "loki"sv)
@@ -684,13 +687,11 @@ namespace srouter::handlers
                 _router.session_endpoint().resolve_sns(
                     "{}.loki"_format(hostname),
                     [this, reply, reply_with_mapped_address, msg](std::optional<NetworkAddress> maybe_netaddr) mutable {
-                        if (maybe_netaddr)
-                        {
+                        if (maybe_netaddr
+                            && _router.session_endpoint().initiate_remote_session(*maybe_netaddr, nullptr))
                             reply_with_mapped_address(map(*maybe_netaddr));
-                            return;
-                        }
-                        msg.add_nx_reply();
-                        reply(msg);
+                        else
+                            reply_with_mapped_address(std::nullopt);
                     });
             }
             /*

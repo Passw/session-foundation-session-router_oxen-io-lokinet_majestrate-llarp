@@ -896,17 +896,21 @@ namespace srouter::session
             srouter::time_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
     }
 
-    void OutboundSession::tick(std::chrono::milliseconds now)
+    void Session::tick(std::chrono::milliseconds now)
     {
-        if (_is_closed)
-            return;
         if (is_expired(now))
         {
-            close(false);  // don't send close message -- if we expired they already did for sure
-            for (auto& p : active_paths())
-                drop_path(p);
-            return;
+            // don't send close message -- if we expired they already did for sure
+            _parent.close_session(_inbound_tag, false);
         }
+    }
+
+    void OutboundSession::tick(std::chrono::milliseconds now)
+    {
+        Session::tick(now);
+        if (_is_closed)
+            return;
+
         close_old_paths(now);
         path::PathHandler::tick(now);
         fire_waiting(now);
@@ -914,6 +918,10 @@ namespace srouter::session
 
     void OutboundClientSession::tick(std::chrono::milliseconds now)
     {
+        OutboundSession::tick(now);
+        if (_is_closed)
+            return;
+
         if ((now - last_cc_update > 10min) || (now - last_inbound_activity > 30s))
         {
             log::info(
