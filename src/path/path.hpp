@@ -221,7 +221,7 @@ namespace srouter::path
         int ping_responses{0}, ping_timeouts{0};
         int ping_recent_timeouts{0};
         // Cumulative time of all `ping_responses` pings (divide by ping_responses for an average).
-        sys_ms ping_cumulative{sys_ms::min()};
+        std::chrono::milliseconds ping_cumulative{0ms};
         int64_t ping_sq_cumulative{0};
     };
 

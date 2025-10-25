@@ -69,7 +69,7 @@ namespace srouter::path
         if (p.ping_responses == 0)
             return "0.0%";
 
-        double mean = (double)p.ping_cumulative.time_since_epoch().count() / p.ping_responses;
+        double mean = (double)p.ping_cumulative.count() / p.ping_responses;
         double success_pct = p.ping_responses / (double)(p.ping_responses + p.ping_timeouts) * 100.0;
         if (p.ping_responses == 1)
             return "{:.1f}%, {:.0f}ms avg"_format(success_pct, mean);
