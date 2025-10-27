@@ -1,3 +1,10 @@
+session-router (1.0.1-1~deb14) unstable; urgency=medium
+
+  * Fix and simplify version display
+  * Improve new Session Router relay onboarding
+
+ -- Jason Rhinelander <jason@session.foundation>  Mon, 27 Oct 2025 15:29:10 -0300
+
 session-router (1.0.0-5~deb14) unstable; urgency=medium
 
   * fix use of native cpu build flags
