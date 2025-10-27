@@ -369,7 +369,7 @@ namespace
         {
             if (options.version)
             {
-                std::cout << srouter::SROUTER_VERSION_FULL << std::endl;
+                std::cout << srouter::VERSION_FULL << std::endl;
                 return 0;
             }
 
@@ -500,7 +500,7 @@ namespace
     // this sets up, configures and runs the main context
     void start_srouter(std::optional<std::filesystem::path> confFile, bool snode)
     {
-        srouter::log::info(logcat, "starting up {}", srouter::SROUTER_VERSION_FULL);
+        srouter::log::info(logcat, "starting up {}", srouter::VERSION_FULL);
         try
         {
             auto type = snode ? srouter::config::Type::Relay : srouter::config::Type::FullClient;
