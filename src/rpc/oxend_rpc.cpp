@@ -146,8 +146,7 @@ namespace srouter::rpc
         auto pk = _router.id();
 
         nlohmann::json payload = {
-            {"pubkey_ed25519", oxenc::to_hex(pk.begin(), pk.end())},
-            {"version", {SROUTER_VERSION[0], SROUTER_VERSION[1], SROUTER_VERSION[2]}}};
+            {"pubkey_ed25519", oxenc::to_hex(pk.begin(), pk.end())}, {"version", srouter::VERSION}};
 
         if (auto err = _router.OxendErrorState())
             payload["error"] = *err;

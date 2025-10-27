@@ -189,7 +189,7 @@ namespace srouter
           _addr{router.public_addr()},
           _timestamp{std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now())},
           _netid{router.netid()},
-          _router_version{srouter::SROUTER_VERSION}
+          _router_version{srouter::VERSION}
     {
         oxenc::bt_dict_producer btdp;
         if (VERSION != 0)
@@ -229,7 +229,7 @@ namespace srouter
 
         btdp.append("t", _timestamp.time_since_epoch().count());
 
-        static_assert(srouter::SROUTER_VERSION.size() == 3);
+        static_assert(srouter::VERSION.size() == 3);
         btdp.append("v", std::span{_router_version});
 
         btdp.append_signature("~", [&router](std::span<const std::byte> to_sign) {
