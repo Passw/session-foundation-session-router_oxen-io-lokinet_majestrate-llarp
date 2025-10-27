@@ -200,7 +200,8 @@ namespace srouter
 
         nlohmann::json stats{
             {"running", true},
-            {"version", srouter::SROUTER_VERSION_FULL},
+            {"version", srouter::VERSION},
+            {"version_full", srouter::VERSION_FULL},
             {"uptime", to_json(Uptime())},
             // {"numPathsBuilt", pathsCount},
             // {"numPeersConnected", peers},
@@ -724,8 +725,15 @@ namespace srouter
     {
         // If we're in the registered list then we *should* be establishing connections to other
         // routers, so if we have almost no peers then something is almost certainly wrong.
+        //
+        // FIXME - this is disabled during Session Router optional transition so that new nodes that
+        // can't yet connect to other network nodes don't prevent oxend from sending proofs.
+        // TODO: uncomment this again once Session Router is mandatory (and the mandatory HF is live
+        // on the network).
+        /*
         if (insufficient_peers() and not _config.oxend.disable_testing)
             return "too few peer connections; Session Router is not adequately connected to the network";
+        */
         return std::nullopt;
     }
 
@@ -818,7 +826,7 @@ namespace srouter
     {
         auto now = srouter::time_now_ms();
         return "v{} {}: {}"_format(
-            srouter::SROUTER_VERSION_FULL, is_service_node ? "relay" : "client", _stats_line(now));
+            fmt::join(srouter::VERSION, "."), is_service_node ? "relay" : "client", _stats_line(now));
     }
 
     void Router::_relay_tick([[maybe_unused]] std::chrono::milliseconds now)
