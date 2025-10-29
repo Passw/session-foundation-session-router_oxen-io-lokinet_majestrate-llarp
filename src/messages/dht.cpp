@@ -51,10 +51,6 @@ namespace srouter
 
     namespace FindClientContact
     {
-        const std::string NOT_FOUND = messages::serialize_status_response("NOT FOUND");
-        const std::string INSUFFICIENT = messages::serialize_status_response("INSUFFICIENT NODES");
-        const std::string INVALID_ORDER = messages::serialize_status_response("INVALID ORDER");
-
         /** Bt-encoded contents:
             - 'k' : blinded pubkey corresponding to client contact
 
@@ -104,6 +100,9 @@ namespace srouter
         {
             EncryptedClientContact ecc;
 
+            // NB: we input btdc will already be consumed up to a "!" key as the calling code checks
+            // that for error conditions before invoking this, so we must take care not to use keys
+            // that sort earlier than "!".
             try
             {
                 ecc = EncryptedClientContact{btdc.require_span<std::byte>("x")};
@@ -119,8 +118,6 @@ namespace srouter
 
     namespace ResolveSNS
     {
-        const std::string NOT_FOUND = messages::serialize_status_response("NOT FOUND");
-
         /** Bt-encoded contents:
             - 's' : SNS name
 

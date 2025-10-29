@@ -765,16 +765,33 @@ namespace srouter::handlers
             {
                 if (resp.ok())
                 {
-                    log::info(logcat, "Call to FindClientContact succeeded!");
-                    auto enc = FindClientContact::deserialize_response(oxenc::bt_dict_consumer{resp.body});
-
-                    if (auto intro = enc.decrypt(remote))
+                    oxenc::bt_dict_consumer cc_dict{resp.body};
+                    bool failed = false;
+                    if (auto err = cc_dict.maybe<std::string_view>(messages::STATUS_KEY);
+                        err && *err != messages::STATUS_OK)
                     {
-                        log::debug(logcat, "Storing ClientContact for remote rid:{}", remote);
-                        cc = std::move(intro);
+                        failed = true;
+                        if (*err == messages::STATUS_NOT_FOUND)
+                        {
+                            log::debug(logcat, "Relay returned CC not found");
+                        }
+                        else
+                        {
+                            throw std::runtime_error{"Relay returned unknown status {}"_format(*err)};
+                        }
                     }
-                    else
-                        log::warning(logcat, "Failed to decrypt returned EncryptedClientContact!");
+                    if (!failed)
+                    {
+                        log::info(logcat, "Call to FindClientContact succeeded!");
+                        auto enc = FindClientContact::deserialize_response(std::move(cc_dict));
+                        if (auto intro = enc.decrypt(remote))
+                        {
+                            log::debug(logcat, "Storing ClientContact for remote rid:{}", remote);
+                            cc = std::move(intro);
+                        }
+                        else
+                            log::warning(logcat, "Failed to decrypt returned EncryptedClientContact!");
+                    }
                 }
                 else
                 {
