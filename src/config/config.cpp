@@ -132,7 +132,8 @@ namespace srouter
                 if (arg.empty())
                     arg = std::filesystem::path{"."};
                 if (not exists(arg))
-                    throw std::runtime_error{"Specified [router]:data-dir {} does not exist"_format(arg)};
+                    if (std::error_code ec; not create_directories(arg, ec))
+                        throw std::runtime_error{"Specified [router]:data-dir {} does not exist, and could not be created ({})"_format(arg, ec.message())};
 
                 data_dir = std::move(arg);
             });
