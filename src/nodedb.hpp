@@ -100,6 +100,9 @@ namespace srouter
                                                              // the rid is +1, missing it is -1.
 
         std::unordered_map<RouterID, RelayContact> known_rcs;
+        std::array<std::unordered_map<RouterID, uint64_t>, 128> rc_hashes;
+        std::array<uint64_t, 128> rc_bucket_hashes{0};
+        void update_rc_buckets(const RelayContact& rc, bool added);
 
         static const std::vector<std::pair<NetID, std::string_view>> bootstrap_fallbacks;
         std::vector<RelayContact> _bootstraps;

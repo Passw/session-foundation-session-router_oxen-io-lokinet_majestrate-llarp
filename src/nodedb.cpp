@@ -65,6 +65,68 @@ namespace srouter
         return rand;
     }
 
+    // Hash a serialized RelayContact into 64-bits for identification.
+    // 64-bits is large enough, as we don't need to worry about collisions
+    //
+    // Throws if key "t" is not found (or if somehow the input is not a valid bt-dict)
+    static uint64_t bucket_hash(std::string_view serialized_rc)
+    {
+        uint64_t ret;
+
+        crypto_generichash_blake2b_state h;
+        crypto_generichash_blake2b_init(&h, nullptr, 0, sizeof(ret));
+
+        oxenc::bt_dict_consumer btdc{serialized_rc};
+
+        if (btdc.skip_until("t"sv))
+            throw std::invalid_argument{"Serialized RC did not contain a timestamp."s};
+
+        // hash everything up to the literal byte "t" of the key (the key is "1:t")
+        auto time_key_and_data = btdc.next_integer<uint64_t>();
+        size_t to_hash = time_key_and_data.first.data() - serialized_rc.data();
+        btdc.consume_integer<uint64_t>();
+        crypto_generichash_blake2b_update(&h, reinterpret_cast<const uint8_t*>(serialized_rc.data()), to_hash);
+
+        // hash everything starting from the beginning of the next key to the end
+        // (the size and colon of that key are not hashed)
+        auto after_time = btdc.key();
+        auto after_size = serialized_rc.data() + serialized_rc.size() - after_time.data();
+        crypto_generichash_blake2b_update(&h, reinterpret_cast<const uint8_t*>(after_time.data()), after_size);
+
+        crypto_generichash_blake2b_final(&h, reinterpret_cast<uint8_t*>(&ret), sizeof(ret));
+
+        return ret;
+    }
+
+    static void update_bucket_hash(uint64_t& bucket_hash, uint64_t old_hash, uint64_t new_hash)
+    {
+        bucket_hash ^= old_hash;
+        bucket_hash ^= new_hash;
+    }
+
+    static uint8_t bucket_of(const RouterID& rid)
+    {
+        // choice of which byte is arbitrary, but avoid early bytes for clustered vanity keys
+        // 128 buckets total, so mask off MSB.
+        return rid.as_array()[16] & 0x7f;
+    }
+
+    void NodeDB::update_rc_buckets(const RelayContact& rc, bool added)
+    {
+        const auto& rid = rc.router_id();
+        auto bucket = bucket_of(rid);
+        auto rc_hash = bucket_hash(rc.view());
+        auto& old_hash = rc_hashes[bucket][rid];
+        update_bucket_hash(rc_bucket_hashes[bucket], old_hash, rc_hash);
+        if (!added)
+        {
+            assert(old_hash == rc_hash);
+            rc_hashes[bucket].erase(rid);
+        }
+        else
+            old_hash = rc_hash;
+    }
+
     std::vector<const RelayContact*> NodeDB::get_n_random_rcs(
         int n, bool shuffle, const std::function<bool(const RelayContact&)>& predicate) const
     {
@@ -904,6 +966,12 @@ namespace srouter
                 remove(fpath);
         }
 
+        // initialize rc fetch buckets
+        for (const auto& [rid, rc] : known_rcs)
+        {
+            update_rc_buckets(rc, /*added=*/true);
+        }
+
         log::info(
             logcat, "Loaded {} RCs + 0-RTT tickets for {} relays from disk", known_rcs.size(), _0rtt_tickets.size());
     }
@@ -945,8 +1013,13 @@ namespace srouter
     {
         assert(_router.loop.inside());
 
-        auto [it, new_rc] = known_rcs.try_emplace(rc.router_id(), std::move(rc));
+        const auto& rid = rc.router_id();
+
+        auto [it, new_rc] = known_rcs.try_emplace(rid, std::move(rc));
         auto& stored = it->second;
+
+        update_rc_buckets(rc, /*added=*/true);
+
         bool should_gossip;
         if (new_rc)
         {
@@ -1021,6 +1094,7 @@ namespace srouter
             if (remove(rc))
             {
                 removed.push_back(rid);
+                update_rc_buckets(rc, /*added=*/false);
                 it = known_rcs.erase(it);
             }
             else
