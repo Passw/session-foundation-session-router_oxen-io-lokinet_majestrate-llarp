@@ -141,6 +141,40 @@ namespace srouter
             if (check == 0xFFff)
                 check = 0x0000;
         }
+
+        // IPv6 checksum calculator using a pseudo-header of fields from the given ipv6 header.
+        // This is used for the checksum calculation of TCP/UDP/ICMP within an IPv6 packet as the
+        // IPv6 header itself does not have a checksum (unlike IPv4).
+        //
+        // The return 2-byte value should be written as-is (i.e. no endian conversion performed).
+        uint16_t ipv6_proto_checksum(const ipv6_header& hdr, std::span<const std::byte> payload)
+        {
+            uint32_t sum = 0;
+            // Checksum starts with a pseudo-header calculation over 40 bytes:
+            // [src(16B)] [dest(16B)] [payloadlen(4B)] [0(3B)] [protocol(1B)]
+            sum += add32x4_cs(std::span<const uint32_t, 4>{reinterpret_cast<const uint32_t*>(hdr.src.s6_addr), 4});
+            sum += add32x4_cs(std::span<const uint32_t, 4>{reinterpret_cast<const uint32_t*>(hdr.dest.s6_addr), 4});
+            sum += hdr.payload_len;
+            sum += oxenc::little_endian ? static_cast<uint16_t>(hdr.protocol) << 8 : hdr.protocol;
+            if (payload.size() % 2 == 1)
+            {
+                // If payload is odd then pretend there is an extra 0 after the last byte:
+                if (oxenc::little_endian)
+                    sum += static_cast<uint16_t>(payload.back());
+                else
+                    sum += static_cast<uint16_t>(payload.back()) << 8;
+                payload = payload.subspan(0, payload.size() - 1);
+            }
+            for (auto x :
+                 std::span<const uint16_t>{reinterpret_cast<const uint16_t*>(payload.data()), payload.size() / 2})
+                sum += x;
+
+            sum = (sum & 0xFFff) + (sum >> 16);
+            sum += sum >> 16;
+
+            return ~static_cast<uint16_t>(sum);
+        }
+
     }  // namespace
 
     IPPacket::IPPacket(size_t sz)
@@ -378,7 +412,6 @@ namespace srouter
             std::span orig_prefix{_buf.data(), std::min<size_t>(sizeof(ipv6_header) + 32, _buf.size())};
             if (orig_prefix.size() % 4 != 0)
                 orig_prefix = orig_prefix.subspan(0, orig_prefix.size() - (orig_prefix.size() % 4));
-            log::critical(logcat, "orig_p size = {}", orig_prefix.size());
 
             // The +4 here is an unused 32-bit value that precedes the carbon copied incoming packet
             // prefix:
@@ -388,7 +421,7 @@ namespace srouter
 
             auto& hdr = pkt.v6_header();
             hdr.version = 0x06;
-            hdr.payload_len = ntohs(payload_size);
+            hdr.payload_len = oxenc::host_to_big(payload_size);
             hdr.protocol = 58;  // ICMPv6
             hdr.hoplimit = header.hoplimit;
             hdr.src = header.dest;
@@ -402,68 +435,53 @@ namespace srouter
             // value, followed by the carbon copy the original packet prefix after the icmp header:
             std::memcpy(icmp_header.data() + icmp_header.size() + 4, orig_prefix.data(), orig_prefix.size());
 
-            // 2 byte checksum; leave it at 0 initially
-            uint16_t& checksum = *reinterpret_cast<uint16_t*>(&icmp_header[2]);
-
-            uint32_t sum = 0;
-
-            // Checksum first starts with a pseudo-header calculation over 40 bytes:
-            // [src(16B)] [dest(16B)] [payloadlen(4B)] [0(3B)] [58(1B)]
-            sum += add32x4_cs(std::span<const uint32_t, 4>{reinterpret_cast<const uint32_t*>(hdr.src.s6_addr), 4});
-            sum += add32x4_cs(std::span<const uint32_t, 4>{reinterpret_cast<const uint32_t*>(hdr.dest.s6_addr), 4});
-            sum += hdr.payload_len;
-            sum += oxenc::little_endian ? 0x3a00 : 0x003a;  // == 58 (the ICMPv6 protocol value)
-
-            // After the pseudo-header the checksum covers the IPv6 payload (i.e. the entirety of
-            // the ICMPv6 header and body), leaving the checksum in the ICMP header at 0 for the
-            // calculation:
-            assert(payload_size % 4 == 0);
-            for (uint32_t x :
-                 std::span{reinterpret_cast<const uint32_t*>(pkt.data() + sizeof(hdr)), size_t{payload_size} / 4})
-                sum += add32_cs(x);
-
-            sum = (sum & 0xFFff) + (sum >> 16);
-            sum += sum >> 16;
-
-            checksum = uint16_t((~sum) & 0xFFff);
+            // 2 byte ICMPv6 checksum which checksums the IPv6 header info as well
+            *reinterpret_cast<uint16_t*>(&icmp_header[2]) = ipv6_proto_checksum(
+                    hdr, std::span{pkt.data() + sizeof(hdr), pkt.size() - sizeof(hdr)});
 
             log::debug(logcat, "Constructed ICMPv6 unreachable packet");
-            log::critical(logcat, "Constructed ICMPv6 unreachable packet: {}", buffer_printer{pkt.span()});
             return pkt;
         }
 
         return std::nullopt;
     }
 
-    // TODO: ipv6
     std::vector<std::byte> IPPacket::make_udp_packet(
-        const quic::Address& src, const quic::Address& dest, std::span<const std::byte> payload)
+        const quic::ipv6& src,
+        uint16_t src_port,
+        const quic::ipv6& dest,
+        uint16_t dest_port,
+        std::span<const std::byte> payload)
     {
         std::vector<std::byte> pkt;
-        pkt.resize(sizeof(ip_header) + sizeof(udp_header) + payload.size());
+        pkt.resize(sizeof(ipv6_header) + sizeof(udp_header) + payload.size());
         auto* data = pkt.data();
-        data[1] = std::byte{0};  // DSCP and ECN
-        auto* ip_hdr = reinterpret_cast<ip_header*>(data);
-        data += sizeof(ip_header);
-        auto* udp_hdr = reinterpret_cast<udp_header*>(data);
+        auto& ip_hdr = *reinterpret_cast<ipv6_header*>(data);
+        data += sizeof(ipv6_header);
+        auto& udp_hdr = *reinterpret_cast<udp_header*>(data);
         data += sizeof(udp_header);
         std::memcpy(data, payload.data(), payload.size());
 
-        ip_hdr->version = 4;
-        ip_hdr->header_len = 5;
-        ip_hdr->total_len = htons(sizeof(ip_header) + sizeof(udp_header) + payload.size());
-        ip_hdr->protocol = static_cast<uint8_t>(net::IPProtocol::UDP);  // udp
-        ip_hdr->ttl = 64;
-        ip_hdr->frag_off = oxenc::host_to_big<uint16_t>(0b01000000'00000000);
+        ip_hdr.version = 6;
+        ip_hdr.payload_len = oxenc::host_to_big<uint16_t>(sizeof(udp_header) + payload.size());
+        ip_hdr.protocol = static_cast<uint8_t>(net::IPProtocol::UDP);
+        ip_hdr.hoplimit = 255;
 
-        ip_hdr->src = oxenc::host_to_big(src.to_ipv4().addr);
-        ip_hdr->dest = oxenc::host_to_big(dest.to_ipv4().addr);
-        ip_hdr->checksum = ip_checksum(reinterpret_cast<uint8_t*>(ip_hdr), sizeof(ip_header));
+        oxenc::write_host_as_big(src.hi, &ip_hdr.src.s6_addr[0]);
+        oxenc::write_host_as_big(src.lo, &ip_hdr.src.s6_addr[8]);
+        oxenc::write_host_as_big(dest.hi, &ip_hdr.dest.s6_addr[0]);
+        oxenc::write_host_as_big(dest.lo, &ip_hdr.dest.s6_addr[8]);
 
-        udp_hdr->src = oxenc::host_to_big(src.port());
-        udp_hdr->dest = oxenc::host_to_big(dest.port());
-        udp_hdr->len = oxenc::host_to_big<uint16_t>(payload.size() + sizeof(udp_header));
-        udp_hdr->checksum = 0;  // FIXME: does this matter?  old Session Router set 0
+        udp_hdr.src = oxenc::host_to_big(src_port);
+        udp_hdr.dest = oxenc::host_to_big(dest_port);
+        udp_hdr.len = oxenc::host_to_big<uint16_t>(payload.size() + sizeof(udp_header));
+        udp_hdr.checksum = ipv6_proto_checksum(ip_hdr, std::span{pkt.data() + sizeof(ip_hdr), pkt.size() - sizeof(ip_hdr)});
+
+        // UDPv6 special case: if the checksum result is 0x0000 we change it to the equal (under 1's
+        // complement) 0xffff value because 0x0000 is a IPv4 special "no checksum" value that is not
+        // allowed in UDPv6.
+        if (udp_hdr.checksum == 0x0000)
+            udp_hdr.checksum = 0xffff;
 
         return pkt;
     }

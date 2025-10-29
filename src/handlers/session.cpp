@@ -4,6 +4,7 @@
 #include "contact/contactdb.hpp"
 #include "contact/relay_contact.hpp"
 #include "crypto/crypto.hpp"
+#include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
 #include "messages/dht.hpp"
 #include "messages/fetch.hpp"
@@ -112,7 +113,7 @@ namespace srouter::handlers
 
         const auto& remote = s->remote();
         if (auto& tun = router.tun_endpoint())
-            tun->unmap(remote);
+            tun->expire(remote);
 
         if (auto it = _sessions.find(remote); it != _sessions.end())
         {
@@ -750,7 +751,7 @@ namespace srouter::handlers
 
         auto remaining = std::make_shared<int>(0);
 
-        auto response_handler = [remote, func = std::move(func), remaining](auto resp) {
+        auto response_handler = [remote, func, remaining](auto resp) {
             int rem = --*remaining;
             if (rem < 0)
             {
@@ -1139,8 +1140,129 @@ namespace srouter::handlers
         std::function<void(const NetworkAddress&, const session::Session&)> visit) const
     {
         for (const auto& [addr, s] : _sessions)
-        {
             visit(addr, *s);
-        }
     }
+
+    std::pair<uint16_t, std::shared_ptr<session::Session>> SessionEndpoint::map_udp_remote_port(
+        const NetworkAddress& remote, uint16_t port)
+    {
+        return router.loop.call_get([&] {
+            // Port selection: we pick something random in the 49152-60000 range to start from, as
+            // that range (up to 60999) is common to all modern OSes for ephemeral addresses, and so
+            // at least our first thousand ports will look like a normal random ephemeral port.
+            // (Otherwise we just keep going, wrapping around from 65535 back to 1024).
+            if (_next_udp_client_port == 0)
+                _next_udp_client_port = std::uniform_int_distribution<uint16_t>{49152, 60000}(csrng);
+
+            std::pair<uint16_t, std::shared_ptr<session::Session>> result;
+            auto& [local_port, session] = result;
+            session = initiate_remote_session(remote);
+
+            mapped_remote target{.remote = remote, .port = port};
+            auto& [udp_handle, cports] = _udp_handles[target];
+            bool existing = static_cast<bool>(udp_handle);
+            if (!existing)
+
+                udp_handle = std::make_unique<quic::UDPSocket>(
+                    router.loop.get_event_base(),
+                    quic::Address{"::1", 0},
+                    /*gso=*/false,
+                    [this, target](quic::Packet&& pkt) {
+                        // FIXME: cache most recently used mapping/session/etc.?
+
+                        auto session = initiate_remote_session(target.remote);
+                        if (!session)
+                        {
+                            log::warning(
+                                logcat,
+                                "Received local mapped UDP packet, but unable to initiate a session with {}",
+                                target.remote);
+                            return;
+                        }
+
+                        // `instance` contains the targetted remote, and the app source port, and is our
+                        // lookup key to see if we've already received data from that same app source port
+                        // aimed at our intermediate port
+                        const uint16_t app_source_port = pkt.path.remote.port();
+                        mapped_remote instance{.remote = target.remote, .port = app_source_port};
+
+                        uint16_t& mapped_port = _udp_client_ports[instance];
+                        if (mapped_port == 0)
+                        {  // We just auto-vivified it
+                            uint16_t start_port = _next_udp_client_port;
+                            mapped_remote new_port{.remote = target.remote, .port = start_port};
+                            while (not _udp_return_ports.try_emplace(new_port, app_source_port).second)
+                            {
+                                new_port.port++;
+                                if (new_port.port < 1024)
+                                    new_port.port = 1024;
+                                if (new_port.port == start_port)
+                                {
+                                    // This seems very unlikely: it would mean we have mapped ~64k
+                                    // *distinct* localhost application ports
+                                    log::error(logcat, "Run out of pseudo-UDP ports to use");
+                                    _udp_client_ports.erase(instance);
+                                    return;
+                                }
+                            }
+                            if (auto it = _udp_handles.find(target); it != _udp_handles.end())
+                                it->second.second.push_back(instance);
+                            mapped_port = new_port.port;
+                            log::debug(
+                                logcat,
+                                "New client UDP packet from localhost:{} to {}:{} mapped to pseudo-port {}",
+                                app_source_port,
+                                target.remote,
+                                target.port,
+                                mapped_port);
+                        }
+
+                        // Construct a UDP packet with source port of our pseudo-port, and dest port of the
+                        // remote mapped port (so that return packets get picked up correctly).
+                        auto packet =
+                            IPPacket::make_udp_packet(quic::ipv6{}, mapped_port, quic::ipv6{}, target.port, pkt.data());
+
+                        session->send_session_data_message(packet, traffic_type::UDP);
+                    });
+
+            local_port = udp_handle->address().port();
+            log::debug(
+                logcat,
+                "{} mapped UDP port ({}) for remote {}:{}",
+                existing ? "Using existing" : "Created new",
+                local_port,
+                remote,
+                port);
+
+            return result;
+        });
+    }
+
+    void SessionEndpoint::unmap_udp_remote_port(const NetworkAddress& remote, uint16_t port)
+    {
+        mapped_remote rem{.remote = remote, .port = port};
+
+        auto it = _udp_handles.find(rem);
+        if (it == _udp_handles.end())
+        {
+            log::debug(logcat, "Nothing to unmap: {}:{} is not currently a mapped UDP port", remote, port);
+            return;
+        }
+
+        auto& [sock, cports] = it->second;
+        for (auto& c : cports)
+        {
+            if (auto cit = _udp_client_ports.find(c); cit != _udp_client_ports.end())
+            {
+                _udp_return_ports.erase(mapped_remote{.remote = remote, .port = cit->second});
+                _udp_client_ports.erase(cit);
+            }
+        }
+
+        auto local_port = sock->address().port();
+        _udp_handles.erase(it);
+
+        log::debug(logcat, "Unmapped localhost:{} -> {}:{} UDP mapping", local_port, remote, port);
+    }
+
 }  //  namespace srouter::handlers

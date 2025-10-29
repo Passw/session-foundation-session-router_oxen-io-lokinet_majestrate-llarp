@@ -704,6 +704,8 @@ namespace srouter::session
             log::warning(logcat, "Session with {} received invalid new client contact!", _remote.router_id());
     }
 
+    static constexpr quic::ipv6 ipv6_localhost{0, 0, 0, 0, 0, 0, 0, 1};
+
     void Session::handle_udp_from_remote(IPPacket&& pkt)
     {
         if (!pkt.is_ip() || pkt.protocol() != net::IPProtocol::UDP)
@@ -711,92 +713,50 @@ namespace srouter::session
             log::debug(logcat, "Dropping unsupported non-IPv4/v6 UDP packet");
             return;
         }
+
         auto source_port = pkt.source_port();
-        if (!source_port)
+        auto dest_port = pkt.dest_port();
+        if (!source_port || !dest_port)
         {
             log::debug(logcat, "Dropping malformed UDP packet: {}", pkt.info_line());
             return;
         }
-        log::trace(logcat, "incoming udp packet from remote port {}", *source_port);
-        auto itr = udp_handles.find(*source_port);
-        if (itr == udp_handles.end())
+
+        log::trace(logcat, "incoming udp packet from remote {}:{}", _remote, *source_port);
+
+        using mapped_remote = handlers::SessionEndpoint::mapped_remote;
+        mapped_remote rem{.remote = _remote, .port = *source_port};
+        auto it = _parent._udp_handles.find(rem);
+        if (it == _parent._udp_handles.end())
         {
             log::debug(logcat, "Received udp datagram from unknown source port {}", *source_port);
             return;
         }
-        auto& socket = itr->second;
-        auto dest_port = *pkt.dest_port();
-        log::trace(logcat, "incoming udp packet for pseudo port {}", dest_port);
-        if (!udp_remote_ports.contains(dest_port))
+        auto& socket = *it->second.first;
+
+        log::trace(logcat, "incoming udp packet for pseudo port {}", *dest_port);
+        mapped_remote local{.remote = _remote, .port = *dest_port};
+        auto ret_it = _parent._udp_return_ports.find(local);
+        if (ret_it == _parent._udp_return_ports.end())
         {
             log::warning(logcat, "Received UDP packet destined for an unmapped port ({})", dest_port);
             return;
         }
-        dest_port = udp_remote_ports[dest_port];
-        log::trace(logcat, "pseudo port maps to client port {}", dest_port);
+        auto app_port = ret_it->second;
+        log::trace(logcat, "pseudo port maps to client port {}", app_port);
 
         auto payload = pkt.udp_data();
-        if (payload.empty())
-        {
-            log::warning(logcat, "Received invalid udp datagram");
-            return;
-        }
-        quic::Address dest = socket->address();
-        dest.set_port(dest_port);
         const size_t bufsize = payload.size();
-        uint8_t ecn = 0;  // FIXME: do we have any way to obtain this?
-        size_t n_pkts = 1;
-        auto [ior, sent] = socket->send(quic::Path{socket->address(), dest}, payload.data(), &bufsize, ecn, n_pkts);
+        constexpr uint8_t ecn = 0;  // FIXME: do we have any way to obtain this?
+        constexpr size_t n_pkts = 1;
+        auto [ior, sent] = socket.send(
+            quic::Path{socket.address(), quic::Address{ipv6_localhost, app_port}},
+            payload.data(),
+            &bufsize,
+            ecn,
+            n_pkts);
         log::trace(
             logcat, "UDP from remote -> socket send to local returned {} (ec={})", ior.success(), ior.error_code);
-    }
-
-    uint16_t Session::setup_udp_mapping(uint16_t dest_port)
-    {
-        if (auto itr = udp_handles.find(dest_port); itr != udp_handles.end())
-        {
-            auto mapped_port = itr->second->address().port();
-            log::debug(logcat, "Returning existing mapped port ({}) for dest port {}", mapped_port, dest_port);
-            return mapped_port;
-        }
-        quic::Address src{"127.0.0.1"s, 0};
-        quic::Address dest{"127.0.0.1"s, dest_port};
-        auto udp_handle = std::make_unique<quic::UDPSocket>(
-            _r.loop.get_event_base(), src, /*gso=*/false, [this, dest = std::move(dest)](quic::Packet&& pkt) {
-                auto client_port = pkt.path.remote.port();
-                if (!udp_client_ports.contains(client_port))
-                {
-                    log::debug(logcat, "Adding client port {} to mapping for remote port {}", client_port, dest.port());
-                    uint16_t new_port = next_udp_client_port;
-                    auto start_port = new_port;
-                    while (udp_remote_ports.contains(new_port))
-                    {
-                        new_port++;
-                        if (new_port < 1024)
-                            new_port = 1024;
-                        if (start_port == new_port)
-                            throw std::runtime_error{"Ran out of pseudo-udp ports to use"};
-                    }
-                    udp_client_ports[client_port] = new_port;
-                    udp_remote_ports[new_port] = client_port;
-                    log::trace(logcat, "pseudo client port {} for real client port {}", new_port, client_port);
-                    client_port = new_port;
-                }
-                else
-                    client_port = udp_client_ports[client_port];
-
-                // ip doesn't matter here, but give remote the source port so we receive responses
-                // as destined for that port and know where to send them
-                auto src = pkt.path.remote;
-                src.set_port(client_port);
-                auto payload = pkt.data();
-                auto packet = IPPacket::make_udp_packet(src, dest, payload);
-                send_session_data_message(packet, traffic_type::UDP);
-            });
-        auto bound_port = udp_handle->address().port();
-        udp_handles[dest_port] = std::move(udp_handle);
-
-        return bound_port;
     }
 
     uint16_t Session::map_tcp_remote_port(uint16_t dest_port) { return tcp_tunnel->map_tcp_remote_port(dest_port); }
@@ -1076,7 +1036,7 @@ namespace srouter::session
         std::function<void(OutboundSession& session)> on_est,
         std::optional<std::chrono::milliseconds> on_est_timeout)
         : OutboundSession{
-              remote, parent, parent.router.config().paths.relay_hops(), inbound_tag, std::move(on_est), on_est_timeout}
+            remote, parent, parent.router.config().paths.relay_hops(), inbound_tag, std::move(on_est), on_est_timeout}
     {
         _parent.lookup_relay_contact(_remote.router_id(), [this](std::optional<srouter::RelayContact> rc) mutable {
             if (rc)
@@ -1171,7 +1131,7 @@ namespace srouter::session
         std::function<void(OutboundSession& session)> on_est,
         std::optional<std::chrono::milliseconds> timeout)
         : OutboundSession{
-              remote, parent, parent.router.config().paths.client_hops, inbound_tag, std::move(on_est), timeout}
+            remote, parent, parent.router.config().paths.client_hops, inbound_tag, std::move(on_est), timeout}
     {
         assert(!is_relay_session);
 

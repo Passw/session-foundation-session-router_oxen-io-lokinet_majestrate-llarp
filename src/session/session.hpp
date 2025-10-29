@@ -100,19 +100,6 @@ namespace srouter
 
             std::unique_ptr<TCPTunnel> tcp_tunnel{nullptr};
 
-            // for tunneled clients, maps remote dest port to udp socket
-            // for return traffic, dest port will be the client's udp socket port
-            std::unordered_map<uint16_t, std::unique_ptr<quic::UDPSocket>> udp_handles;
-
-            // bidirectional map, obfuscating the randomized source port from the user and
-            // mapping that obfuscated port back to that obfuscated port for return traffic.
-            // This is both to track used ports so we don't accept traffic to an unmapped
-            // one, as well as in case port selection is fingerprintable.
-            // udp_client_ports maps client source port -> pseudo source port
-            // udp_remote_ports maps pseudo dest port -> client dest port
-            std::unordered_map<uint16_t, uint16_t> udp_client_ports;
-            std::unordered_map<uint16_t, uint16_t> udp_remote_ports;
-            uint16_t next_udp_client_port{1024};
             std::chrono::milliseconds last_activity = srouter::time_now_ms();
 
             // only currently useful for outbound client sessions, but more convenient here
@@ -285,10 +272,7 @@ namespace srouter
             {
                 bool operator()(const active_item& a, const active_item& b) const { return a.first > b.first; }
             };
-            // Callbacks that we fire once we achieve active status (i.e. at least one established
-            // path for this session), or time out.  The key is the `srouter::time_now_ms()` expiry
-            // time after which we should give up and fire the callback anyway.  The callback can
-            // figure out which case this was by checking `session.is_active()`.
+            // Callbacks that we fire once we establish or fail; see on_established()
             std::priority_queue<active_item, std::vector<active_item>, on_established_sorter> _on_established;
 
             void on_path_build_success(int64_t build_id, path::Path& p) override;

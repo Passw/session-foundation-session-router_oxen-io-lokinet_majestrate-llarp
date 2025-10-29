@@ -26,10 +26,7 @@ namespace srouter
         // (false).
         NetworkAddress(const RouterID& rid, bool is_client) : _pubkey{rid}, _is_client{is_client} {}
 
-        bool operator==(const NetworkAddress& other) const
-        {
-            return std::tie(_pubkey, _is_client) == std::tie(other._pubkey, other._is_client);
-        }
+        bool operator==(const NetworkAddress& other) const = default;
 
         bool empty() const { return _pubkey.is_zero(); }
 

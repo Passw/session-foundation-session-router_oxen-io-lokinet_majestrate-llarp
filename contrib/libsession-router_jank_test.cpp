@@ -1,10 +1,15 @@
 #include <session/router.hpp>
 
+#include <csignal>
 #include <exception>
 #include <filesystem>
 #include <future>
 #include <iostream>
-#include <thread>
+
+extern "C"
+{
+#include <unistd.h>
+}
 
 using namespace std::literals;
 
@@ -16,26 +21,35 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // Block signal handling by default from all threads, so that we handle signals exclusively in
+    // this main thread below.
+    sigset_t signal_mask;
+    sigemptyset(&signal_mask);
+    for (auto sig : {SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2})
+        sigaddset(&signal_mask, sig);
+    pthread_sigmask(SIG_BLOCK, &signal_mask, nullptr);
+
     std::string target{argv[1]};
 
-    session::router::SessionRouter srouter{std::filesystem::path{"session_router.ini"}};
+    auto srouter = std::make_unique<session::router::SessionRouter>(std::filesystem::path{"jank.ini"});
 
     std::promise<void> prom;
-    srouter.on_connected([&] {
+
+    srouter->on_connected([&] {
         std::cout << "\n\x1b[32;1mSession Router connected!\x1b[0m\n\n\x1b[33;1mINITIATING SESSION TO " << target
                   << "\x1b[0m\n\n"
                   << std::flush;
-        srouter.establish_udp(
+        srouter->establish_udp(
             target,
             12345,
             [&prom](auto udp_info) {
                 std::cout << "\n\x1b[32;1mUDP bound to port " << udp_info.local_port << "\x1b[0m\n\n" << std::flush;
                 prom.set_value();
             },
-            [&prom](std::string_view fail_msg) {
+            [&prom]() {
                 try
                 {
-                    throw std::runtime_error{std::string{fail_msg}};
+                    throw std::runtime_error{"Session timed out!"};
                 }
                 catch (...)
                 {
@@ -46,7 +60,7 @@ int main(int argc, char** argv)
     try
     {
         prom.get_future().get();
-        const auto current_path = srouter.get_path_for_session(target);
+        const auto current_path = srouter->get_path_for_session(target);
         if (!current_path)
         {
             std::cerr << "future returned with no session / no current path.\n";
@@ -67,6 +81,14 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    auto pid = getpid();
+    std::cout << "\n\n\x1b[32;1mTunnel running.\n\n"
+              << argv[0] << " signal controls:\n\n"
+              << "    kill -SIGHUP " << pid << " -- close tunnels\n"
+              << "    kill -SIGUSR1 " << pid << " -- re-open UDP tunnel\n"
+              << "    kill -SIGUSR2 " << pid << " -- re-open TCP tunnel\n"
+              << "    Ctrl-C -- shut down\x1b[0m\n\n\n";
+
     /*
     srouter.map_tcp_remote_port(std::string{argv[1]}, 12345,
         [&](auto tunnel_info) {
@@ -76,8 +98,34 @@ int main(int argc, char** argv)
           std::cerr << "\nTCP Tunnel map error: " << error_str << "\n";
         });
     */
-    std::cout << "\nPRESS ENTER TO EXIT\n";
-    std::string ignored;
-    std::getline(std::cin, ignored);
-    std::cout << "\nEXITING\n";
+
+    std::thread sig_thread{[&] {
+        while (srouter)
+        {
+            int signo;
+            sigwait(&signal_mask, &signo);
+            switch (signo)
+            {
+                case SIGHUP:
+                    std::cout << "\n\n\n\x1b[33;1mHangup signal received; closing UDP tunnel\x1b[0m\n\n\n";
+                    srouter->close_udp(target, 12345);
+                    break;
+                case SIGUSR1:
+                {
+                    std::cout << "\n\n\n\x1b[32;1mSIGUSR1 received: (re-)opening UDP tunnel\x1b[0m\n";
+                    auto ti = srouter->establish_udp(target, 12345);
+                    std::cout << "\n\x1b[32;1mUDP bound to port " << ti.local_port << "\x1b[0m\n\n";
+                    break;
+                }
+                case SIGUSR2:
+                    std::cout << "\n\x1b[31;1mSIGUSR2 received: TODO FIXME: reopen TCP tunnel\x1b[0m\n\n";
+                    break;
+                default:
+                    std::cout << "\n\n\n\x1b[33;1mSignal " << signo << " received, shutting down\x1b\[0m\n\n\n";
+                    srouter.reset();
+                    break;
+            }
+        }
+    }};
+    sig_thread.join();
 }

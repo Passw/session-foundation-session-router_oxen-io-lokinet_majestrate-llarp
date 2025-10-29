@@ -189,12 +189,12 @@ namespace srouter
 
         std::unordered_set<srouter::dns::SRVData> srv_records;
 
-        /* TESTNET: Under modification */
-
         // Contents of this file are read directly into ::_reserved_local_addrs
-        std::optional<std::filesystem::path> addr_map_persist_file;
+        // TODO.  Perhaps this should be in a sqlite db, though?
+        //std::optional<std::filesystem::path> addr_map_persist_file;
 
-        // the only member that refers to an actual interface
+        int expired_address_cache = 100;
+
         std::optional<std::string> _if_name;
 
         // [network]:ifaddr:

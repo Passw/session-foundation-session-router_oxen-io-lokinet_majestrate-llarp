@@ -275,29 +275,60 @@ namespace srouter::handlers
         _exit_policy = net_conf.traffic_policy;
 
         _if_name = net_conf._if_name.value_or("");
-        if (net_conf._local_ip_net)
-            _local_net = *net_conf._local_ip_net;
-        if (net_conf._local_ipv6_net)
-            _local_ipv6_net = *net_conf._local_ipv6_net;
 
+        // These should have been assigned by Router before this:
+        assert(net_conf._local_ip_net);
+        assert(net_conf._local_ipv6_net);
+
+        _local_net = *net_conf._local_ip_net;
+        _local_ipv6_net = *net_conf._local_ipv6_net;
+
+#if 0
         if (net_conf.addr_map_persist_file)
         {
             _persisting_addr_file = net_conf.addr_map_persist_file;
             persist_addrs = true;
         }
+#endif
 
-        for (auto& [remote, local] : net_conf._reserved_local_ipv4)
-            _local_ipv4_mapping.insert_or_assign(local, remote);
-        for (auto& [remote, local] : net_conf._reserved_local_ipv6)
-            _local_ipv6_mapping.insert_or_assign(local, remote);
+        NetworkAddress me{_router.id(), !_router.is_service_node};
+        _local_ipv4_mapping.insert(_local_net.ip, me);
+        _local_ipv6_mapping.insert(_local_ipv6_net.ip, std::move(me));
+
+        auto add_mappings = [](const auto& local_net, auto& mapping, const auto& reserved) {
+            for (auto& [remote, local] : reserved)
+            {
+                if (!local_net.contains(local))
+                {
+                    log::error(
+                        logcat,
+                        "Unable to apply {} <-> {} IP mapping: that IP is not inside the local network range {}",
+                        remote,
+                        local,
+                        local_net);
+                    continue;
+                }
+                if (mapping.contains(remote))
+                {
+                    log::error(
+                        logcat, "Unable to apply {} <-> {} IP mapping: that remote is already assigned", remote, local);
+                    continue;
+                }
+                if (mapping.contains(local))
+                {
+                    log::error(
+                        logcat, "Unable to apply {} <-> {} IP mapping: that IP is already assigned", local, remote);
+                    continue;
+                }
+                mapping.insert(local, remote);
+            }
+        };
+        add_mappings(_local_net, _local_ipv4_mapping, net_conf._reserved_local_ipv4);
+        add_mappings(_local_ipv6_net, _local_ipv6_mapping, net_conf._reserved_local_ipv6);
 
         log::debug(logcat, "Tun constructing IPRange iterator on local networks: {}, {}", _local_net, _local_ipv6_net);
         _local_range_iterator = IPRangeIterator{_local_net};
         _local_ipv6_range_iterator = IPv6RangeIterator{_local_ipv6_net};
-
-        NetworkAddress me{_router.id(), !_router.is_service_node};
-        _local_ipv4_mapping.insert_or_assign(_local_net.ip, me);
-        _local_ipv6_mapping.insert_or_assign(_local_ipv6_net.ip, std::move(me));
 
         vpn::InterfaceInfo info;
         info.ifname = _if_name;
@@ -852,6 +883,7 @@ namespace srouter::handlers
         if (_raw_DNS)
             _raw_DNS->Stop();
 
+#if 0
         // save address map if applicable
         if (_persisting_addr_file and not platform::is_android)
         {
@@ -873,6 +905,7 @@ namespace srouter::handlers
             //   maybe->write(data.data(), data.size());
             // }
         }
+#endif
 
         if (_dns)
             _dns->stop();
@@ -896,7 +929,7 @@ namespace srouter::handlers
             // equal)
             if (auto maybe_next_ip = rit.next_ip())
             {
-                if (not local_mapping.has_local(*maybe_next_ip))
+                if (not local_mapping.contains(*maybe_next_ip))
                     return maybe_next_ip;
                 // local IP is already assigned; try again
                 continue;
@@ -930,7 +963,7 @@ namespace srouter::handlers
 
         bool ins4 = false, ins6 = false;
         // first: check if we already have a mapping for this remote
-        if (auto maybe_ip = _local_ipv4_mapping.get_local(remote))
+        if (auto maybe_ip = _local_ipv4_mapping[remote])
         {
             ret4 = std::move(*maybe_ip);
             log::debug(logcat, "Local IP for session to remote ({}) already assigned ({})", remote, ret4);
@@ -948,7 +981,7 @@ namespace srouter::handlers
             return std::nullopt;
         }
 
-        if (auto maybe_ipv6 = _local_ipv6_mapping.get_local(remote))
+        if (auto maybe_ipv6 = _local_ipv6_mapping[remote])
         {
             ret6 = std::move(*maybe_ipv6);
             log::debug(logcat, "Local IP for session to remote ({}) already assigned ({})", remote, ret6);
@@ -966,22 +999,37 @@ namespace srouter::handlers
         }
 
         if (ins4)
-            _local_ipv4_mapping.insert_or_assign(ret4, remote);
+            _local_ipv4_mapping.insert(ret4, remote);
         if (ins6)
-            _local_ipv6_mapping.insert_or_assign(ret6, remote);
+            _local_ipv6_mapping.insert(ret6, remote);
 
         return ret;
     }
 
-    void TunEndpoint::unmap(const NetworkAddress& remote)
+    void TunEndpoint::expire(const NetworkAddress& remote)
     {
-        if (_local_ipv4_mapping.has_remote(remote))
+        // If already in the expired list, extract it before we re-add to the end
+        if (auto it = _exp_it.find(remote); it != _exp_it.end())
         {
-            _local_ipv4_mapping.unmap(remote);
-            log::debug(logcat, "TUN device unmapped session to remote: {}", remote);
+            _expired.erase(it->second);
+            _exp_it.erase(it);
         }
-        else
-            log::warning(logcat, "TUN device could not unmap session (remote: {})", remote);
+        _exp_it[remote] = _expired.emplace(_expired.end(), remote);
+
+        prune_expired();
+    }
+
+    void TunEndpoint::prune_expired()
+    {
+        size_t keep = _router.config().network.expired_address_cache;
+        while (_expired.size() > keep)
+        {
+            auto& remote = _expired.front();
+            _local_ipv4_mapping.erase(remote);
+            _local_ipv6_mapping.erase(remote);
+            _exp_it.erase(_expired.front());
+            _expired.pop_front();
+        }
     }
 
     // handles an outbound packet going OUT from user -> network
@@ -1032,27 +1080,25 @@ namespace srouter::handlers
         }
 
         // we pass `dest` because that is our local private IP on the outgoing IPPacket
-        auto maybe_remote = is_v4 ? _local_ipv4_mapping.get_remote(dest4) : _local_ipv6_mapping.get_remote(dest6);
-        if (maybe_remote)
+        if (auto remote = is_v4 ? _local_ipv4_mapping[dest4] : _local_ipv6_mapping[dest6])
         {
-            auto& remote = *maybe_remote;
             pkt.clear_addresses();
 
-            if (auto session = _router.session_endpoint().get_session(remote))
+            if (auto session = _router.session_endpoint().get_session(*remote))
             {
                 log::trace(
                     logcat,
                     "Dispatching outbound {}B packet for session (remote: {}): {}",
                     pkt.size(),
-                    remote,
+                    *remote,
                     pkt.info_line());
                 session->send_session_data_message(pkt.span(), pkt.protocol());
             }
             else
             {
-                log::debug(logcat, "No session for remote: {} for outbound packet, attempting to create one!", remote);
+                log::debug(logcat, "No session for remote: {} for outbound packet, attempting to create one!", *remote);
 
-                auto s = _router.session_endpoint().initiate_remote_session(remote, nullptr);
+                auto s = _router.session_endpoint().initiate_remote_session(*remote, nullptr);
                 if (s)
                     s->send_session_data_message(pkt.span(), pkt.protocol());
             }
@@ -1069,7 +1115,7 @@ namespace srouter::handlers
 
     std::optional<ipv4> TunEndpoint::obtain_src_for_ipv4_remote(const NetworkAddress& remote)
     {
-        if (auto maybe_src = _local_ipv4_mapping.get_local(remote))
+        if (auto maybe_src = _local_ipv4_mapping[remote])
             return maybe_src;
 
         log::warning(logcat, "Unable to find mapped IPv4 for inbound packet from remote {}", remote);
@@ -1077,7 +1123,7 @@ namespace srouter::handlers
     }
     std::optional<ipv6> TunEndpoint::obtain_src_for_ipv6_remote(const NetworkAddress& remote)
     {
-        if (auto maybe_src = _local_ipv6_mapping.get_local(remote))
+        if (auto maybe_src = _local_ipv6_mapping[remote])
             return maybe_src;
 
         log::warning(logcat, "Unable to find mapped IPv6 for inbound packet from remote {}", remote);
@@ -1173,7 +1219,7 @@ namespace srouter::handlers
 
     std::pair<std::optional<ipv4>, std::optional<ipv6>> TunEndpoint::get_mapped_ip(const NetworkAddress& addr)
     {
-        return {_local_ipv4_mapping.get_local(addr), _local_ipv6_mapping.get_local(addr)};
+        return {_local_ipv4_mapping[addr], _local_ipv6_mapping[addr]};
     }
 
     TunEndpoint::~TunEndpoint() { log::trace(logcat, "TunEndpoint::~TunEndpoint()"); }

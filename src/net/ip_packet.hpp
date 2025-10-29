@@ -122,7 +122,11 @@ namespace srouter
         std::optional<IPPacket> make_icmp_unreachable() const;
 
         static std::vector<std::byte> make_udp_packet(
-            const quic::Address& src, const quic::Address& dest, std::span<const std::byte> payload);
+            const quic::ipv6& src,
+            uint16_t src_port,
+            const quic::ipv6& dest,
+            uint16_t dest_port,
+            std::span<const std::byte> payload);
 
         std::byte* data() { return _buf.data(); }
         const std::byte* data() const { return _buf.data(); }

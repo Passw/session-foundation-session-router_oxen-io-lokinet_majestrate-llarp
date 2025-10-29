@@ -130,8 +130,10 @@ namespace srouter::handlers
         // mapped ipv4 address, or nullptr if one could not be assigned.
         std::optional<std::pair<ipv4, ipv6>> map(const NetworkAddress& remote) override;
 
-        // Removes any mapped IP for the given remote from the tun IP map.
-        void unmap(const NetworkAddress& remote) override;
+        // Expires a mapped IP for the given remote from the tun IP map.  The address will be added
+        // as the most recently used address, and (if the configured cache size is exceeded) the least
+        // recently used address will be forgotten.
+        void expire(const NetworkAddress& remote) override;
 
         std::optional<net::ExitPolicy> get_exit_policy() const { return _exit_policy; }
 
@@ -148,13 +150,23 @@ namespace srouter::handlers
 
         void start_poller() override;
 
+      private:
         // Stores assigned IP's for each session in/out of this Session Router instance
         //  - Reserved local addresses are directly pre-loaded from config
         //  - Persisting address map is directly pre-loaded from config
         address_map<ipv4> _local_ipv4_mapping;
         address_map<ipv6> _local_ipv6_mapping;
 
-      private:
+        // We keep a list of expired network addresses ordered by least-recently-used first.  When
+        // pruning the expired list, we pop off the front of the list.
+        std::list<NetworkAddress> _expired;
+        // Maps a NetworkAddress to its iterator in `_expired` so that if an expired address gets
+        // reused, we can find it and extract it to move it to the end.
+        std::unordered_map<NetworkAddress, std::list<NetworkAddress>::iterator> _exp_it;
+
+        // Checks the _expired cache and, if too big, prunes the oldest entries.
+        void prune_expired();
+
         std::optional<ipv4> get_next_local_ipv4();
         std::optional<ipv6> get_next_local_ipv6();
 

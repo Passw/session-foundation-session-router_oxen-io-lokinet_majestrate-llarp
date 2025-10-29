@@ -752,6 +752,21 @@ namespace srouter
                 }
             });
 
+        conf.define_option<int>(
+            "network",
+            "expired-address-cache",
+            NotEmbedded,
+            Default{params.type == config::Type::Relay ? 100 : 1000},
+            Comment{
+                "This controls how many recently expired connection addresses to remember: if a connection",
+                "closed or expires then the assigned addresses are remembered in this cache and will be reserved",
+                "and reused if the connection is reestablished while still in the cache.  This setting controls",
+                "the maximum number of such addresses Session Router will remember.",
+                "",
+                "This cache does not persist across restarts: if you want a particular client to have a persistent",
+                "address, use the mapaddr= setting instead.",
+            });
+
         // TODO: support SRV records for routers, but for now client only
         conf.define_option<std::string>(
             "network",
@@ -778,6 +793,7 @@ namespace srouter
 
         conf.define_option<int>("network", "path-alignment-timeout", Deprecated);
 
+#if 0
         conf.define_option<std::filesystem::path>(
             "network",
             "persist-addrmap-file",
@@ -917,6 +933,7 @@ namespace srouter
 
                 addr_map_persist_file = file;
             });
+#endif
 
         // Deprecated options:
         conf.define_option<std::string>("network", "enabled", Deprecated);
