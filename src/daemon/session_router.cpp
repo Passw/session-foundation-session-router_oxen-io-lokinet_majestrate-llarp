@@ -472,7 +472,7 @@ namespace
 
         std::promise<void> watchdog_stop;
         std::thread watchdog{[ftr = watchdog_stop.get_future()] {
-            srouter::util::SetThreadName("llarp-watchdog");
+            srouter::util::SetThreadName("srtr-watchdog");
             while (ftr.wait_for(1s) != std::future_status::ready)
             {
                 // do periodic non Session Router related tasks here
@@ -522,7 +522,7 @@ namespace
             signal(SIGTERM, handle_signal);
             signal(SIGKILL, handle_signal);
 
-            srouter::util::SetThreadName("llarp-main");
+            srouter::util::SetThreadName("srtr-main");
             ctx->start(std::move(*conf));
         }
         catch (srouter::util::bind_socket_error& ex)
