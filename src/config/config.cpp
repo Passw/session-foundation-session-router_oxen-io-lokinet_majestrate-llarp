@@ -603,7 +603,8 @@ namespace srouter
             NotEmbedded,
             Comment{
                 "Interface name for Session Router traffic. If unset Session Router will look for a free name",
-                "matching 'sr-tunN', starting at N=0 (e.g. sr-tun0, sr-tun1, ...).",
+                "matching 'sr-tunN', starting at N=0 (e.g. sr-tun0, sr-tun1, ...) for clients; relays default",
+                "to sr-tun@XXXXXXXX where XXXXXXXX is the first 8 hex digits of the Session node pubkey.",
 #ifdef __linux__
                 "",
                 "On Linux, you can use '%d' in the name as a pattern to have the OS automatically choose",
