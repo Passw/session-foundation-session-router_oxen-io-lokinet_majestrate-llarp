@@ -78,8 +78,8 @@ namespace srouter
 
         oxenc::bt_dict_consumer btdc{serialized_rc};
 
-        if (btdc.skip_until("t"sv))
-            throw std::invalid_argument{"Serialized RC did not contain a timestamp."s};
+        if (!btdc.skip_until("t"sv))
+            assert(!"Serialized RC did not contain a timestamp.");
 
         // hash everything up to the literal byte "t" of the key (the key is "1:t")
         auto time_key_and_data = btdc.next_integer<uint64_t>();
