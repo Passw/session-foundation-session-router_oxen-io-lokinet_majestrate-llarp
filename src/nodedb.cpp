@@ -1018,8 +1018,6 @@ namespace srouter
         auto [it, new_rc] = known_rcs.try_emplace(rid, std::move(rc));
         auto& stored = it->second;
 
-        update_rc_buckets(rc, /*added=*/true);
-
         bool should_gossip;
         if (new_rc)
         {
@@ -1048,8 +1046,10 @@ namespace srouter
             stored = std::move(rc);
         }
 
+        update_rc_buckets(stored, /*added=*/true);
+
         // We inserted or updated the record, so queue saving it to disk on the disk loop
-        _router.disk_loop.call_soon([rc = stored, path = get_path_by_pubkey(rc.router_id())] { rc.write(path); });
+        _router.disk_loop.call_soon([rc = stored, path = get_path_by_pubkey(stored.router_id())] { rc.write(path); });
 
         return should_gossip;
     }
