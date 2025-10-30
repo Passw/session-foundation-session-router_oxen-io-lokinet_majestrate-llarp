@@ -12,44 +12,47 @@ namespace srouter
 {
     static auto logcat = log::Cat("iprange");
 
-    template <bool is_ipv4>
-    static std::conditional_t<is_ipv4, ipv4_net, ipv6_net> parse_ip_net(
-        std::string_view address, std::optional<uint8_t> default_mask)
+    std::variant<ipv4_net, ipv6_net> parse_ip_net(
+        std::string_view address, std::optional<uint8_t> default_mask4, std::optional<uint8_t> default_mask6)
     {
         auto mask_pos = address.find('/');
         std::string addr{address.substr(0, mask_pos)};
         quic::Address a{addr, 0};
-        if (a.is_ipv4() != is_ipv4)
-            throw std::invalid_argument{"Cannot construct an IPv{} range from a IPv{} address"_format(
-                is_ipv4 ? "4" : "6", is_ipv4 ? "6" : "4")};
 
         uint8_t mask;
         if (mask_pos == std::string::npos)
         {
-            if (default_mask)
-                mask = *default_mask;
+            if (a.is_ipv4() and default_mask4)
+                mask = *default_mask4;
+            else if (a.is_ipv6() and default_mask6)
+                mask = *default_mask6;
             else
                 throw std::invalid_argument{"Invalid IP range: /N network mask is required"};
         }
-        else if (!parse_int(address.substr(mask_pos + 1), mask) || mask > (is_ipv4 ? 32 : 128))
+        else if (!parse_int(address.substr(mask_pos + 1), mask) || mask > (a.is_ipv4() ? 32 : 128))
         {
             throw std::invalid_argument{"Invalid IP range: {} is not a valid IPv{} network mask"_format(
-                address.substr(mask_pos), is_ipv4 ? "4" : "6")};
+                address.substr(mask_pos), a.is_ipv4() ? "4" : "6")};
         }
 
-        if constexpr (is_ipv4)
-            return {a.to_ipv4(), mask};
-        else
-            return {a.to_ipv6(), mask};
+        if (a.is_ipv4())
+            return ipv4_net{a.to_ipv4(), mask};
+        return ipv6_net{a.to_ipv6(), mask};
     }
 
     ipv4_net parse_ipv4_net(std::string_view address, std::optional<uint8_t> default_mask)
     {
-        return parse_ip_net<true>(address, default_mask);
+        auto ip_net = parse_ip_net(address, default_mask, default_mask);
+        if (auto* x = std::get_if<ipv4_net>(&ip_net))
+            return std::move(*x);
+        throw std::invalid_argument{"Cannot construct an IPv4 range from an IPv6 address"};
     }
     ipv6_net parse_ipv6_net(std::string_view address, std::optional<uint8_t> default_mask)
     {
-        return parse_ip_net<false>(address, default_mask);
+        auto ip_net = parse_ip_net(address, default_mask, default_mask);
+        if (auto* x = std::get_if<ipv6_net>(&ip_net))
+            return std::move(*x);
+        throw std::invalid_argument{"Cannot construct an IPv6 range from an IPv4 address"};
     }
     ipv4_range parse_ipv4_range(std::string_view address, std::optional<uint8_t> default_mask)
     {
@@ -225,12 +228,22 @@ namespace srouter
         auto& hi = net.ip.hi;
         for (hi = start; hi < end; hi += hi_step)
         {
-            if (std::ranges::none_of(
-                    exclude, [&net](const auto& e) { return e.contains(net.ip) || net.contains(e.ip); }))
+            bool found_overlap = false;
+            for (const auto& e : exclude)
             {
-                ret->mask = mask;  // In case we enlarged it for searching
-                return ret;
+                if (e.contains(net.ip) || net.contains(e.ip))
+                {
+                    log::debug(logcat, "Not selecting {}: overlaps with existing range {}", net.ip, e);
+                    found_overlap = true;
+                    break;
+                }
             }
+
+            if (found_overlap)
+                continue;
+
+            net.mask = mask;  // In case we enlarged it for searching
+            return ret;
         }
 
         ret.reset();

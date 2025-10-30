@@ -394,7 +394,7 @@ namespace srouter::link
                 else
                 {
                     log::warning(logcat, "RPC lookup could not find SNS registry!");
-                    respond(ResolveSNS::NOT_FOUND);
+                    respond(messages::NOT_FOUND_RESPONSE);
                 }
             });
 #endif
@@ -586,7 +586,7 @@ namespace srouter::link
                 "Received relayed FindClientContact request (key: {}); could not find locally, relaying "
                 "error...",
                 blinded_pubkey);
-            return respond(FindClientContact::NOT_FOUND);
+            return respond(messages::NOT_FOUND_RESPONSE);
         }
 
         auto remaining = std::make_shared<size_t>(closest_rids.size() - authoritative);

@@ -4,6 +4,7 @@
 #include "contact/contactdb.hpp"
 #include "contact/relay_contact.hpp"
 #include "crypto/crypto.hpp"
+#include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
 #include "messages/dht.hpp"
 #include "messages/fetch.hpp"
@@ -42,9 +43,7 @@ namespace srouter::handlers
         {
             // raw IPv4/IPv6/exit traffic all require a full tun interface.
 
-            protocols = protocol_flag::IPV4;
-            if (netconf.enable_ipv6)
-                protocols |= protocol_flag::IPV6;
+            protocols = protocol_flag::IPV4 | protocol_flag::IPV6;
             if (router.is_exit_node())
                 protocols |= protocol_flag::EXIT;
         }
@@ -114,7 +113,7 @@ namespace srouter::handlers
 
         const auto& remote = s->remote();
         if (auto& tun = router.tun_endpoint())
-            tun->unmap(remote);
+            tun->expire(remote);
 
         if (auto it = _sessions.find(remote); it != _sessions.end())
         {
@@ -752,7 +751,7 @@ namespace srouter::handlers
 
         auto remaining = std::make_shared<int>(0);
 
-        auto response_handler = [remote, func = std::move(func), remaining](auto resp) {
+        auto response_handler = [remote, func, remaining](auto resp) {
             int rem = --*remaining;
             if (rem < 0)
             {
@@ -766,16 +765,33 @@ namespace srouter::handlers
             {
                 if (resp.ok())
                 {
-                    log::info(logcat, "Call to FindClientContact succeeded!");
-                    auto enc = FindClientContact::deserialize_response(oxenc::bt_dict_consumer{resp.body});
-
-                    if (auto intro = enc.decrypt(remote))
+                    oxenc::bt_dict_consumer cc_dict{resp.body};
+                    bool failed = false;
+                    if (auto err = cc_dict.maybe<std::string_view>(messages::STATUS_KEY);
+                        err && *err != messages::STATUS_OK)
                     {
-                        log::debug(logcat, "Storing ClientContact for remote rid:{}", remote);
-                        cc = std::move(intro);
+                        failed = true;
+                        if (*err == messages::STATUS_NOT_FOUND)
+                        {
+                            log::debug(logcat, "Relay returned CC not found");
+                        }
+                        else
+                        {
+                            throw std::runtime_error{"Relay returned unknown status {}"_format(*err)};
+                        }
                     }
-                    else
-                        log::warning(logcat, "Failed to decrypt returned EncryptedClientContact!");
+                    if (!failed)
+                    {
+                        log::info(logcat, "Call to FindClientContact succeeded!");
+                        auto enc = FindClientContact::deserialize_response(std::move(cc_dict));
+                        if (auto intro = enc.decrypt(remote))
+                        {
+                            log::debug(logcat, "Storing ClientContact for remote rid:{}", remote);
+                            cc = std::move(intro);
+                        }
+                        else
+                            log::warning(logcat, "Failed to decrypt returned EncryptedClientContact!");
+                    }
                 }
                 else
                 {
@@ -889,28 +905,19 @@ namespace srouter::handlers
         return false;
     }
 
-    std::optional<std::variant<ipv4, ipv6>> SessionEndpoint::map_session(const session::Session& s)
+    std::optional<ipv6> SessionEndpoint::map_session(const session::Session& s)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         if (const auto& tun = router.tun_endpoint())
         {
-            log::debug(logcat, "Successfully mapped inbound session; mapping session to local TUN IP");
+            log::debug(logcat, "Successfully mapped inbound session; mapping session to local TUN IPv6");
 
-            if (auto maybe_ipv4 = tun->map(s.remote()))
-            {
-                log::info(
-                    logcat,
-                    "TUN device successfully mapped session (remote: {}) to local ip: {}",
-                    s.remote(),
-                    *maybe_ipv4);
-                return maybe_ipv4;
-            }
-            // TODO: ipv6
-
-            // TODO: if this fails, we should close the session
-            log::warning(logcat, "TUN device failed to map session (remote: {}) to local ip", s.remote());
-            return std::nullopt;
+            // TODO: this can throw if you have a tiny IPv6 range; we should catch that and close
+            // the session.
+            auto addr = tun->map6(s.remote());
+            log::info(logcat, "TUN device successfully mapped session (remote: {}) to local ip: {}", s.remote(), addr);
+            return addr;
         }
 
         // TODO: if we're not tun-based -- currently not allowing inbound sessions for non-tun
@@ -1086,7 +1093,9 @@ namespace srouter::handlers
         std::optional<std::chrono::milliseconds> timeout)
     {
         return router.loop.call_get([this, &remote, &on_attempted, &timeout] {
-            auto& s = _sessions[remote];
+            std::shared_ptr<session::Session> s{nullptr};
+            if (_sessions.contains(remote))
+                s = _sessions[remote];
             if (s && !s->is_closed())
             {
                 if (on_attempted)
@@ -1106,13 +1115,21 @@ namespace srouter::handlers
             else
             {
                 auto tag = next_tag();
-                if (remote.client())
-                    s = router.loop.make_shared<session::OutboundClientSession>(
-                        remote, *this, tag, std::move(on_attempted), timeout);
-                else
-                    s = router.loop.make_shared<session::OutboundRelaySession>(
-                        remote, *this, tag, std::move(on_attempted), timeout);
-                _session_tags.emplace(tag, s);
+                try
+                {
+                    if (remote.client())
+                        s = router.loop.make_shared<session::OutboundClientSession>(
+                            remote, *this, tag, std::move(on_attempted), timeout);
+                    else
+                        s = router.loop.make_shared<session::OutboundRelaySession>(
+                            remote, *this, tag, std::move(on_attempted), timeout);
+                    _session_tags.emplace(tag, s);
+                    _sessions[remote] = s;
+                }
+                catch (const std::exception& e)
+                {
+                    log::warning(logcat, "Error creating session to remote {}: {}", remote, e.what());
+                }
             }
 
             return s;
@@ -1126,4 +1143,134 @@ namespace srouter::handlers
             last_tag++;
         return last_tag;
     }
+
+    void SessionEndpoint::for_each_session(
+        std::function<void(const NetworkAddress&, const session::Session&)> visit) const
+    {
+        for (const auto& [addr, s] : _sessions)
+            visit(addr, *s);
+    }
+
+    std::pair<uint16_t, std::shared_ptr<session::Session>> SessionEndpoint::map_udp_remote_port(
+        const NetworkAddress& remote, uint16_t port)
+    {
+        return router.loop.call_get([&] {
+            // Port selection: we pick something random in the 49152-60000 range to start from, as
+            // that range (up to 60999) is common to all modern OSes for ephemeral addresses, and so
+            // at least our first thousand ports will look like a normal random ephemeral port.
+            // (Otherwise we just keep going, wrapping around from 65535 back to 1024).
+            if (_next_udp_client_port == 0)
+                _next_udp_client_port = std::uniform_int_distribution<uint16_t>{49152, 60000}(csrng);
+
+            std::pair<uint16_t, std::shared_ptr<session::Session>> result;
+            auto& [local_port, session] = result;
+            session = initiate_remote_session(remote);
+
+            mapped_remote target{.remote = remote, .port = port};
+            auto& [udp_handle, cports] = _udp_handles[target];
+            bool existing = static_cast<bool>(udp_handle);
+            if (!existing)
+
+                udp_handle = std::make_unique<quic::UDPSocket>(
+                    router.loop.get_event_base(),
+                    quic::Address{"::1", 0},
+                    /*gso=*/false,
+                    [this, target](quic::Packet&& pkt) {
+                        // FIXME: cache most recently used mapping/session/etc.?
+
+                        auto session = initiate_remote_session(target.remote);
+                        if (!session)
+                        {
+                            log::warning(
+                                logcat,
+                                "Received local mapped UDP packet, but unable to initiate a session with {}",
+                                target.remote);
+                            return;
+                        }
+
+                        // `instance` contains the targetted remote, and the app source port, and is our
+                        // lookup key to see if we've already received data from that same app source port
+                        // aimed at our intermediate port
+                        const uint16_t app_source_port = pkt.path.remote.port();
+                        mapped_remote instance{.remote = target.remote, .port = app_source_port};
+
+                        uint16_t& mapped_port = _udp_client_ports[instance];
+                        if (mapped_port == 0)
+                        {  // We just auto-vivified it
+                            uint16_t start_port = _next_udp_client_port;
+                            mapped_remote new_port{.remote = target.remote, .port = start_port};
+                            while (not _udp_return_ports.try_emplace(new_port, app_source_port).second)
+                            {
+                                new_port.port++;
+                                if (new_port.port < 1024)
+                                    new_port.port = 1024;
+                                if (new_port.port == start_port)
+                                {
+                                    // This seems very unlikely: it would mean we have mapped ~64k
+                                    // *distinct* localhost application ports
+                                    log::error(logcat, "Run out of pseudo-UDP ports to use");
+                                    _udp_client_ports.erase(instance);
+                                    return;
+                                }
+                            }
+                            if (auto it = _udp_handles.find(target); it != _udp_handles.end())
+                                it->second.second.push_back(instance);
+                            mapped_port = new_port.port;
+                            log::debug(
+                                logcat,
+                                "New client UDP packet from localhost:{} to {}:{} mapped to pseudo-port {}",
+                                app_source_port,
+                                target.remote,
+                                target.port,
+                                mapped_port);
+                        }
+
+                        // Construct a UDP packet with source port of our pseudo-port, and dest port of the
+                        // remote mapped port (so that return packets get picked up correctly).
+                        auto packet =
+                            IPPacket::make_udp_packet(quic::ipv6{}, mapped_port, quic::ipv6{}, target.port, pkt.data());
+
+                        session->send_session_data_message(packet, traffic_type::UDP);
+                    });
+
+            local_port = udp_handle->address().port();
+            log::debug(
+                logcat,
+                "{} mapped UDP port ({}) for remote {}:{}",
+                existing ? "Using existing" : "Created new",
+                local_port,
+                remote,
+                port);
+
+            return result;
+        });
+    }
+
+    void SessionEndpoint::unmap_udp_remote_port(const NetworkAddress& remote, uint16_t port)
+    {
+        mapped_remote rem{.remote = remote, .port = port};
+
+        auto it = _udp_handles.find(rem);
+        if (it == _udp_handles.end())
+        {
+            log::debug(logcat, "Nothing to unmap: {}:{} is not currently a mapped UDP port", remote, port);
+            return;
+        }
+
+        auto& [sock, cports] = it->second;
+        for (auto& c : cports)
+        {
+            if (auto cit = _udp_client_ports.find(c); cit != _udp_client_ports.end())
+            {
+                _udp_return_ports.erase(mapped_remote{.remote = remote, .port = cit->second});
+                _udp_client_ports.erase(cit);
+            }
+        }
+
+        auto local_port = sock->address().port();
+        _udp_handles.erase(it);
+
+        log::debug(logcat, "Unmapped localhost:{} -> {}:{} UDP mapping", local_port, remote, port);
+    }
+
 }  //  namespace srouter::handlers

@@ -84,6 +84,64 @@ namespace srouter
             // Called to clean up expired slot values out of _slot_fuzz
             void cleanup_old_fuzz(int oldest_slot);
 
+            struct mapped_remote
+            {
+                NetworkAddress remote;
+                uint16_t port;
+
+                bool operator==(const mapped_remote&) const = default;
+
+                struct hash
+                {
+                    size_t operator()(const mapped_remote& m) const noexcept
+                    {
+                        auto h = std::hash<NetworkAddress>{}(m.remote);
+                        h ^= std::hash<uint16_t>{}(m.port) + oxen::quic::inverse_golden_ratio + (h << 6) + (h >> 2);
+                        return h;
+                    }
+                };
+            };
+            // UDP port bidirectional map, obfuscating the randomized source port from the user and
+            // mapping that obfuscated port back to that obfuscated port for return traffic.  This
+            // is both to track used ports so we don't accept traffic to an unmapped one, as well as
+            // in case port selection is fingerprintable.
+            //
+            // _udp_client_ports maps local application source port -> pseudo source port
+            // _udp_return_ports maps pseudo dest port -> {local socket, application dest port}
+            //
+            // How this all works is:
+            // - client app maps REMOTE:1234, we start building a session to REMOTE, start a UDP
+            //   listener on a random localhost port (say :5678), where that listener knows to
+            //   forward received UDP packets to REMOTE:1234, returning that random localhost port
+            //   back to the client to start using.
+            // - application sends UDP packets to localhost:5678 from source :22334
+            //   - if this is the first time we've seen that source port in the mapped UDP socket,
+            //     we pick a fake mapping port, say 13579, add a new mapped pair for it:
+            //
+            //         {{REMOTE:22334} -> 13579}  # added to _udp_client_ports
+            //         {{REMOTE:13579} -> 22334}  # added to _udp_return_ports
+            //
+            //   - we use the pre-existing or newly inserted _u_c_p mapped pair to rewrite the
+            //     src/dest in the UDP packet to src=[::]:13579, dest=[::]:1234
+            // - remote sends UDP packet back from :1234 -- we see a return packet with dest
+            //   [::]:13579, look that up in _u_r_p, get the app port :22334 out of that, and use
+            //   the source port 1234 to get the socket out of _udp_handles, and then use both of
+            //   those to send the datagram to the application at [::1]:22334.
+            std::unordered_map<mapped_remote, uint16_t, mapped_remote::hash> _udp_client_ports;
+            std::unordered_map<mapped_remote, uint16_t, mapped_remote::hash> _udp_return_ports;
+
+            // Stores any established embedded client UDP maps: {remote:port} -> {socket,cports}, so
+            // that you can safely ask for the same remote:port again and just get the existing one
+            // rather than a new listening socket.  cports is a vector of keys of _udp_client_ports,
+            // used when deleting the handle.
+            std::unordered_map<
+                mapped_remote,
+                std::pair<std::unique_ptr<quic::UDPSocket>, std::vector<mapped_remote>>,
+                mapped_remote::hash>
+                _udp_handles;
+
+            uint16_t _next_udp_client_port{0};
+
           public:
             SessionEndpoint(Router& r);
 
@@ -134,6 +192,18 @@ namespace srouter
                 return dynamic_cast<S*>(it->second.get());
             }
 
+            template <std::derived_from<session::Session> S = session::Session>
+            S* get_session_shared(const NetworkAddress& remote) const
+            {
+                auto it = _sessions.find(remote);
+                if (it == _sessions.end())
+                    return nullptr;
+                if constexpr (std::same_as<S, session::Session>)
+                    return it->second;
+                else
+                    return dynamic_pointer_cast<S>(it->second);
+            }
+
             bool close_session(NetworkAddress remote, bool send_close = false);
 
             bool close_session(session_tag t, bool send_close = false);
@@ -145,12 +215,12 @@ namespace srouter
 
             void publish_client_contact(const EncryptedClientContact& ecc);
 
-            // SessionEndpoint can use either a whitelist or a static auth token list to  validate incomininbg requests
-            // to initiate a session
+            // SessionEndpoint can use either a whitelist or a static auth token list to validate
+            // incoming requests to initiate a session
             bool validate(const NetworkAddress& remote, std::optional<std::string> maybe_auth = std::nullopt);
 
             // FIXME: should SessionEndpoint have these mappings at all?
-            std::optional<std::variant<ipv4, ipv6>> map_session(const session::Session& s);
+            std::optional<ipv6> map_session(const session::Session& s);
             void map_remote_to_local_addr(NetworkAddress remote, quic::Address local);
             void unmap_local_addr_by_remote(const NetworkAddress& remote);
             void unmap_remote_by_name(const std::string& name);
@@ -204,14 +274,34 @@ namespace srouter
             // usage).
             std::shared_ptr<session::Session> initiate_remote_session(
                 const NetworkAddress& remote,
-                std::function<void(session::Session& session)> on_established,
+                std::function<void(session::Session& session)> on_attempted = nullptr,
                 std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
             void tick(std::chrono::milliseconds now) override;
 
             void queue_session_packet(const NetworkAddress& remote, IPPacket pkt);
 
+            void for_each_session(std::function<void(const NetworkAddress&, const session::Session&)> visit) const;
+
             session_tag next_tag();
+
+            // UDP port mapping, primarily for embedded clients.  This starts constructing a session
+            // to the given remote, starts a UDP listener on an IPv6 localhost (i.e. `[::1]`) random
+            // port, and sets up the internal handling so that UDP traffic to that UDP localhost
+            // port will be forwarded to the remote (as well as return traffic from the remote
+            // forwarded back to the address that sent data to the localhost port).
+            //
+            // Returns a pair:
+            // - the port on [::1] where the application can send data to forward to the remote
+            // - the outgoing session object (so that the caller can set an on_established hook, if
+            //   desired).  Note that the session could change over time, e.g. if it is deleted by
+            //   idle time out and then is re-established as a result of activity to this port.
+            std::pair<uint16_t, std::shared_ptr<session::Session>> map_udp_remote_port(
+                const NetworkAddress& remote, uint16_t port);
+
+            // Removes a mapping previously established with map_udp_remote_port; this closes the
+            // socket and forgets any previous connection mappings.
+            void unmap_udp_remote_port(const NetworkAddress& remote, uint16_t port);
         };
 
     }  // namespace handlers

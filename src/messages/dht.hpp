@@ -19,10 +19,6 @@ namespace srouter
 
     namespace FindClientContact
     {
-        extern const std::string NOT_FOUND;
-        extern const std::string INSUFFICIENT;
-        extern const std::string INVALID_ORDER;
-
         /** Bt-encoded contents:
             - 'k' : blinded pubkey of the queried client contact
 
@@ -45,8 +41,6 @@ namespace srouter
 
     namespace ResolveSNS
     {
-        extern const std::string NOT_FOUND;
-
         /** Bt-encoded contents:
             - 's' : SNS name
 

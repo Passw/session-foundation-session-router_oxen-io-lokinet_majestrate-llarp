@@ -122,8 +122,8 @@ namespace srouter
         /// i.e. 32 for every hop unique ip, 24 unique /24 per hop, etc
         uint8_t unique_hop_netmask{0};
 
-        // TODO: some day, if we ever support routers using IPv6, there would need to be a different
-        // ipv6 netmask value.
+        // TODO: some day, if we ever support routers using public IPv6 addresses, there would need
+        // to be a different ipv6 netmask value.
 
         std::chrono::seconds min_expiry = 1min;
         std::chrono::seconds acceptable_expiry = 5min;
@@ -172,7 +172,6 @@ namespace srouter
 
         std::optional<std::filesystem::path> keyfile;
 
-        bool enable_ipv6{false};
         bool is_reachable{false};
 
         /*   Auth specific config   */
@@ -190,16 +189,17 @@ namespace srouter
 
         std::unordered_set<srouter::dns::SRVData> srv_records;
 
-        /* TESTNET: Under modification */
-
         // Contents of this file are read directly into ::_reserved_local_addrs
-        std::optional<std::filesystem::path> addr_map_persist_file;
+        // TODO.  Perhaps this should be in a sqlite db, though?
+        // std::optional<std::filesystem::path> addr_map_persist_file;
 
-        // the only member that refers to an actual interface
+        int expired_address_cache = 100;
+
         std::optional<std::string> _if_name;
 
-        std::optional<ipv4_net> _local_ip_net;    // [network]:ifaddr
-        std::optional<ipv6_net> _local_ipv6_net;  // [network]:ipv6
+        // [network]:ifaddr:
+        std::optional<ipv4_net> _local_ip_net;
+        std::optional<ipv6_net> _local_ipv6_net;
 
         // Remote exit or hidden service addresses mapped to fixed local IP addresses
         // TODO:

@@ -163,9 +163,8 @@ namespace srouter::dns
 
     static constexpr uint16_t reply_flags(uint16_t setbits) { return setbits | flags_QR | flags_AA | flags_RA; }
 
-    void Message::add_IN_reply(uint32_t addr, RR_TTL_t ttl)
+    void Message::add_IN_reply(ipv4 addr, RR_TTL_t ttl)
     {
-        // TODO: IPv6 support
         if (questions.size())
         {
             hdr_fields = reply_flags(hdr_fields);
@@ -175,7 +174,23 @@ namespace srouter::dns
             rec.ttl = ttl;
             rec.rr_type = qTypeA;
             rec.rData.resize(4);
-            oxenc::write_host_as_big(addr, rec.rData.data());
+            oxenc::write_host_as_big(addr.addr, rec.rData.data());
+        }
+    }
+
+    void Message::add_IN_reply(ipv6 addr, RR_TTL_t ttl)
+    {
+        if (questions.size())
+        {
+            hdr_fields = reply_flags(hdr_fields);
+            auto& rec = answers.emplace_back();
+            rec.rr_name = questions[0].qname;
+            rec.rr_class = qClassIN;
+            rec.ttl = ttl;
+            rec.rr_type = qTypeAAAA;
+            rec.rData.resize(16);
+            oxenc::write_host_as_big(addr.hi, rec.rData.data());
+            oxenc::write_host_as_big(addr.lo, rec.rData.data() + 8);
         }
     }
 
@@ -203,6 +218,12 @@ namespace srouter::dns
                 memcpy(rec.rData.data(), buf.base, buf.sz);
             }
         }
+    }
+
+    void Message::add_NODATA_reply()
+    {
+        if (not questions.empty())
+            hdr_fields = reply_flags(hdr_fields);
     }
 
     void Message::add_ns_reply(std::string name, RR_TTL_t ttl)

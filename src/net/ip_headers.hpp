@@ -1,8 +1,7 @@
 #pragma once
 
-#include "utils.hpp"
-
 #include <netinet/ip6.h>
+#include <oxenc/endian.h>
 
 namespace srouter
 {

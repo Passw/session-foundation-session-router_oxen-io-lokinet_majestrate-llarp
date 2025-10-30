@@ -132,7 +132,10 @@ namespace srouter
                 if (arg.empty())
                     arg = std::filesystem::path{"."};
                 if (not exists(arg))
-                    throw std::runtime_error{"Specified [router]:data-dir {} does not exist"_format(arg)};
+                    if (std::error_code ec; not create_directories(arg, ec))
+                        throw std::runtime_error{
+                            "Specified [router]:data-dir {} does not exist, and could not be created ({})"_format(
+                                arg, ec.message())};
 
                 data_dir = std::move(arg);
             });
@@ -602,7 +605,8 @@ namespace srouter
             NotEmbedded,
             Comment{
                 "Interface name for Session Router traffic. If unset Session Router will look for a free name",
-                "matching 'sr-tunN', starting at N=0 (e.g. sr-tun0, sr-tun1, ...).",
+                "matching 'sr-tunN', starting at N=0 (e.g. sr-tun0, sr-tun1, ...) for clients; relays default",
+                "to sr-tun@XXXXXXXX where XXXXXXXX is the first 8 hex digits of the Session node pubkey.",
 #ifdef __linux__
                 "",
                 "On Linux, you can use '%d' in the name as a pattern to have the OS automatically choose",
@@ -615,17 +619,81 @@ namespace srouter
             "network",
             "ifaddr",
             NotEmbedded,
+            MultiValue,
             Comment{
-                "Local IP and netmask for Session Router traffic. For example, 172.16.0.1/16 to use",
-                "172.16.0.1 for this Session Router instance and 172.16.x.y for remote peers. If omitted",
-                "then Session Router will attempt to automatically select an unused private range.",
-                "If you specify an all-0 address with range (e.g. 0.0.0.0/12) then Session Router will",
-                "auto-select a private range of the given size.",
+                "Private IP and netmask to use to map Session Router traffic to local addresses.",
+                "",
+                "The IPs (one IPv4, one IPv6) given here will be the IPs that remote Session",
+                "Router clients will access if attempting to establish connections to this",
+                "Session Router instance, and the remainder of the IP range will be the addresses",
+                "that this Session Router uses to send traffic to remote relay and client peers.",
+                "That is, a remote client attempting to connect to you through Session Router",
+                "will be tunneled to the IPv4 or IPv6 address specified here.",
+                "",
+                "For example, 172.16.0.1/16 will use 172.16.0.1 for this Session Router",
+                "instance's IPv4 address and 172.16.x.y will be used to map connections to remote",
+                "peer addresses.  For IPv6, fd2e:6c6f:6b69::1/64 will use fd2e:6c6f:6b69::1 for",
+                "this Session Router instance, and will map other lokinet instances to addresses",
+                "in fd2e:6c6f:6b69:0:w:x:y:z.  (These two ranges are the defaults if not",
+                "specified *and* they are not already in use on the system).",
+                "",
+                "This option can be given twice: once to set an IPv4 address and range, and once",
+                "to set an IPv6 address and range.  If one or the other is omitted then an unused",
+                "private range (/16 for IPv4, and /64 for IPv6) will be automatically detected",
+                "and used.",
+                "",
+                "An \"all-zero\" address can be used with a custom netmask to use auto-detection",
+                "with a custom size: for instance \"0.0.0.0/10\" will auto-detect an unused /10",
+                "IPv4 private address range, and \"::/56\" would look for an unused /56 IPv6",
+                "address range.",
+                "",
+                "If you intend to run network daemons for others to connect to (for example",
+                "HTTP), then it is recommended that you specify explicit IPv4 and IPv6 addresses",
+                "here and set up network servers (such as nginx to serve HTTP traffic) to listen",
+                "on those two addresses.  If you are only using Session Router to connect to",
+                "remote instances then you can typically leave this blank to auto-select an",
+                "unused network range.",
             },
             [this](std::string arg) {
                 try
                 {
-                    _local_ip_net = parse_ipv4_net(arg);
+                    auto ip_net = parse_ip_net(arg, 16, 64);
+
+                    std::visit(
+                        []<typename IPNet>(IPNet& in) {
+                            if (in.ip != IPNet{}.ip && in.ip == in.to_range().ip)
+                            {
+                                if (auto next = in.ip.next_ip(); next and in.contains(*next))
+                                {
+                                    log::warning(
+                                        logcat,
+                                        "Invalid host IP '{}' in [network]:ifaddr (the network zero address is "
+                                        "invalid); using '{}' instead",
+                                        in.ip,
+                                        *next);
+                                    in.ip = std::move(*next);
+                                }
+                            }
+                        },
+                        ip_net);
+
+                    if (auto* in4 = std::get_if<ipv4_net>(&ip_net))
+                    {
+                        if (_local_ip_net)
+                            throw std::runtime_error{"cannot specify multiple IPv4 addresses"};
+                        if (in4->ip == in4->broadcast())
+                            throw std::runtime_error{"Cannot bind to the IPv4 network broadcast address"};
+                        _local_ip_net = std::move(*in4);
+                    }
+                    else
+                    {
+                        if (_local_ipv6_net)
+                            throw std::runtime_error{"cannot specify multiple IPv6 addresses"};
+                        auto& n = std::get<ipv6_net>(ip_net);
+                        if (n.mask > 64)
+                            throw std::runtime_error{"local address IPv6 net mask must be /64 or smaller"};
+                        _local_ipv6_net = std::move(n);
+                    }
                 }
                 catch (const std::exception& e)
                 {
@@ -635,78 +703,72 @@ namespace srouter
 
         conf.define_option<std::string>(
             "network",
-            "ipv6-network",
-            NotEmbedded,
-            Hidden,
-            Comment{
-                "Enables internal IPv6 traffic for session_router.  Can be set to:",
-                "  - false to disable IPv6 support.  This is the default if omitted",
-                "  - true to enable IPv6 support and auto-detect a free private /64 network range",
-                "  - ::/80 to auto-detect a free private range of netmask 80 (change as needed) ",
-                "    instead of the default 64",
-                "  - An explicit private address and range to use, such as: fd00:abcd:1234::1/56",
-                "",
-                "Currently experimental and not supported.",
-            },
-            [this](std::string arg) {
-                if (arg.empty())
-                {
-                    enable_ipv6 = false;
-                    return;
-                }
-                if (auto b = parse_boolean(arg))
-                {
-                    enable_ipv6 = *b;
-                    return;
-                }
-                try
-                {
-                    _local_ipv6_net = parse_ipv6_net(arg);
-                    enable_ipv6 = true;
-                }
-                catch (const std::exception& e)
-                {
-                    throw std::invalid_argument{"[network]:ipv6-addr invalid value '{}': {}"_format(arg, e.what())};
-                }
-            });
-
-        conf.define_option<std::string>(
-            "network",
             "mapaddr",
             FullClientOnly,
             MultiValue,
             Comment{
-                "Map a remote `.loki` address to always use a fixed local IP. For example:",
-                "    mapaddr=<pubkey>.loki:172.16.0.10",
-                "maps `<pubkey>.loki` to `172.16.0.10` instead of using the next available IP.",
-                "The given IP address must be inside the range configured by ifaddr=, and the",
-                "remote `.loki` cannot be an ONS address"},
+                "Map a remote `.loki` or `.snode` address to always use a fixed local IPv4, IPv6, or both",
+                "(separated by a comma). For example:",
+                "    mapaddr=kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.loki:172.16.0.42,fd2e:6c6f:6b69::42",
+                "    mapaddr=55fxrybf3jtausbnmxpgwcsz9t8qkf5pr8t5f4xyto4omjrkorpy.snode:fd2e:6c6f:6b69::deca:f20",
+                "reserves the given IPv4/IPv6 address for the indicated pubkeys.",
+                "",
+                "Session Router addresses that are *not* explicitly mapped will use the next available IP",
+                "(excluding any reserved by other mapaddr config lines).",
+                "",
+                "The given IP address(es) must be inside the ranges configured by ifaddr=, and ONS addresses",
+                "cannot be used."},
             [this](std::string arg) {
                 if (arg.empty())
                     return;
 
                 const auto pos = arg.find(":");
-
                 if (pos == std::string::npos)
                     throw std::invalid_argument{
-                        "[endpoint]:mapaddr invalid entry '{}'; expected 'ADDR:IP'"_format(arg)};
+                        "[network]:mapaddr invalid entry '{}': expected 'ADDR:IP' or 'ADDR:IP,IP'"_format(arg)};
 
                 auto addr_arg = std::string_view{arg}.substr(0, pos);
-                auto ip_arg = arg.substr(pos + 1);
+                auto ips = split(std::string_view{arg}.substr(pos + 1), ",", true);
+                if (ips.size() < 1 || ips.size() > 2)
+                    throw std::invalid_argument{
+                        "[network]:mapaddr invalid entry '{}': expected single IPv4, IPv6, or both with comma-separators"_format(
+                            arg)};
 
                 try
                 {
                     NetworkAddress raddr{addr_arg};
-                    // ipv6
-                    if (ip_arg.find(':') != std::string_view::npos)
-                        _reserved_local_ipv6.emplace(raddr, ip_arg);
-                    else
-                        _reserved_local_ipv4.emplace(raddr, ip_arg);
+                    for (const auto& ip : ips)
+                    {
+                        std::string ip_arg{ip};
+                        bool inserted;
+                        if (ip_arg.find(':') != std::string_view::npos)
+                            inserted = _reserved_local_ipv6.emplace(raddr, ip_arg).second;
+                        else
+                            inserted = _reserved_local_ipv4.emplace(raddr, ip_arg).second;
+
+                        if (!inserted)
+                            throw std::invalid_argument{"Duplicate entry for pubkey"};
+                    }
                 }
                 catch (const std::exception& e)
                 {
-                    throw std::invalid_argument{"[endpoint]:mapaddr invalid entry '{}': {}"_format(arg, e.what())};
+                    throw std::invalid_argument{"[network]:mapaddr invalid entry '{}': {}"_format(arg, e.what())};
                 }
+            });
+
+        conf.define_option<int>(
+            "network",
+            "expired-address-cache",
+            NotEmbedded,
+            Default{params.type == config::Type::Relay ? 100 : 1000},
+            Comment{
+                "This controls how many recently expired connection addresses to remember: if a connection",
+                "closed or expires then the assigned addresses are remembered in this cache and will be reserved",
+                "and reused if the connection is reestablished while still in the cache.  This setting controls",
+                "the maximum number of such addresses Session Router will remember.",
+                "",
+                "This cache does not persist across restarts: if you want a particular client to have a persistent",
+                "address, use the mapaddr= setting instead.",
             });
 
         // TODO: support SRV records for routers, but for now client only
@@ -735,6 +797,7 @@ namespace srouter
 
         conf.define_option<int>("network", "path-alignment-timeout", Deprecated);
 
+#if 0
         conf.define_option<std::filesystem::path>(
             "network",
             "persist-addrmap-file",
@@ -874,6 +937,7 @@ namespace srouter
 
                 addr_map_persist_file = file;
             });
+#endif
 
         // Deprecated options:
         conf.define_option<std::string>("network", "enabled", Deprecated);
