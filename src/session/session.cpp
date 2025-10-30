@@ -1043,7 +1043,7 @@ namespace srouter::session
         std::function<void(OutboundSession& session)> on_est,
         std::optional<std::chrono::milliseconds> on_est_timeout)
         : OutboundSession{
-            remote, parent, parent.router.config().paths.relay_hops(), inbound_tag, std::move(on_est), on_est_timeout}
+              remote, parent, parent.router.config().paths.relay_hops(), inbound_tag, std::move(on_est), on_est_timeout}
     {
         _parent.lookup_relay_contact(_remote.router_id(), [this](std::optional<srouter::RelayContact> rc) mutable {
             if (rc)
@@ -1138,7 +1138,7 @@ namespace srouter::session
         std::function<void(OutboundSession& session)> on_est,
         std::optional<std::chrono::milliseconds> timeout)
         : OutboundSession{
-            remote, parent, parent.router.config().paths.client_hops, inbound_tag, std::move(on_est), timeout}
+              remote, parent, parent.router.config().paths.client_hops, inbound_tag, std::move(on_est), timeout}
     {
         assert(!is_relay_session);
 

@@ -220,7 +220,8 @@ namespace srouter::dns
         }
     }
 
-    void Message::add_NODATA_reply() {
+    void Message::add_NODATA_reply()
+    {
         if (not questions.empty())
             hdr_fields = reply_flags(hdr_fields);
     }

@@ -436,8 +436,8 @@ namespace srouter
             std::memcpy(icmp_header.data() + icmp_header.size() + 4, orig_prefix.data(), orig_prefix.size());
 
             // 2 byte ICMPv6 checksum which checksums the IPv6 header info as well
-            *reinterpret_cast<uint16_t*>(&icmp_header[2]) = ipv6_proto_checksum(
-                    hdr, std::span{pkt.data() + sizeof(hdr), pkt.size() - sizeof(hdr)});
+            *reinterpret_cast<uint16_t*>(&icmp_header[2]) =
+                ipv6_proto_checksum(hdr, std::span{pkt.data() + sizeof(hdr), pkt.size() - sizeof(hdr)});
 
             log::debug(logcat, "Constructed ICMPv6 unreachable packet");
             return pkt;
@@ -475,7 +475,8 @@ namespace srouter
         udp_hdr.src = oxenc::host_to_big(src_port);
         udp_hdr.dest = oxenc::host_to_big(dest_port);
         udp_hdr.len = oxenc::host_to_big<uint16_t>(payload.size() + sizeof(udp_header));
-        udp_hdr.checksum = ipv6_proto_checksum(ip_hdr, std::span{pkt.data() + sizeof(ip_hdr), pkt.size() - sizeof(ip_hdr)});
+        udp_hdr.checksum =
+            ipv6_proto_checksum(ip_hdr, std::span{pkt.data() + sizeof(ip_hdr), pkt.size() - sizeof(ip_hdr)});
 
         // UDPv6 special case: if the checksum result is 0x0000 we change it to the equal (under 1's
         // complement) 0xffff value because 0x0000 is a IPv4 special "no checksum" value that is not

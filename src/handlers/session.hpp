@@ -134,7 +134,11 @@ namespace srouter
             // that you can safely ask for the same remote:port again and just get the existing one
             // rather than a new listening socket.  cports is a vector of keys of _udp_client_ports,
             // used when deleting the handle.
-            std::unordered_map<mapped_remote, std::pair<std::unique_ptr<quic::UDPSocket>, std::vector<mapped_remote>>, mapped_remote::hash> _udp_handles;
+            std::unordered_map<
+                mapped_remote,
+                std::pair<std::unique_ptr<quic::UDPSocket>, std::vector<mapped_remote>>,
+                mapped_remote::hash>
+                _udp_handles;
 
             uint16_t _next_udp_client_port{0};
 

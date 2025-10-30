@@ -191,7 +191,7 @@ namespace srouter
 
         // Contents of this file are read directly into ::_reserved_local_addrs
         // TODO.  Perhaps this should be in a sqlite db, though?
-        //std::optional<std::filesystem::path> addr_map_persist_file;
+        // std::optional<std::filesystem::path> addr_map_persist_file;
 
         int expired_address_cache = 100;
 

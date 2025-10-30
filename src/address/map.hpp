@@ -24,9 +24,11 @@ namespace srouter
             Lock_t l{addr_mutex};
 
             if (auto [it, ins] = _local_to_remote.emplace(local, remote); not ins)
-                throw std::logic_error{"Unable to add {} -> {} address map: that IP already maps to {}"_format(local, remote, it->second)};
+                throw std::logic_error{
+                    "Unable to add {} -> {} address map: that IP already maps to {}"_format(local, remote, it->second)};
             if (auto [it, ins] = _remote_to_local.emplace(remote, local); not ins)
-                throw std::logic_error{"Unable to add {} -> {} address map: that address already maps to {}"_format(remote, local, it->second)};
+                throw std::logic_error{"Unable to add {} -> {} address map: that address already maps to {}"_format(
+                    remote, local, it->second)};
         }
 
         std::optional<NetworkAddress> operator[](const LocalAddrT& local) const
@@ -83,6 +85,5 @@ namespace srouter
                 _local_to_remote.erase(it_a);
             }
         }
-
     };
 }  //  namespace srouter
