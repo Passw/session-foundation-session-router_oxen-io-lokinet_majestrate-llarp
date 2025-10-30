@@ -752,6 +752,14 @@ namespace srouter
         std::shared_lock lock{_registered_relays_mutex};
         result.reserve(_registered_relays.size());
         result.assign(_registered_relays.begin(), _registered_relays.end());
+
+        return result;
+    }
+
+    std::unordered_set<RouterID> NodeDB::get_registered_relay_set() const
+    {
+        std::shared_lock lock{_registered_relays_mutex};
+        std::unordered_set<RouterID> result{_registered_relays};
         return result;
     }
 

@@ -10,6 +10,8 @@
 #include <oxen/quic/opt.hpp>
 #include <sodium/crypto_generichash_blake2b.h>
 
+#include <chrono>
+
 namespace srouter::link
 {
     static auto logcat = log::Cat("link.endpoint");
@@ -186,7 +188,10 @@ namespace srouter::link
     void Endpoint::start_tickers()
     {
         if (router.is_service_node)
+        {
             redundancy_ticker = router.loop.call_every(REDUNDANT_LINGER, [this] { close_redundant(); });
+            dereg_conn_ticker = router.loop.call_every(1min, [this] { check_deregged_conns(); });
+        }
     }
 
     link::Connection* Endpoint::get_relay_conn(const RouterID& relay) const
@@ -220,6 +225,53 @@ namespace srouter::link
             else
                 ++it;
         }
+    }
+
+    void Endpoint::check_deregged_conns()
+    {
+        assert(router.is_service_node);
+
+        auto now = std::chrono::steady_clock::now();
+
+        auto registered = router.node_db().get_registered_relay_set();
+
+        // Look for any pending dead that have been dead long enough to disconnect from:
+        for (auto it = pending_dead.begin(); it != pending_dead.end();)
+        {
+            const auto& [rid, dead_since] = *it;
+
+            if (dead_since + DEREGGED_LINGER > now)
+            {
+                // Not dead long enough
+                ++it;
+                continue;
+            }
+
+            if (registered.contains(rid))
+            {
+                // Became registered again somehow
+                log::debug(logcat, "Not disconnecting from previously de-regged node {}: it is registered again", rid);
+                it = pending_dead.erase(it);
+                continue;
+            }
+
+            if (relay_conns.erase(rid))
+            {
+                pending_outbound.erase(rid);
+                relay_bidir.erase(rid);
+                log::debug(logcat, "Dropped connection to deregistered node {}", rid);
+            }
+            else
+                log::debug(logcat, "Connection to deregged node {} is already dropped", rid);
+
+            it = pending_dead.erase(it);
+        }
+
+        // Record timestamps for any newly unregistered nodes
+        for (const auto& [rid, rconn] : relay_conns)
+            if (!registered.contains(rid) && pending_dead.emplace(rid, now).second)
+                log::debug(
+                    logcat, "Relay {} is no longer registered; scheduling disconnect in {}", rid, DEREGGED_LINGER);
     }
 
     link::Connection* Endpoint::get_client_conn(const RouterID& remote) const
