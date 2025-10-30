@@ -844,7 +844,14 @@ namespace srouter::session
         const bool est = is_established();
         while (!_on_established.empty() && (est || _on_established.top().first <= now))
         {
-            _on_established.top().second(*this);
+            try
+            {
+                _on_established.top().second(*this);
+            }
+            catch (const std::exception& e)
+            {
+                log::warning(logcat, "Exception during outbound session established callback: {}", e.what());
+            }
             _on_established.pop();
         }
     }

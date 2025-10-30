@@ -35,7 +35,11 @@ int main(int argc, char** argv)
 
     std::promise<void> prom;
 
+    bool first_conn = true;
     srouter->on_connected([&] {
+        if (!first_conn)
+            return;
+        first_conn = false;
         std::cout << "\n\x1b[32;1mSession Router connected!\x1b[0m\n\n\x1b[33;1mINITIATING SESSION TO " << target
                   << "\x1b[0m\n\n"
                   << std::flush;
