@@ -905,28 +905,19 @@ namespace srouter::handlers
         return false;
     }
 
-    std::optional<std::pair<ipv4, ipv6>> SessionEndpoint::map_session(const session::Session& s)
+    std::optional<ipv6> SessionEndpoint::map_session(const session::Session& s)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         if (const auto& tun = router.tun_endpoint())
         {
-            log::debug(logcat, "Successfully mapped inbound session; mapping session to local TUN IP");
+            log::debug(logcat, "Successfully mapped inbound session; mapping session to local TUN IPv6");
 
-            if (auto maybe_ips = tun->map(s.remote()))
-            {
-                log::info(
-                    logcat,
-                    "TUN device successfully mapped session (remote: {}) to local ips: {}, {}",
-                    s.remote(),
-                    maybe_ips->first,
-                    maybe_ips->second);
-                return maybe_ips;
-            }
-
-            // TODO: if this fails, we should close the session
-            log::warning(logcat, "TUN device failed to map session (remote: {}) to local ip", s.remote());
-            return std::nullopt;
+            // TODO: this can throw if you have a tiny IPv6 range; we should catch that and close
+            // the session.
+            auto addr = tun->map6(s.remote());
+            log::info(logcat, "TUN device successfully mapped session (remote: {}) to local ip: {}", s.remote(), addr);
+            return addr;
         }
 
         // TODO: if we're not tun-based -- currently not allowing inbound sessions for non-tun

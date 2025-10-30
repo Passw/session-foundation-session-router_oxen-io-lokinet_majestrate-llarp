@@ -56,6 +56,8 @@ namespace srouter
 
             void add_serv_fail(RR_TTL_t ttl = 30);
 
+            void add_NODATA_reply();
+
             void add_mx_reply(std::string name, uint16_t priority, RR_TTL_t ttl = 1);
 
             void add_CNAME_reply(std::string name, RR_TTL_t ttl = 1);

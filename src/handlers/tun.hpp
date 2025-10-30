@@ -124,11 +124,22 @@ namespace srouter::handlers
         // bool handle_inbound_packet(IPPacket pkt, NetworkAddress remote, bool is_exit_session, bool
         // is_outbound_session);
 
-        // Obtains an available IPv4 address from the tun device and associates the given Session Router
-        // remote address with it.  If the mapping already exists, this returns the existing IP,
-        // otherwise it assigns a new one.  The association persists until unmapped.  Returns the
-        // mapped ipv4 address, or nullptr if one could not be assigned.
-        std::optional<std::pair<ipv4, ipv6>> map(const NetworkAddress& remote) override;
+        // Obtains an available IPv6 address from the tun device and associates the given Session
+        // Router remote address with it.  If the mapping already exists, this returns the existing
+        // IP, otherwise it assigns a new one.  The association persists until unmapped.  Returns
+        // the mapped ipv6 address.
+        ipv6 map6(const NetworkAddress& remote) override;
+
+        // Obtains an available IPv4 address from the tun device and associates the given Session
+        // Router remote address with it.  If the mapping already exists, this returns the existing
+        // IP.  IPv4 addresses are only used for enabling exit traffic, and so this address is
+        // typically not mapped until exit mode is enabled; all internal Session Router is carried
+        // over IPv6.
+        //
+        // Returns the mapped addresses, or nullptr if an address could not be assigned (i.e.
+        // because of IPv4 exhaustion in the allocated tun range, or because this client does not
+        // support IPv4 addressing at all).
+        std::optional<ipv4> map4(const NetworkAddress& remote) override;
 
         // Expires a mapped IP for the given remote from the tun IP map.  The address will be added
         // as the most recently used address, and (if the configured cache size is exceeded) the least
@@ -167,8 +178,13 @@ namespace srouter::handlers
         // Checks the _expired cache and, if too big, prunes the oldest entries.
         void prune_expired();
 
+        // Returns the next available unused IPv4 address from the local tun network
         std::optional<ipv4> get_next_local_ipv4();
-        std::optional<ipv6> get_next_local_ipv6();
+
+        // Returns a local tun IPv6 address for the given remote.  If available, the leading prefix
+        // of the remote address is used within the local tun IPv6 range; if that is already used or
+        // invalid then the next available sequential address is used (as in IPv4 allocation).
+        std::optional<ipv6> get_next_local_ipv6(const NetworkAddress& remote);
 
         std::optional<ipv4> obtain_src_for_ipv4_remote(const NetworkAddress& remote);
         std::optional<ipv6> obtain_src_for_ipv6_remote(const NetworkAddress& remote);
