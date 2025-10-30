@@ -79,26 +79,7 @@ namespace srouter
         Router& _router;
         const std::filesystem::path _root;
 
-        /******** RouterID/RelayContacts ********/
-
-        /** RouterID mappings
-            Both the following are populated in NodeDB startup with RouterID's stored on disk.
-            - known_rids: meant to persist between Session Router sessions, and is only
-              populated during startup and RouterID fetching. This is meant to represent the
-              client instance's most recent perspective of the network, and record which RouterID's
-              were recently "active" and connected to
-            - unconfirmed_rids: holds new rids returned in fetch requests to be verified by
-           subsequent fetch requests
-            - known_rcs: populated during startup and when RC's are updated both during gossip
-              and periodic RC fetching
-            - bootstrap_seeds: if we are the seed node, we insert the rc's of bootstrap fetch
-           requests senders into this container to "introduce" them to each other
-            - _bootstraps: the standard container for bootstrap RelayContacts
-        */
         std::unordered_set<RouterID> known_rids;
-        std::unordered_map<RouterID, int> unconfirmed_rids;  // Value is the number of votes: seeing
-                                                             // the rid is +1, missing it is -1.
-
         std::unordered_map<RouterID, RelayContact> known_rcs;
         std::array<std::unordered_map<RouterID, uint64_t>, 128> rc_hashes;
         std::array<uint64_t, 128> rc_bucket_hashes{0};
