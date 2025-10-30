@@ -193,8 +193,6 @@ namespace srouter
         assert(!_bootstraps.empty());
         _bootstrap_running = true;
 
-        if (_rc_fetch_ticker)
-            _rc_fetch_ticker->stop();
         if (_rid_fetch_ticker)
             _rid_fetch_ticker->stop();
 
@@ -333,26 +331,6 @@ namespace srouter
     void NodeDB::fetch_rcs()
     {
         assert(_router.loop.inside());
-        if (_router.is_stopping() || not _router.is_running())
-        {
-            log::debug(logcat, "NodeDB unable to continue RC fetch -- router is stopped!");
-            if (_rc_fetch_ticker)
-                _rc_fetch_ticker->stop();
-            return;
-        }
-
-        std::vector<RouterID> to_fetch{};
-        for (const auto& rid : known_rids)
-        {
-            if (!known_rcs.contains(rid))
-                to_fetch.push_back(rid);
-
-            if (to_fetch.size() == RC_FETCH_COUNT)
-                break;
-        }
-
-        if (to_fetch.empty())
-            return;
 
         path::Path* selected_path = _router.session_endpoint().get_random_active_path();
         if (!selected_path)
@@ -361,20 +339,43 @@ namespace srouter
             return;
         }
 
-        selected_path->fetch_relay_contacts(to_fetch, [this](auto resp) mutable {
+        oxenc::bt_dict_producer btdp;
+        btdp.append_list("b"sv, rc_bucket_hashes);
+
+        selected_path->fetch_relay_contacts(btdp.span<std::byte>(), [this](auto resp) {
             std::string error;
             if (resp.ok())
             {
                 try
                 {
-                    auto rcs = FetchRC::deserialize_response(_router.netid(), oxenc::bt_dict_consumer{resp.body});
-                    log::debug(logcat, "RC fetching was successful; processing {} returned RCs...", rcs.size());
-                    for (auto& rc : rcs)
+                    size_t fetched_count = 0;
+
+                    oxenc::bt_dict_consumer btdc{resp.body};
+                    if (btdc.skip_until("!"sv))
                     {
-                        const auto& rid = rc.router_id();
-                        if (!put_rc(std::move(rc)))
-                            log::debug(logcat, "Not inserting RC for {}, either it is newer or (if relay) ours", rid);
+                        if (auto sv = btdc.consume_string_view(); sv != "OK"sv)
+                            throw std::runtime_error{std::string(sv)};
                     }
+
+                    btdc.required("r");
+                    auto btlc = btdc.consume_list_consumer();
+                    while (!btlc.is_finished())
+                    {
+                        auto rc = RelayContact{btlc.consume_string_view(), _router.netid()};
+                        const auto& rid = rc.router_id();
+                        if (!known_rids.contains(rid))
+                        {
+                            log::info(logcat, "Got RC from relay, but we haven't seen its RouterID, ignoring.");
+                            continue;
+                        }
+                        auto bucket = bucket_of(rid);
+                        log::debug(logcat, "Received RC for relay {} in bucket {:x}", rid, bucket);
+                        if (!put_rc(std::move(rc)))
+                            log::debug(
+                                logcat, "Not inserting RC for {}, seen too recently or functionally unchanged.", rid);
+                        fetched_count++;
+                    }
+                    log::debug(logcat, "RC fetch gave {} RCs"sv, fetched_count);
                 }
                 catch (const std::exception& e)
                 {
@@ -464,6 +465,7 @@ namespace srouter
                 {
                     handle_fetched_router_ids(*results);
                 }
+                fetch_rcs();
             };
             path->send_path_control_message("fetch_rids"sv, {}, std::move(result_cb));
         }
@@ -516,8 +518,6 @@ namespace srouter
 
         if (not _router.is_service_node)
         {
-            _rc_fetch_ticker = _router.loop.call_every(FETCH_INTERVAL, [this] { fetch_rcs(); }, not need_bootstrap);
-
             _rid_fetch_ticker = _router.loop.call_every(FETCH_INTERVAL, [this] { fetch_rids(); }, not need_bootstrap);
         }
 
@@ -554,11 +554,6 @@ namespace srouter
             {
                 _rid_fetch_ticker->start();
                 fetch_rids();
-            }
-            if (_rc_fetch_ticker)
-            {
-                _rc_fetch_ticker->start();
-                fetch_rcs();
             }
             return;
         }
@@ -985,13 +980,6 @@ namespace srouter
             _rid_fetch_ticker.reset();
         }
 
-        if (_rc_fetch_ticker)
-        {
-            log::trace(logcat, "NodeDB clearing RC fetch ticker...");
-            _rc_fetch_ticker->stop();
-            _rc_fetch_ticker.reset();
-        }
-
         if (_purge_ticker)
         {
             log::trace(logcat, "NodeDB clearing purge ticker...");
@@ -1046,7 +1034,8 @@ namespace srouter
             stored = std::move(rc);
         }
 
-        update_rc_buckets(stored, /*added=*/true);
+        if (should_gossip)  // if we actually stored the new RC
+            update_rc_buckets(stored, /*added=*/true);
 
         // We inserted or updated the record, so queue saving it to disk on the disk loop
         _router.disk_loop.call_soon([rc = stored, path = get_path_by_pubkey(stored.router_id())] { rc.write(path); });

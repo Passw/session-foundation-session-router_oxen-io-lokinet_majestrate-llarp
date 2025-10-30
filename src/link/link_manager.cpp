@@ -301,38 +301,41 @@ namespace srouter::link
         // this handler should not be registered for clients
         assert(router.is_service_node);
 
-        std::unordered_set<RouterID> explicit_ids;
+        const auto& rc_hashes = router.node_db().get_rc_hashes();
+        const auto& rc_buckets = router.node_db().get_rc_buckets();
 
         try
         {
             auto btdc = oxenc::bt_dict_consumer{body};
-            for (auto sublist = btdc.require<oxenc::bt_list_consumer>("x"); !sublist.is_finished();)
-                explicit_ids.emplace(sublist.consume_span<uint8_t, 32>());
+            auto arg_buckets = btdc.require<std::vector<uint64_t>>("b"sv);
+            if (arg_buckets.size() != 128)
+                throw std::runtime_error{fmt::format(
+                    "RC fetch request provided wrong number {} of bucket hashes, expected {}",
+                    arg_buckets.size(),
+                    128)};
+
+            oxenc::bt_dict_producer btdp;
+            auto btlp = btdp.append_list("r");
+            for (uint8_t i = 0; i < 128; i++)
+            {
+                if (rc_buckets[i] != arg_buckets[i])
+                {
+                    for (const auto& [rid, _] : rc_hashes[i])
+                    {
+                        if (auto* maybe_rc = router.node_db().get_rc(rid))
+                            btlp.append(maybe_rc->view());
+                        else
+                            log::critical(logcat, "Somehow we have a bucket hash for {} but no RC!", rid);
+                    }
+                }
+            }
+            respond(std::move(btdp).str());
         }
         catch (const std::exception& e)
         {
             log::warning(logcat, "Exception handling RC Fetch request: {}", e.what());
             respond(messages::ERROR_RESPONSE);
-            return;
         }
-
-        oxenc::bt_dict_producer btdp;
-        {
-            auto sublist = btdp.append_list("r");
-
-            int count = 0;
-            for (const auto& rid : explicit_ids)
-            {
-                if (auto* maybe_rc = router.node_db().get_rc(rid))
-                {
-                    sublist.append_encoded(maybe_rc->view());
-                    ++count;
-                }
-            }
-            log::info(logcat, "Returning {} RCs for FetchRC request...", count);
-        }
-
-        respond(std::move(btdp).str());
     }
 
     void Manager::handle_path_fetch_rcs(std::span<const std::byte> body, std::function<void(std::string)> respond)

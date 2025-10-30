@@ -165,9 +165,9 @@ namespace srouter::path
         send_path_control_message("fetch_rcs", FetchRC::serialize({&needed, 1}), std::move(func));
     }
 
-    void Path::fetch_relay_contacts(std::span<const RouterID> needed, std::function<void(path_control_response)> func)
+    void Path::fetch_relay_contacts(std::span<const std::byte> body, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("fetch_rcs", FetchRC::serialize(needed), std::move(func));
+        send_path_control_message("fetch_rcs", body, std::move(func));
     }
 
     void Path::find_client_contact(const PubKey& blinded_pk, std::function<void(path_control_response)> func)

@@ -93,7 +93,7 @@ namespace srouter::path
 
         void fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func);
 
-        void fetch_relay_contacts(std::span<const RouterID> needed, std::function<void(path_control_response)> func);
+        void fetch_relay_contacts(std::span<const std::byte> body, std::function<void(path_control_response)> func);
 
         void find_client_contact(const PubKey& blinded_pk, std::function<void(path_control_response)> func);
 

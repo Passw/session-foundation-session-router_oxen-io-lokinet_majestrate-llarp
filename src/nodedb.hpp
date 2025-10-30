@@ -81,8 +81,15 @@ namespace srouter
 
         std::unordered_set<RouterID> known_rids;
         std::unordered_map<RouterID, RelayContact> known_rcs;
+
         std::array<std::unordered_map<RouterID, uint64_t>, 128> rc_hashes;
         std::array<uint64_t, 128> rc_bucket_hashes{0};
+
+      public:
+        const auto& get_rc_hashes() const { return rc_hashes; }
+        const auto& get_rc_buckets() const { return rc_bucket_hashes; }
+
+      private:
         void update_rc_buckets(const RelayContact& rc, bool added);
 
         static const std::vector<std::pair<NetID, std::string_view>> bootstrap_fallbacks;
@@ -117,7 +124,6 @@ namespace srouter
             const RouterID& pk, const std::filesystem::path& extension = RC_FILE_EXT) const;
 
         std::shared_ptr<quic::Ticker> _rid_fetch_ticker;
-        std::shared_ptr<quic::Ticker> _rc_fetch_ticker;
 
         std::shared_ptr<quic::Ticker> _purge_ticker;
 
