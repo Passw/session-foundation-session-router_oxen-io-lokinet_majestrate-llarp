@@ -86,11 +86,19 @@ namespace srouter
         size_t to_hash = time_key_and_data.first.data() - serialized_rc.data();
         crypto_generichash_blake2b_update(&h, reinterpret_cast<const uint8_t*>(serialized_rc.data()), to_hash);
 
-        // hash everything starting from the beginning of the next key to the end
-        // (the size and colon of that key are not hashed)
+        // hash everything starting from the beginning of the next key to the start of the signature
+        // NOTE: because the size and colon of that key are not hashed, multi-byte keys will break
+        // this, so if we ever decide RCs need a multi-byte key we need to make oxenc expose a bit
+        // more data.
         auto after_time = btdc.key();
-        auto after_size = serialized_rc.data() + serialized_rc.size() - after_time.data();
-        crypto_generichash_blake2b_update(&h, reinterpret_cast<const uint8_t*>(after_time.data()), after_size);
+        if (after_time != "~"sv)
+        {
+            if (!btdc.skip_until("~"sv))
+                assert(!"Serialized RC did not contain a timestamp.");
+            auto sig_key_and_data = btdc.next_string();
+            auto after_size = sig_key_and_data.first.data() - after_time.data();
+            crypto_generichash_blake2b_update(&h, reinterpret_cast<const uint8_t*>(after_time.data()), after_size);
+        }
 
         crypto_generichash_blake2b_final(&h, reinterpret_cast<uint8_t*>(&ret), sizeof(ret));
 
