@@ -84,7 +84,6 @@ namespace srouter
         // hash everything up to the literal byte "t" of the key (the key is "1:t")
         auto time_key_and_data = btdc.next_integer<uint64_t>();
         size_t to_hash = time_key_and_data.first.data() - serialized_rc.data();
-        btdc.consume_integer<uint64_t>();
         crypto_generichash_blake2b_update(&h, reinterpret_cast<const uint8_t*>(serialized_rc.data()), to_hash);
 
         // hash everything starting from the beginning of the next key to the end
