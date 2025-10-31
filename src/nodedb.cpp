@@ -94,7 +94,8 @@ namespace srouter
 
         crypto_generichash_blake2b_final(&h, reinterpret_cast<uint8_t*>(&ret), sizeof(ret));
 
-        return ret;
+        // big_to_host so any system will have the same numerical value stored
+        return oxenc::host_to_big(ret);
     }
 
     static void update_bucket_hash(uint64_t& bucket_hash, uint64_t old_hash, uint64_t new_hash)
