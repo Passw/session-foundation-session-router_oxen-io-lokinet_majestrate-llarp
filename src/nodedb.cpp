@@ -193,9 +193,6 @@ namespace srouter
         assert(!_bootstraps.empty());
         _bootstrap_running = true;
 
-        if (_rid_fetch_ticker)
-            _rid_fetch_ticker->stop();
-
         struct bs_data
         {
             NodeDB& nodedb;
@@ -402,7 +399,6 @@ namespace srouter
 
         auto results = std::make_shared<std::unordered_map<RouterID, std::unordered_set<RouterID>>>();
         auto result_count = std::make_shared<size_t>(0);
-        size_t try_count{0};
         std::vector<path::Path*> selected_paths;
 
         // In the future, we may want to make paths to selected sources for RID fetching,
@@ -411,20 +407,26 @@ namespace srouter
         // path anyway.
         for (auto& path : _router.session_endpoint().active_paths())
         {
-            if (try_count >= RID_SOURCE_COUNT)
+            if (selected_paths.size() >= RID_SOURCE_COUNT)
                 break;
             auto [itr, inserted] = results->emplace(path.terminal_rid(), std::unordered_set<RouterID>{});
             if (inserted)
             {
-                try_count++;
                 selected_paths.push_back(&path);
             }
         }
-        if (try_count < RID_SOURCE_COUNT)
+
+        if (selected_paths.size() < 2)
+        {
+            log::debug(logcat, "Have fewer than 2 paths, not fetching RouterIDs yet.");
+            _router.loop.call_later(100ms, [this] { fetch_rids(); });
+            return;
+        }
+        else if (selected_paths.size() < RID_SOURCE_COUNT)
             log::info(
                 logcat,
                 "Fetching RIDs from {} sources (want minimum {}, but not enough paths)",
-                try_count,
+                selected_paths.size(),
                 RID_SOURCE_COUNT);
 
         for (auto* path : selected_paths)
@@ -463,9 +465,10 @@ namespace srouter
                 }
                 if (*result_count == results->size())
                 {
+                    // FIXME: call again sooner if enough failed
+                    _router.loop.call_later(FETCH_INTERVAL, [this] { fetch_rids(); });
                     handle_fetched_router_ids(*results);
                 }
-                fetch_rcs();
             };
             path->send_path_control_message("fetch_rids"sv, {}, std::move(result_cb));
         }
@@ -501,6 +504,8 @@ namespace srouter
         known_rids.clear();
         for (const auto& rid : accepted)
             known_rids.insert(rid);
+
+        fetch_rcs();
     }
 
     void NodeDB::start()
@@ -518,7 +523,7 @@ namespace srouter
 
         if (not _router.is_service_node)
         {
-            _rid_fetch_ticker = _router.loop.call_every(FETCH_INTERVAL, [this] { fetch_rids(); }, not need_bootstrap);
+            _router.loop.call_later(100ms, [this] { fetch_rids(); });
         }
 
         _0rtt_saver = _router.disk_loop.make_wakeable([this] { _0rtt_save(); });
@@ -541,22 +546,8 @@ namespace srouter
             log::debug(logcat, "Bootstrap attempt failed ({} consecutive failures)", _bootstrap_fails);
         }
 
-        bool need_bootstrap = num_rcs() < MIN_ACTIVE_RCS;
-        if (not need_bootstrap)
-        {
-            // TODO FIXME: we've now completed a bootstrap and so we want to fire off a full RID
-            // fetch.  This current logic, however, doesn't seem right (but isn't specific to here):
-            // we fire off an rid fetch *and* fire off an RC fetch back to back, on separate timers,
-            // when really they should be dependent.
-            //
-            // But I'm not fixing it here because it needs a more significant overhaul.
-            if (_rid_fetch_ticker)
-            {
-                _rid_fetch_ticker->start();
-                fetch_rids();
-            }
+        if (num_rcs() >= MIN_ACTIVE_RCS)
             return;
-        }
 
         auto cooldown = std::min(BOOTSTRAP_COOLDOWN * (success ? 1 : _bootstrap_fails), BOOTSTRAP_COOLDOWN_MAX);
         log::warning(
@@ -709,7 +700,6 @@ namespace srouter
 
         if (shutdown)
         {
-            _rid_fetch_ticker->stop();
             log::warning(logcat, "Client stopped RouterID fetch without a sucessful response!");
         }
         else
@@ -973,13 +963,6 @@ namespace srouter
 
     void NodeDB::cleanup()
     {
-        if (_rid_fetch_ticker)
-        {
-            log::trace(logcat, "NodeDB clearing rid fetch ticker...");
-            _rid_fetch_ticker->stop();
-            _rid_fetch_ticker.reset();
-        }
-
         if (_purge_ticker)
         {
             log::trace(logcat, "NodeDB clearing purge ticker...");

@@ -22,7 +22,7 @@ namespace srouter
 {
     class Router;
 
-    inline constexpr auto FETCH_INTERVAL{10min};
+    inline constexpr auto FETCH_INTERVAL{5min};
     inline constexpr auto PURGE_INTERVAL{5min};
 
     /*  RC Fetch Constants  */
