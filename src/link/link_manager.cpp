@@ -306,19 +306,17 @@ namespace srouter::link
 
         try
         {
-            auto btdc = oxenc::bt_dict_consumer{body};
-            auto arg_buckets = btdc.require<std::vector<uint64_t>>("b"sv);
-            if (arg_buckets.size() != 128)
-                throw std::runtime_error{fmt::format(
-                    "RC fetch request provided wrong number {} of bucket hashes, expected {}",
-                    arg_buckets.size(),
-                    128)};
-
             oxenc::bt_dict_producer btdp;
-            auto btlp = btdp.append_list("r");
+            auto btlp = btdp.append_list("r"sv);
+
+            auto btdc = oxenc::bt_dict_consumer{body};
+            auto arg_buckets = btdc.require<oxenc::bt_list_consumer>("b"sv);
+            RCHash h;
             for (uint8_t i = 0; i < 128; i++)
             {
-                if (rc_buckets[i] != arg_buckets[i])
+                auto h_span = arg_buckets.consume_span<std::byte, 8>();
+                std::memcpy(h.data(), h_span.data(), 8);
+                if (rc_buckets[i] != h)
                 {
                     for (const auto& [rid, _] : rc_hashes[i])
                     {
@@ -329,6 +327,8 @@ namespace srouter::link
                     }
                 }
             }
+            arg_buckets.finish();
+
             respond(std::move(btdp).str());
         }
         catch (const std::exception& e)

@@ -72,6 +72,7 @@ namespace srouter
     inline const std::filesystem::path RC_FILE_EXT{".signed"};
     inline const std::filesystem::path ZRTT_FILE_EXT{".zrtt"};
 
+    using RCHash = std::array<std::byte, 8>;
     class NodeDB
     {
         friend class Router;
@@ -82,8 +83,8 @@ namespace srouter
         std::unordered_set<RouterID> known_rids;
         std::unordered_map<RouterID, RelayContact> known_rcs;
 
-        std::array<std::unordered_map<RouterID, uint64_t>, 128> rc_hashes;
-        std::array<uint64_t, 128> rc_bucket_hashes{0};
+        std::array<std::unordered_map<RouterID, RCHash>, 128> rc_hashes;
+        std::array<RCHash, 128> rc_bucket_hashes{};
 
       public:
         const auto& get_rc_hashes() const { return rc_hashes; }

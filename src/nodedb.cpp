@@ -69,9 +69,9 @@ namespace srouter
     // 64-bits is large enough, as we don't need to worry about collisions
     //
     // Throws if key "t" is not found (or if somehow the input is not a valid bt-dict)
-    static uint64_t bucket_hash(std::string_view serialized_rc)
+    static RCHash bucket_hash(std::string_view serialized_rc)
     {
-        uint64_t ret;
+        RCHash ret;
 
         crypto_generichash_blake2b_state h;
         crypto_generichash_blake2b_init(&h, nullptr, 0, sizeof(ret));
@@ -95,13 +95,17 @@ namespace srouter
         crypto_generichash_blake2b_final(&h, reinterpret_cast<uint8_t*>(&ret), sizeof(ret));
 
         // big_to_host so any system will have the same numerical value stored
-        return oxenc::host_to_big(ret);
+        return ret;
     }
 
-    static void update_bucket_hash(uint64_t& bucket_hash, uint64_t old_hash, uint64_t new_hash)
+    static void update_bucket_hash(RCHash& bucket_hash, RCHash old_hash, RCHash new_hash)
     {
-        bucket_hash ^= old_hash;
-        bucket_hash ^= new_hash;
+        static_assert(sizeof(RCHash) == sizeof(uint64_t));
+        uint64_t& bint = *(reinterpret_cast<uint64_t*>(&bucket_hash));
+        uint64_t& oldint = *(reinterpret_cast<uint64_t*>(&old_hash));
+        uint64_t& newint = *(reinterpret_cast<uint64_t*>(&new_hash));
+        bint ^= oldint;
+        bint ^= newint;
     }
 
     static uint8_t bucket_of(const RouterID& rid)
@@ -337,7 +341,14 @@ namespace srouter
         }
 
         oxenc::bt_dict_producer btdp;
-        btdp.append_list("b"sv, rc_bucket_hashes);
+
+        // bt_list_producer::append(std::array) appends as a sublist, so append each element as
+        // a span instead
+        auto btlp = btdp.append_list("b"sv);
+        for (const auto& h : rc_bucket_hashes)
+        {
+            btlp.append(std::span(h));
+        }
 
         selected_path->fetch_relay_contacts(btdp.span<std::byte>(), [this](auto resp) {
             std::string error;
