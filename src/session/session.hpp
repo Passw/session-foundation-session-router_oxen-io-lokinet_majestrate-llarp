@@ -375,7 +375,7 @@ namespace srouter
 
             nlohmann::json ExtractStatus() const;
 
-            const RouterID& remote_endpoint() const { return _remote.router_id(); }
+            const RouterID& remote_endpoint() const { return _remote.pubkey; }
         };
 
         class InboundSession : public Session

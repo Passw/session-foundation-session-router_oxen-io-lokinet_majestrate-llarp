@@ -10,30 +10,33 @@ namespace srouter
 {
     NetworkAddress::NetworkAddress(std::string_view arg)
     {
-        if (arg.ends_with(TLD::SNODE))
+        if (arg.ends_with(DOT_RELAY_TLD))
         {
-            _is_client = false;
-            arg.remove_suffix(TLD::SNODE.size());
+            is_client = false;
+            arg.remove_suffix(DOT_RELAY_TLD.size());
         }
-        else if (arg.ends_with(TLD::LOKI))
+        else if (arg.ends_with(DOT_CLIENT_TLD))
         {
-            _is_client = true;
-            arg.remove_suffix(TLD::LOKI.size());
+            is_client = true;
+            arg.remove_suffix(DOT_CLIENT_TLD.size());
         }
         else
-        {
             throw std::invalid_argument{
-                "Invalid network address '{}': expected *{} or *{}"_format(arg, TLD::LOKI, TLD::SNODE)};
-        }
-        if (!_pubkey.from_base32z(arg))
-            throw std::invalid_argument{"Invalid network address '{}{}': expected full pubkey"_format(
-                arg, _is_client ? TLD::LOKI : TLD::SNODE)};
+                "Invalid network address '{}': expected *.{} or *.{}"_format(arg, CLIENT_TLD, RELAY_TLD)};
+
+        if (!pubkey.from_base32z(arg))
+            throw std::invalid_argument{"Invalid network address '{}.{}': expected full pubkey"_format(
+                arg, is_client ? CLIENT_TLD : RELAY_TLD)};
     }
 
-    NetworkAddress::NetworkAddress(std::string_view arg, bool is_client) : _is_client{is_client}
+    NetworkAddress::NetworkAddress(std::string_view arg, bool is_client) : is_client{is_client}
     {
-        if (!_pubkey.from_base32z(arg))
-            throw std::invalid_argument{"Invalid pubkey passed to NetworkAddress constructor: {}"_format(arg)};
+        if (!pubkey.from_base32z(arg))
+            throw std::invalid_argument{"Invalid NetworkAddress pubkey: {}"_format(arg)};
+    }
+
+    std::string NetworkAddress::to_string() const {
+        return "{}.{}"_format(pubkey, is_client ? CLIENT_TLD : RELAY_TLD);
     }
 
 }  //  namespace srouter

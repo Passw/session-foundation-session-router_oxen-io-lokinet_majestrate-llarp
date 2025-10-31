@@ -330,7 +330,7 @@ namespace srouter::rpc
 
         _router.loop.call([this, netaddr = *maybe_netaddr, replier = findcc.move()]() mutable {
             _router.session_endpoint().lookup_client_intro(
-                netaddr.router_id(), [&replier](std::optional<srouter::ClientContact> cc) {
+                netaddr.pubkey, [&replier](std::optional<srouter::ClientContact> cc) {
                     nlohmann::json result;
                     if (cc)
                     {

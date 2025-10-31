@@ -107,7 +107,6 @@ session_router_add_library(session-router-ip
 session_router_add_library(session-router-addressing
   address/address.cpp
   address/ip_range.cpp
-  address/utils.cpp
 
   ev/fd_poller.cpp
   ev/tcp.cpp

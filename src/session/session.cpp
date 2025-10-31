@@ -419,7 +419,7 @@ namespace srouter::session
         log::debug(
             logcat,
             "Session with {} switching to path {} with pivot hopid {}",
-            _remote.router_id(),
+            _remote,
             *path,
             pivot.to_view());
         _current_path = std::move(path);
@@ -429,7 +429,7 @@ namespace srouter::session
 
     void InboundRelaySession::handle_path_switch(HopID pivot, std::shared_ptr<path::TransitHop> thop)
     {
-        log::debug(logcat, "Session with {} switching to transit hop with pivot hopid {}", _remote.router_id(), pivot);
+        log::debug(logcat, "Session with {} switching to transit hop with pivot hopid {}", _remote, pivot);
         _current_thop = std::move(thop);
         _dead_path = !_current_thop;
         _remote_pivot_txid = std::move(pivot);
@@ -694,14 +694,14 @@ namespace srouter::session
     void OutboundClientSession::handle_client_contact(std::span<const std::byte> payload)
     {
         auto ecc = EncryptedClientContact{payload};
-        if (auto cc = ecc.decrypt(_remote.router_id()); cc)
+        if (auto cc = ecc.decrypt(_remote.pubkey); cc)
         {
-            log::debug(logcat, "Session with {} received valid new client contact, updating.", _remote.router_id());
+            log::debug(logcat, "Session with {} received valid new client contact, updating.", _remote);
             _intro_update_processed = false;
             update_intros(*cc);
         }
         else
-            log::warning(logcat, "Session with {} received invalid new client contact!", _remote.router_id());
+            log::warning(logcat, "Session with {} received invalid new client contact!", _remote);
     }
 
     static constexpr quic::ipv6 ipv6_localhost{0, 0, 0, 0, 0, 0, 0, 1};
@@ -833,7 +833,7 @@ namespace srouter::session
     {
         if (on_est)
             on_established(std::move(on_est), est_timeout);
-        std::tie(_shared_secret, dh_pk, dh_nonce) = crypto::dh_client_gen(_remote.router_id());
+        std::tie(_shared_secret, dh_pk, dh_nonce) = crypto::dh_client_gen(_remote.pubkey);
         // TODO: kick off path builds immediately
     }
 
@@ -1045,7 +1045,7 @@ namespace srouter::session
         : OutboundSession{
               remote, parent, parent.router.config().paths.relay_hops(), inbound_tag, std::move(on_est), on_est_timeout}
     {
-        _parent.lookup_relay_contact(_remote.router_id(), [this](std::optional<srouter::RelayContact> rc) mutable {
+        _parent.lookup_relay_contact(_remote.pubkey, [this](std::optional<srouter::RelayContact> rc) mutable {
             if (rc)
             {
                 log::debug(logcat, "Relay contact for {} found: {}", _remote, *rc);
@@ -1122,7 +1122,7 @@ namespace srouter::session
             _target_paths);
 
         int count = 0;
-        while (count < needed && build_path_to_remote(_remote.router_id()))
+        while (count < needed && build_path_to_remote(_remote.pubkey))
             count++;
 
         if (count == needed)
@@ -1154,7 +1154,7 @@ namespace srouter::session
         updating_intros = true;
         log::debug(logcat, "Initiating intro lookup for {}", _remote);
         _parent.lookup_client_intro(
-            _remote.router_id(), [this, alive = canary()](std::optional<ClientContact> cc) mutable {
+            _remote.pubkey, [this, alive = canary()](std::optional<ClientContact> cc) mutable {
                 if (!alive.lock())
                 {
                     log::debug(

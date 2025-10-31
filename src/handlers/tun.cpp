@@ -981,7 +981,7 @@ namespace srouter::handlers
         // collision then we fall back to sequential allocation from the beginning of the range.
         uint8_t addr_bits = 128 - _local_ipv6_net.mask;
 
-        const auto& rid = a.router_id();
+        const auto& rid = a.pubkey;
         size_t addr_bytes = addr_bits / 8;
         auto to_try = std::make_optional<ipv6>(_local_ipv6_net.ip);
         if (addr_bytes > 8)
