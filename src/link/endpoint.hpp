@@ -39,6 +39,8 @@ namespace srouter::link
     // longer than the longest path to allow those clients to naturally migrate to new paths.
     inline constexpr auto DEREGGED_LINGER = 30min;
 
+    static constexpr uint64_t CONN_CLOSE_REDUNDANT = 6;
+
     // Stores relay-to-relay connections.  In order to not lose stream messages, we temporarily
     // allow simultaneous connections in both directions between a pair of relays, but then
     // after a timeout, both sides choose the same winner and drop the other one.  The timeout
@@ -67,10 +69,10 @@ namespace srouter::link
         // Closes either the inbound or outbound connection and drops it from this instance.  If
         // the other connection still exists then `conn` is updated to point at it, otherwise it
         // is set to nullptr.  Does nothing if the indicated connection is already closed.
-        void close_quietly(bool direction_inbound);
+        void close(bool direction_inbound, uint64_t errcode = 0);
 
         // Closes all connections, in both directions (if opened).
-        void close_all_quietly();
+        void close_all(uint64_t errcode = 0);
 
         // Closes the "loser" connection, if this instance has connections in both directions.
         void close_redundant();
