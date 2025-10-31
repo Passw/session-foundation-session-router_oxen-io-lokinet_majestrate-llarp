@@ -13,8 +13,10 @@ namespace srouter
     // Libevent uses µs precision
     using loop_time = std::chrono::microseconds;
 
+    using sys_ms = std::chrono::sys_time<std::chrono::milliseconds>;
+
     /// get time right now as milliseconds, this is monotonic
-    std::chrono::milliseconds time_now_ms();
+    sys_ms time_now_ms();
 
     /// get the uptime of the process
     std::chrono::milliseconds uptime();

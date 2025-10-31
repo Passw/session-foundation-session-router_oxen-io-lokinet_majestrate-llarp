@@ -158,7 +158,7 @@ namespace srouter
 
         const std::unordered_map<RouterID, RelayContact>& get_known_rcs() const { return known_rcs; }
 
-        void purge_rcs(std::chrono::milliseconds now = srouter::time_now_ms());
+        void purge_rcs(sys_ms now = srouter::time_now_ms());
 
         void set_registered_relays(std::unordered_set<RouterID> relays);
         bool has_registered_relays() const;

@@ -57,7 +57,7 @@ namespace srouter::path
         // early (i.e. just before dropping all their connections), which will need this:
         void drop(const TransitHop& thop);
 
-        void expire_hops(std::chrono::milliseconds now);
+        void expire_hops(sys_ms now);
 
         void allow_transit();
 

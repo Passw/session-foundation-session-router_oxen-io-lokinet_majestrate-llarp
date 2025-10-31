@@ -36,7 +36,10 @@ namespace srouter::path
     nlohmann::json TransitHop::ExtractStatus() const
     {
         return {
-            {"rid", router_id.ToHex()}, {"rxid", rxid.ToHex()}, {"txid", txid.ToHex()}, {"expiry", to_json(expiry)}};
+            {"rid", router_id.ToHex()},
+            {"rxid", rxid.ToHex()},
+            {"txid", txid.ToHex()},
+            {"expiry", to_json(expiry.time_since_epoch())}};
     }
 
     static std::string short_string(const std::variant<RouterID, quic::ConnectionID>& downstream)
@@ -49,7 +52,12 @@ namespace srouter::path
     std::string TransitHop::to_string() const
     {
         return "TransitHop:[ Terminal:{} | TX:{} | RX:{} | Upstream:{} | Downstream:{} | Expiry:{} ]"_format(
-            terminal_hop, txid, rxid, upstream.short_string(), short_string(downstream), expiry.count());
+            terminal_hop,
+            txid,
+            rxid,
+            upstream.short_string(),
+            short_string(downstream),
+            expiry.time_since_epoch().count());
     }
 
 }  // namespace srouter::path

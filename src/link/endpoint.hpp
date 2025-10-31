@@ -86,7 +86,7 @@ namespace srouter::link
         // that will need closing of the less-preferred connection (after a timeout).  The value is
         // when the latest connection was stored (used for allowing a safety margin before closing
         // the redundant one).
-        std::unordered_map<RouterID, std::chrono::milliseconds> relay_bidir;
+        std::unordered_map<RouterID, sys_ms> relay_bidir;
 
         // Stores not-yet-established outbound connections to relays.  When the connection
         // established, it is removed from here and inserted into `client_conns` (clients) or
@@ -117,7 +117,7 @@ namespace srouter::link
         // Drops any redundant connections, i.e. where connections between two relays are
         // established in both directions and sufficient time has passed so ensure that all messages
         // are flowing on the mutually preferred connection.
-        void close_redundant(std::chrono::milliseconds now = srouter::time_now_ms());
+        void close_redundant(sys_ms now = srouter::time_now_ms());
 
         // Returns an established client->relay connection, if one exists.  Client only.  Returns
         // nullptr if there is no current established connection to the given relay.

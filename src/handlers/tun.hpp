@@ -100,7 +100,7 @@ namespace srouter::handlers
 
         bool handle_hooked_dns_message(dns::Message query, std::function<void(dns::Message)> sendreply);
 
-        void tick_tun(std::chrono::milliseconds now);
+        void tick_tun(sys_ms now);
 
         bool stop();
 

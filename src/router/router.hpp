@@ -154,9 +154,9 @@ namespace srouter
 
         std::shared_ptr<quic::Ticker> _gossip_ticker;
 
-        std::chrono::milliseconds _started_at;
-        std::chrono::milliseconds _last_stats_report{0s};
-        std::chrono::milliseconds _next_dereg_warning{time_now_ms() + 15s};
+        sys_ms _started_at = time_now_ms();
+        sys_ms _last_stats_report{sys_ms::min()};
+        sys_ms _next_dereg_warning{time_now_ms() + 15s};
 
         // Application callback(s) to fire as soon as we reach "connected" or "disconnected" status,
         // which means when we have established our target number of edge connections or lost all
@@ -174,9 +174,9 @@ namespace srouter
 
         Profiling _router_profiling;
 
-        bool should_report_stats(std::chrono::milliseconds now) const;
+        bool should_report_stats(sys_ms now) const;
 
-        std::string _stats_line(std::chrono::milliseconds now) const;
+        std::string _stats_line(sys_ms now) const;
 
         void report_stats();
 
@@ -186,9 +186,9 @@ namespace srouter
 
         void process_config();
 
-        void _relay_tick(std::chrono::milliseconds now);
+        void _relay_tick(sys_ms now);
 
-        void _client_tick(std::chrono::milliseconds now);
+        void _client_tick(sys_ms now);
 
         void tick();
 
@@ -288,7 +288,7 @@ namespace srouter
 
         std::chrono::milliseconds Uptime() const;
 
-        std::chrono::milliseconds _last_tick;
+        sys_ms _last_tick;
 
         std::function<void(void)> _router_close_cb;
 

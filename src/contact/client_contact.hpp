@@ -77,7 +77,7 @@ namespace srouter
 
         const std::optional<net::ExitPolicy>& exit_policy() const { return _exit_policy; }
 
-        bool is_expired(std::chrono::milliseconds now = srouter::time_now_ms()) const;
+        bool is_expired(sys_ms now = srouter::time_now_ms()) const;
 
       private:
         PubKey _pubkey;
@@ -125,7 +125,7 @@ namespace srouter
 
         PubKey blinded_pubkey;
         SymmNonce nonce;
-        std::chrono::milliseconds signed_at{0s};
+        sys_ms signed_at{sys_ms::min()};
         std::vector<std::byte> encrypted;
 
         std::string _bt_payload;
@@ -142,7 +142,7 @@ namespace srouter
 
         std::string_view bt_payload() const { return _bt_payload; }
 
-        bool is_expired(std::chrono::milliseconds now = time_now_ms()) const;
+        bool is_expired(sys_ms now = time_now_ms()) const;
 
         bool newer_than(const EncryptedClientContact& that) const { return signed_at > that.signed_at; }
     };

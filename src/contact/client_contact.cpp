@@ -104,7 +104,7 @@ namespace srouter
         return ret;
     }
 
-    bool ClientContact::is_expired(std::chrono::milliseconds now) const
+    bool ClientContact::is_expired(sys_ms now) const
     {
         // We only need to check the first one, because this is sorted newest-to-oldest and so if
         // the first is expired they all are.
@@ -157,7 +157,7 @@ namespace srouter
         oxenc::bt_dict_producer btdp;
         btdp.append("i", blinded_pubkey.to_view());
         btdp.append("n", nonce.to_view());
-        btdp.append("t", signed_at.count());
+        btdp.append("t", signed_at.time_since_epoch().count());
         btdp.append("x", std::span{encrypted});
         return btdp;
     }
@@ -175,7 +175,7 @@ namespace srouter
         {
             blinded_pubkey.assign(btdc.require_span<std::byte, PubKey::SIZE>("i"));
             nonce.assign(btdc.require_span<std::byte, SymmNonce::SIZE>("n"));
-            signed_at = std::chrono::milliseconds{btdc.require<int64_t>("t")};
+            signed_at = sys_ms{std::chrono::milliseconds{btdc.require<int64_t>("t")}};
 
             auto enc = btdc.require_span<std::byte>("x");
             encrypted.assign(enc.begin(), enc.end());
@@ -213,8 +213,5 @@ namespace srouter
         return cc;
     }
 
-    bool EncryptedClientContact::is_expired(std::chrono::milliseconds now) const
-    {
-        return now >= signed_at + path::MAX_LIFETIME_ACCEPTED;
-    }
+    bool EncryptedClientContact::is_expired(sys_ms now) const { return now >= signed_at + path::MAX_LIFETIME_ACCEPTED; }
 }  //  namespace srouter

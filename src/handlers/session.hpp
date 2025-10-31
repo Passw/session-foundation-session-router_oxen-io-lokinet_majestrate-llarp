@@ -34,7 +34,7 @@ namespace srouter
             // Inbound path lifetimes within a slot are always determined relative to this base
             // value, so that if we need a path in the (15,20] minute range, we will always pick the
             // same value in that slot by using this basis value.
-            const std::chrono::seconds path_expiry_basis =
+            const std::chrono::sys_seconds path_expiry_basis =
                 std::chrono::floor<std::chrono::seconds>(srouter::time_now_ms());
 
             std::unordered_map<NetworkAddress, std::shared_ptr<session::Session>> _sessions;
@@ -148,7 +148,7 @@ namespace srouter
             void stop(bool send_close);
 
             // Checks if we need more inbound paths and, if so, starts building them.
-            void update_paths(std::chrono::milliseconds now) override;
+            void update_paths(sys_ms now) override;
 
             // bool build_path_to_random(bool exclude_current_termini)
 
@@ -167,7 +167,7 @@ namespace srouter
             /// - inbound/utility paths (used for inbound sessions and network queries)
             /// - paths for outbound relay sessions
             /// - paths for outbound client sessions
-            std::array<int, 3> path_stats(std::chrono::milliseconds now = srouter::time_now_ms()) const;
+            std::array<int, 3> path_stats(sys_ms now = srouter::time_now_ms()) const;
 
             // quic::Address local_address() const { return _local_addr; }
 
@@ -277,7 +277,7 @@ namespace srouter
                 std::function<void(session::Session& session)> on_attempted = nullptr,
                 std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
-            void tick(std::chrono::milliseconds now) override;
+            void tick(sys_ms now) override;
 
             void queue_session_packet(const NetworkAddress& remote, IPPacket pkt);
 

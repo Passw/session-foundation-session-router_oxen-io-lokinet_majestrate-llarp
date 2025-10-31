@@ -199,7 +199,7 @@ namespace srouter
         bs->try_next();
     }
 
-    void NodeDB::purge_rcs(std::chrono::milliseconds now)
+    void NodeDB::purge_rcs(sys_ms now)
     {
         assert(_router.loop.inside());
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);

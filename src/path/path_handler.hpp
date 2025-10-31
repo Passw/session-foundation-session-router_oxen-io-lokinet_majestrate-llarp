@@ -48,8 +48,8 @@ namespace srouter
             int64_t _path_counter = 0;
 
             int _consecutive_failures = 0;
-            std::chrono::milliseconds _last_failure = 0ms;
-            std::chrono::milliseconds _last_build = 0ms;
+            sys_ms _last_failure = sys_ms::min();
+            sys_ms _last_build = sys_ms::min();
 
             using Lock_t = util::NullLock;
             mutable util::NullMutex paths_mutex;
@@ -60,7 +60,7 @@ namespace srouter
 
             // Returns true if we are currently in the cooldown period because of path build
             // failures and thus should not currently be trying new path builds.
-            bool cooldown(std::chrono::milliseconds now = srouter::time_now_ms()) const;
+            bool cooldown(sys_ms now = srouter::time_now_ms()) const;
 
             void drop_path(const Path& p);
 
@@ -101,7 +101,7 @@ namespace srouter
 
             nlohmann::json ExtractStatus() const;
 
-            void expire_paths(std::chrono::milliseconds now);
+            void expire_paths(sys_ms now);
 
             // In case we know none of our paths are still valid, e.g. we received a close on a
             // relay session so we assume it's restarting.
@@ -115,13 +115,13 @@ namespace srouter
             /// get the number of ACTIVE, unexpired paths.  An future expiry value other than now
             /// can be given to query the number of active paths that will not have expired at the
             /// given timestamp.
-            int num_active_paths(std::chrono::milliseconds expiry_ts = srouter::time_now_ms()) const;
+            int num_active_paths(sys_ms expiry_ts = srouter::time_now_ms()) const;
 
             /// get the number of ALL unexpired paths (both active and those being currently built).
             /// If an expiry value is given then this returns the number of paths that will not have
             /// expired at that timestamp (i.e. passing in `srouter::time_now_ms() + 10s` will omit
             /// any paths expiring within the next 10 seconds).
-            int num_paths(std::chrono::milliseconds expiry_ts = srouter::time_now_ms()) const;
+            int num_paths(sys_ms expiry_ts = srouter::time_now_ms()) const;
 
             /// get the number of paths (active or currently building) to the given terminus relay
             int num_paths_to(const RouterID& terminus) const;
@@ -142,11 +142,11 @@ namespace srouter
 
             /// Called each path handler tick to allow subclasses to perform path checks, updates,
             /// rotations, start new paths, etc. as needed.  If not overridden this does nothing.
-            virtual void update_paths(std::chrono::milliseconds /*now*/) {}
+            virtual void update_paths(sys_ms /*now*/) {}
 
-            virtual void tick(std::chrono::milliseconds now);
+            virtual void tick(sys_ms now);
 
-            void ping_paths(std::chrono::milliseconds now);
+            void ping_paths(sys_ms now);
 
             Path* build_path_to_remote(const RouterID& remote, std::chrono::seconds lifetime = path::MAX_LIFETIME);
 
@@ -162,8 +162,7 @@ namespace srouter
             /// path_build_failed/_succeeded methods to uniquely identify the path, or 0 if the path
             /// build is not currently possible.
             Path* build(
-                std::span<const RelayContact> hops,
-                std::chrono::milliseconds expiry_ts = srouter::time_now_ms() + path::MAX_LIFETIME);
+                std::span<const RelayContact> hops, sys_ms expiry_ts = srouter::time_now_ms() + path::MAX_LIFETIME);
 
             /// Returns a view over all current paths (as `Path&` references)
             auto paths() const
@@ -174,7 +173,7 @@ namespace srouter
             }
 
             /// Returns a view over all active paths (i.e. established and not expired)
-            auto active_paths(std::chrono::milliseconds now = srouter::time_now_ms()) const
+            auto active_paths(sys_ms now = srouter::time_now_ms()) const
             {
                 return std::views::values(_paths)  //
                     | std::views::filter([now](const std::shared_ptr<Path>& p) { return p && p->is_active(now); })
@@ -195,8 +194,7 @@ namespace srouter
             /// Takes a set of path hops (edge, hop1, hop2, ..., pivot) and initializes a Path
             /// following those hops, including generating path IDs that will be used along the
             /// path.
-            std::shared_ptr<Path> build_init_path(
-                std::span<const RelayContact> hops, std::chrono::milliseconds expiry_ts);
+            std::shared_ptr<Path> build_init_path(std::span<const RelayContact> hops, sys_ms expiry_ts);
 
             /// Takes a path as constructed by build_init_path and constructs an encoded network
             /// path build message containing the frames required to build the path.
@@ -215,7 +213,7 @@ namespace srouter
                 std::span<const std::byte, path::BUILD_FRAME_SIZE> frame,
                 const Router& r,
                 const std::variant<RouterID, quic::ConnectionID>& src,
-                std::chrono::milliseconds now);
+                sys_ms now);
         };
     }  // namespace path
 
