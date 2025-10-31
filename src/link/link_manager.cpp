@@ -307,27 +307,29 @@ namespace srouter::link
         try
         {
             oxenc::bt_dict_producer btdp;
-            auto btlp = btdp.append_list("r"sv);
-
-            auto btdc = oxenc::bt_dict_consumer{body};
-            auto arg_buckets = btdc.require<oxenc::bt_list_consumer>("b"sv);
-            RCHash h;
-            for (uint8_t i = 0; i < 128; i++)
             {
-                auto h_span = arg_buckets.consume_span<std::byte, 8>();
-                std::memcpy(h.data(), h_span.data(), 8);
-                if (rc_buckets[i] != h)
+                auto btlp = btdp.append_list("r"sv);
+
+                auto btdc = oxenc::bt_dict_consumer{body};
+                auto arg_buckets = btdc.require<oxenc::bt_list_consumer>("b"sv);
+                RCHash h;
+                for (uint8_t i = 0; i < 128; i++)
                 {
-                    for (const auto& [rid, _] : rc_hashes[i])
+                    auto h_span = arg_buckets.consume_span<std::byte, 8>();
+                    std::memcpy(h.data(), h_span.data(), 8);
+                    if (rc_buckets[i] != h)
                     {
-                        if (auto* maybe_rc = router.node_db().get_rc(rid))
-                            btlp.append(maybe_rc->view());
-                        else
-                            log::critical(logcat, "Somehow we have a bucket hash for {} but no RC!", rid);
+                        for (const auto& [rid, _] : rc_hashes[i])
+                        {
+                            if (auto* maybe_rc = router.node_db().get_rc(rid))
+                                btlp.append(maybe_rc->view());
+                            else
+                                log::critical(logcat, "Somehow we have a bucket hash for {} but no RC!", rid);
+                        }
                     }
                 }
+                arg_buckets.finish();
             }
-            arg_buckets.finish();
 
             respond(std::move(btdp).str());
         }
