@@ -33,6 +33,14 @@ namespace srouter::link
     // twice this value.
     inline constexpr auto REDUNDANT_LINGER = 20s;
 
+    // How long we leave router connections open to session routers that are no longer on the
+    // network (i.e. left gracefully or were deregistered).  We don't kill these connections
+    // immediately as they may still be in use by existing clients paths, so we keep them alive for
+    // longer than the longest path to allow those clients to naturally migrate to new paths.
+    inline constexpr auto DEREGGED_LINGER = 30min;
+
+    static constexpr uint64_t CONN_CLOSE_REDUNDANT = 6;
+
     // Stores relay-to-relay connections.  In order to not lose stream messages, we temporarily
     // allow simultaneous connections in both directions between a pair of relays, but then
     // after a timeout, both sides choose the same winner and drop the other one.  The timeout
@@ -61,10 +69,10 @@ namespace srouter::link
         // Closes either the inbound or outbound connection and drops it from this instance.  If
         // the other connection still exists then `conn` is updated to point at it, otherwise it
         // is set to nullptr.  Does nothing if the indicated connection is already closed.
-        void close_quietly(bool direction_inbound);
+        void close(bool direction_inbound, uint64_t errcode = 0);
 
         // Closes all connections, in both directions (if opened).
-        void close_all_quietly();
+        void close_all(uint64_t errcode = 0);
 
         // Closes the "loser" connection, if this instance has connections in both directions.
         void close_redundant();
@@ -93,6 +101,11 @@ namespace srouter::link
         // `relay_conns` (relays).
         std::unordered_map<RouterID, std::shared_ptr<link::Connection>> pending_outbound;
 
+        // Stores any "dead" router IDs (i.e. unlocked or deregged) that we have connections with,
+        // along with the timestamp of when we first noticed they were no longer valid.  Once we
+        // reach DEREGGED_LINGER, we close the connection.
+        std::unordered_map<RouterID, std::chrono::steady_clock::time_point> pending_dead;
+
         // Stores established client-to-relay connections (i.e. outbound edge connections).  Client
         // only.
         std::unordered_map<RouterID, std::shared_ptr<link::Connection>> client_conns;
@@ -104,6 +117,7 @@ namespace srouter::link
         std::unique_ptr<quic::Loop> loop;
         std::shared_ptr<quic::Endpoint> endpoint;
         std::shared_ptr<quic::Ticker> redundancy_ticker;
+        std::shared_ptr<quic::Ticker> dereg_conn_ticker;
         std::shared_ptr<quic::GNUTLSCreds> tls_creds;
 
       public:
@@ -118,6 +132,12 @@ namespace srouter::link
         // established in both directions and sufficient time has passed so ensure that all messages
         // are flowing on the mutually preferred connection.
         void close_redundant(sys_ms now = srouter::time_now_ms());
+
+        // Checks for any existing connections to expired nodes and, after a delay, closes them.
+        // (They delay is to give time for clients still using a path through us to the deregged
+        // node to build and switch to new paths).  This runs infrequently (once/minute) because
+        // leaving the connections around for a little longer doesn't hurt anything.
+        void check_deregged_conns();
 
         // Returns an established client->relay connection, if one exists.  Client only.  Returns
         // nullptr if there is no current established connection to the given relay.

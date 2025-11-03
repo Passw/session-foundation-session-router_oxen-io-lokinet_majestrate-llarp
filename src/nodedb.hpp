@@ -163,6 +163,7 @@ namespace srouter
         void set_registered_relays(std::unordered_set<RouterID> relays);
         bool has_registered_relays() const;
         std::vector<RouterID> get_registered_relays() const;
+        std::unordered_set<RouterID> get_registered_relay_set() const;
 
         // Called if our initial oxend SN request fails to load the router IDs of any RCs in our
         // nodedb as our initial registered relay list until some future oxend update comes along to
