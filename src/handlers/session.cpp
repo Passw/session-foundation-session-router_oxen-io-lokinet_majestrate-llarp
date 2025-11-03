@@ -1128,7 +1128,7 @@ namespace srouter::handlers
                 }
                 catch (const std::exception& e)
                 {
-                    log::warning(logcat, "Error creating session to remote {}: {}", remote, e.what());
+                    throw std::runtime_error{"Error creating session to remote {}: {}"_format(remote, e.what())};
                 }
             }
 
@@ -1164,7 +1164,7 @@ namespace srouter::handlers
 
             std::pair<uint16_t, std::shared_ptr<session::Session>> result;
             auto& [local_port, session] = result;
-            session = initiate_remote_session(remote);
+            session = initiate_remote_session(remote); // throws on immediate error
 
             mapped_remote target{.remote = remote, .port = port};
             auto& [udp_handle, cports] = _udp_handles[target];
@@ -1178,13 +1178,18 @@ namespace srouter::handlers
                     [this, target](quic::Packet&& pkt) {
                         // FIXME: cache most recently used mapping/session/etc.?
 
-                        auto session = initiate_remote_session(target.remote);
-                        if (!session)
+                        std::shared_ptr<session::Session> session;
+                        try
+                        {
+                            session = initiate_remote_session(target.remote);
+                        }
+                        catch (const std::exception& e)
                         {
                             log::warning(
                                 logcat,
-                                "Received local mapped UDP packet, but unable to initiate a session with {}",
-                                target.remote);
+                                "Received local mapped UDP packet, but unable to obtain/initiate a session with {}: {}",
+                                target.remote,
+                                e.what());
                             return;
                         }
 

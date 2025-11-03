@@ -497,13 +497,13 @@ namespace srouter::handlers
             log::warning(logcat, "bad DNS request, no TLD or hostname: {}", qname);
             return false;
         }
+        /*
         std::string sns_name;
         if (nameparts.size() >= 2 and qname.ends_with(".loki"))
         {
             sns_name = hostname;
             sns_name += ".loki"sv;
         }
-        /*
         if (msg.questions[0].qtype == dns::qTypeTXT)
         {
           RouterID snode;
@@ -729,24 +729,53 @@ namespace srouter::handlers
                 // DNS lookup implies we want a session, so make one (NOP if we have one)
                 // This also means if we don't use that session the IP mapping will release when
                 // it expires, which it wouldn't otherwise without a tedious periodic check.
-                if (_router.session_endpoint().initiate_remote_session(*maybe_netaddr, nullptr))
-                    reply_with_mapped_address(std::nullopt, map6(*maybe_netaddr));
-                else
-                    reply_with_mapped_address(std::nullopt, std::nullopt);
+                bool created_session = false;
+                try
+                {
+                    created_session = (bool)_router.session_endpoint().initiate_remote_session(*maybe_netaddr, nullptr);
+                }
+                catch (const std::exception& e)
+                {
+                    log::warning(logcat, "Failed to initiate remote session to {}: {}", *maybe_netaddr, e.what());
+                }
+                std::optional<ipv6> mapped;
+                if (created_session)
+                    mapped = map6(*maybe_netaddr);
+
+                reply_with_mapped_address(std::nullopt, std::move(mapped));
 
                 return true;
             }
             else if (tld == "loki"sv)
             {
                 // TODO: .sesh SNS resolution, once implemented
+                auto lookup = "{}.loki"_format(hostname);
                 _router.session_endpoint().resolve_sns(
-                    "{}.loki"_format(hostname),
-                    [this, reply, reply_with_mapped_address, msg](std::optional<NetworkAddress> maybe_netaddr) mutable {
-                        if (maybe_netaddr
-                            && _router.session_endpoint().initiate_remote_session(*maybe_netaddr, nullptr))
-                            reply_with_mapped_address(std::nullopt, map6(*maybe_netaddr));
-                        else
-                            reply_with_mapped_address(std::nullopt, std::nullopt);
+                    lookup,
+                    [this, lookup, reply, reply_with_mapped_address, msg](
+                        std::optional<NetworkAddress> maybe_netaddr) mutable {
+                        bool created_session = false;
+                        if (maybe_netaddr)
+                        {
+                            try
+                            {
+                                created_session =
+                                    (bool)_router.session_endpoint().initiate_remote_session(*maybe_netaddr, nullptr);
+                            }
+                            catch (const std::exception& e)
+                            {
+                                log::warning(
+                                    logcat,
+                                    "Failed to initiate remote session for {} (resolved from {}): {}",
+                                    *maybe_netaddr,
+                                    lookup,
+                                    e.what());
+                            }
+                        }
+                        std::optional<ipv6> mapped;
+                        if (created_session)
+                            mapped = map6(*maybe_netaddr);
+                        reply_with_mapped_address(std::nullopt, std::move(mapped));
                     });
             }
             /*
@@ -1159,7 +1188,16 @@ namespace srouter::handlers
             {
                 log::debug(logcat, "No session for remote: {} for outbound packet, attempting to create one!", *remote);
 
-                auto s = _router.session_endpoint().initiate_remote_session(*remote, nullptr);
+                std::shared_ptr<session::Session> s;
+                try
+                {
+                    s = _router.session_endpoint().initiate_remote_session(*remote, nullptr);
+                }
+                catch (const std::exception& e)
+                {
+                    log::debug(logcat, "Failed to auto-initiate session to remote {}: {}", *remote, e.what());
+                }
+
                 if (s)
                     s->send_session_data_message(pkt.span(), pkt.protocol());
             }

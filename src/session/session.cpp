@@ -884,13 +884,13 @@ namespace srouter::session
         if (_is_closed)
             return;
 
-        if ((now - last_cc_update > 10min) || (now - last_inbound_activity > 30s))
+        if (!updating_intros && (now >= _next_cc_update || now - last_inbound_activity > 30s))
         {
             log::info(
                 logcat,
-                "It has been > 10min since last cc update, or > 30s since last inbound activity; attempting to fetch a "
-                "new intro set for session to {}",
-                _remote);
+                "Fetching updating client contact for {}: {}",
+                _remote,
+                now >= _next_cc_update ? "current CC is missing or old" : "no inbound activity for >30s");
             refresh_intros();
         }
     }
@@ -1166,15 +1166,27 @@ namespace srouter::session
                 update_intros(*cc);
             }
             else
-                log::warning(logcat, "Failed to lookup intros for {}", _remote);
+            {
+                _cc_fetch_fail_count++;
+                auto try_again_in = std::min(_cc_fetch_fail_count * CC_FETCH_BACKOFF, CC_FETCH_BACKOFF_MAX);
+                _next_cc_update = time_now_ms() + try_again_in;
+                log::warning(
+                    logcat,
+                    "Failed to lookup intros for {} ({} consecutive failures); will try again in {}",
+                    _remote,
+                    _cc_fetch_fail_count,
+                    std::chrono::round<std::chrono::seconds>(try_again_in));
+            }
         });
     }
 
     void OutboundClientSession::update_intros(const ClientContact& cc)
     {
         log::debug(logcat, "Update session {} intros from client contact: {}", *this, cc);
-        last_cc_update = srouter::time_now_ms();
-        last_inbound_activity = last_cc_update;  // so we don't just fetch again right away
+        auto now = time_now_ms();
+        _cc_fetch_fail_count = 0;
+        _next_cc_update = now + CC_FETCH_STALE;
+        last_inbound_activity = now;  // so we don't just fetch for inactivity again right away
         auto intros = cc.intros();
         _intros.assign(intros.begin(), intros.end());
         log::trace(logcat, "New client intros: {}", fmt::join(_intros, ", "));
@@ -1182,7 +1194,7 @@ namespace srouter::session
         for (auto& i : _intros)
             _pivots.insert(i.relay);
 
-        update_paths(last_cc_update);
+        update_paths(now);
     }
 
     void OutboundClientSession::update_paths(sys_ms now)

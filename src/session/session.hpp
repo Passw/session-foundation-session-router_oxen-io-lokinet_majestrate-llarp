@@ -336,13 +336,25 @@ namespace srouter
                 std::function<void(OutboundSession& session)> on_established,
                 std::optional<std::chrono::milliseconds> establish_timeout = std::nullopt);
 
+            // Constants controlling when we re-fetch a CC:
+
+            // Re-fetch if our current CC gets this old:
+            static constexpr auto CC_FETCH_STALE = 10min;
+
+            // Linear backoff parameters: each time a CC fetch fails, we schedule a refetch in
+            // CC_FETCH_BACKOFF times the number of sequential failures, up to a max of
+            // CC_FETCH_BACKOFF_MAX.
+            static constexpr std::chrono::milliseconds CC_FETCH_BACKOFF = 990ms;
+            static constexpr std::chrono::milliseconds CC_FETCH_BACKOFF_MAX = 10s;
+
           private:
             std::vector<ClientIntro> _intros;
             std::unordered_set<RouterID> _pivots;
             bool _intro_update_processed = false;
             bool updating_intros = false;
 
-            sys_ms last_cc_update = sys_ms::min();
+            sys_ms _next_cc_update{};
+            int _cc_fetch_fail_count = 0;
             bool cc_ok = false;
 
             // Chooses the next router id to pivot to, based on introset and current paths.  Returns

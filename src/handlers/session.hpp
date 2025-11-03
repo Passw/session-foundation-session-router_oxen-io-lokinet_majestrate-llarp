@@ -272,6 +272,10 @@ namespace srouter
             //
             // NB: this method can be safely called from outside the event loop (e.g. in embedded
             // usage).
+            //
+            // This method throws *without* calling `on_attempted` if a Session cannot be attempted,
+            // such as when `remote` does not contain a valid pubkey.  If it does not throw, then it
+            // always returns a non-null shared_ptr.
             std::shared_ptr<session::Session> initiate_remote_session(
                 const NetworkAddress& remote,
                 std::function<void(session::Session& session)> on_attempted = nullptr,
@@ -296,6 +300,9 @@ namespace srouter
             // - the outgoing session object (so that the caller can set an on_established hook, if
             //   desired).  Note that the session could change over time, e.g. if it is deleted by
             //   idle time out and then is re-established as a result of activity to this port.
+            //
+            // Throws (via initiate_remote_session) if the Session could not be initiated, such as
+            // when given an invalid pubkey in `remote`.
             std::pair<uint16_t, std::shared_ptr<session::Session>> map_udp_remote_port(
                 const NetworkAddress& remote, uint16_t port);
 
