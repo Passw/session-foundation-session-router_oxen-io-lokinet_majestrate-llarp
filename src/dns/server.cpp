@@ -431,16 +431,17 @@ namespace srouter::dns
 
                 for (const auto& q : query.questions)
                 {
-                    // dont process .loki or .snode
-                    if (q.HasTLD(".loki") or q.HasTLD(".snode"))
+                    // dont process .sesh/.loki/.snode
+                    if (q.HasTLD(CLIENT_TLD) or q.HasTLD(RELAY_TLD) or q.HasTLD("loki"))
                     {
                         log::warning(
                             logcat,
-                            "dns from {} to {} is for .loki or .snode but got to the unbound "
-                            "resolver, sending "
-                            "failure reply",
+                            "dns from {} to {} is for .{}/{}/loki but got to the unbound "
+                            "resolver; sending failure reply",
                             from,
-                            to);
+                            to,
+                            CLIENT_TLD,
+                            RELAY_TLD);
                         tmp->cancel();
                         return true;
                     }
@@ -451,8 +452,7 @@ namespace srouter::dns
                     log::debug(
                         logcat,
                         "dns from {} to {} got to the unbound resolver, but the resolver isn't set "
-                        "up, "
-                        "sending failure reply",
+                        "up, sending failure reply",
                         from,
                         to);
                     tmp->cancel();
@@ -466,8 +466,7 @@ namespace srouter::dns
                     log::debug(
                         logcat,
                         "dns from {} to {} got to the unbound resolver, but the resolver isn't "
-                        "running, "
-                        "sending failure reply",
+                        "running, sending failure reply",
                         from,
                         to);
                     tmp->Cancel();
@@ -542,7 +541,7 @@ namespace srouter::dns
             add_resolver(ptr);
 
         // FIXME: this should be handled by RoutePoker once it is resurrected, handling whether
-        // we eat all DNS traffic or just .loki/.snode.  For now, we only handle those.
+        // we eat all DNS traffic or just .sesh/.loki/.snode.  For now, we only handle those.
         set_dns_mode(false);
     }
 
@@ -569,8 +568,9 @@ namespace srouter::dns
             log::debug(
                 logcat,
                 "explicitly no upstream dns providers specified, we will not resolve anything but "
-                ".loki "
-                "and .snode");
+                ".{}/{}/loki",
+                CLIENT_TLD,
+                RELAY_TLD);
             return nullptr;
         }
 

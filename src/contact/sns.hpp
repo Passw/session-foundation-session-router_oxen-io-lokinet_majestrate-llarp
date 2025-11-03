@@ -43,6 +43,7 @@ namespace srouter
     /// check if an sns name complies with the registration rules
     inline bool is_valid_sns(std::string_view sns_name)
     {
+        // TODO: Add support for .sesh SNS addresses, once they are a thing.
         if (not sns_name.ends_with(".loki"))
             return false;
 
@@ -67,7 +68,7 @@ namespace srouter
         const auto parts = split(sns_name, ".");
 
         // get root domain
-        const auto primaryName = parts[parts.size() - 1];
+        const auto primaryName = parts.back();
         constexpr size_t MaxNameLen = 32;
         constexpr size_t MaxPunycodeNameLen = 63;
 

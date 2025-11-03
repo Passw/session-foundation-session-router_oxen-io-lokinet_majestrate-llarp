@@ -7,10 +7,10 @@
 namespace srouter
 {
     // The TLDs we use to refer to a relay or client by base32z pubkey:
-    inline constexpr auto DOT_RELAY_TLD = ".snode"sv;
-    inline constexpr auto RELAY_TLD = DOT_RELAY_TLD.substr(1);
-    inline constexpr auto DOT_CLIENT_TLD = ".loki"sv;
-    inline constexpr auto CLIENT_TLD = DOT_CLIENT_TLD.substr(1);
+    inline constexpr auto RELAY_DOT_TLD = ".snode"sv;
+    inline constexpr auto RELAY_TLD = RELAY_DOT_TLD.substr(1);
+    inline constexpr auto CLIENT_DOT_TLD = ".sesh"sv;
+    inline constexpr auto CLIENT_TLD = CLIENT_DOT_TLD.substr(1);
 
     /// Combines a pubkey and client/snode flag to represent a generic (client or snode) address.
     struct NetworkAddress
@@ -20,11 +20,11 @@ namespace srouter
 
         NetworkAddress() = default;
 
-        // Constructs from a full network address ending in '.loki' or '.snode' (but *not* an ONS
+        // Constructs from a full network address ending in '.sesh' or '.snode' (but *not* an ONS
         // entry).  Throws std::invalid_argument if invalid.
         explicit NetworkAddress(std::string_view addr);
 
-        // Constructs from a full network address (base32z-encoded pubkey) *not* ending in .loki or
+        // Constructs from a full network address (base32z-encoded pubkey) *not* ending in .sesh or
         // .snode.  The client or snode status is determined by the bool.
         NetworkAddress(std::string_view addr, bool is_client);
 

@@ -246,7 +246,7 @@ namespace srouter
                 std::shared_ptr<path::TransitHop> path,
                 const SharedSecret& session_key);
 
-            // lookup SNS address to return "{pubkey}.loki" hidden service or exit node operated on a remote client
+            // lookup SNS address to return "{pubkey}.sesh" hidden service or exit node operated on a remote client
             void resolve_sns(std::string name, std::function<void(std::optional<NetworkAddress>)> func);
 
             void lookup_remote_srv(
@@ -267,7 +267,7 @@ namespace srouter
             // The timeout, if omitted/nullopt, defaults to the [paths]build-timeout config option.
             //
             // Note that this resulting session could be outbound or inbound: i.e. if the target is
-            // a client (.loki) that has already established a session to this Session Router instance then
+            // a client (.sesh) that has already established a session to this Session Router instance then
             // that existing session is used rather than building a new outbound one.
             //
             // NB: this method can be safely called from outside the event loop (e.g. in embedded

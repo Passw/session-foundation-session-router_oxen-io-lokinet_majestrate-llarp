@@ -1,5 +1,6 @@
 #include "tun.hpp"
 
+#include <oxen/log.hpp>
 #include <oxenc/endian.h>
 
 #include <span>
@@ -351,7 +352,7 @@ namespace srouter::handlers
 
     static bool is_random_snode(const dns::Message& msg) { return msg.questions[0].IsName("random.snode"); }
 
-    static bool is_localhost_loki(const dns::Message& msg) { return msg.questions[0].IsLocalhost(); }
+    static bool is_localhost(const dns::Message& msg) { return msg.questions[0].IsLocalhost(); }
 
     static dns::Message& clear_dns_message(dns::Message& msg)
     {
@@ -477,7 +478,7 @@ namespace srouter::handlers
 
         if (msg.questions.size() != 1)
         {
-            log::debug(logcat, "bad number of dns questions: {}", msg.questions.size());
+            log::warning(logcat, "bad number of dns questions: {}", msg.questions.size());
             return false;
         }
 
@@ -493,11 +494,11 @@ namespace srouter::handlers
         }
         else
         {
-            log::debug(logcat, "bad DNS request, no TLD or hostname: {}", qname);
+            log::warning(logcat, "bad DNS request, no TLD or hostname: {}", qname);
             return false;
         }
         std::string sns_name;
-        if (nameparts.size() >= 2 and ends_with(qname, ".loki"))
+        if (nameparts.size() >= 2 and qname.ends_with(".loki"))
         {
             sns_name = hostname;
             sns_name += ".loki"sv;
@@ -517,7 +518,7 @@ namespace srouter::handlers
             return true;
           }
 
-          if (is_localhost_loki(msg) and msg.questions[0].HasSubdomains())
+          if (is_localhost(msg) and msg.questions[0].HasSubdomains())
           {
             const auto subdomain = msg.questions[0].Subdomains();
             if (subdomain == "exit")
@@ -556,7 +557,7 @@ namespace srouter::handlers
           // mx record
           service::Address addr;
           if (addr.FromString(qname, ".loki") || addr.FromString(qname, ".snode")
-              || is_random_snode(msg) || is_localhost_loki(msg))
+              || is_random_snode(msg) || is_localhost(msg))
           {
             msg.AddMXReply(qname, 1);
           }
@@ -591,7 +592,7 @@ namespace srouter::handlers
             else
               msg.AddNXReply();
           }
-          else if (is_localhost_loki(msg) and msg.questions[0].HasSubdomains())
+          else if (is_localhost(msg) and msg.questions[0].HasSubdomains())
           {
             const auto subdomain = msg.questions[0].Subdomains();
             if (subdomain == "exit" and HasExit())
@@ -605,7 +606,7 @@ namespace srouter::handlers
               msg.AddNXReply();
             }
           }
-          else if (is_localhost_loki(msg))
+          else if (is_localhost(msg))
           {
             size_t counter = 0;
             context->ForEachService(
@@ -672,7 +673,7 @@ namespace srouter::handlers
               msg.AddNXReply();
             }
             */
-            /*else*/ if (is_localhost_loki(msg))
+            /*else*/ if (is_localhost(msg))
             {
                 // FIXME: the code below checks about if we have a tun bound, and
                 // if we're operating as an exit (if that was requested), and those
@@ -708,6 +709,8 @@ namespace srouter::handlers
                 }
                 */
 
+                if (tld == "loki")
+                    msg.add_CNAME_reply(qname.substr(0, qname.size() - 4) + "sesh");
                 msg.add_CNAME_reply(our_name);
                 if (aaaa)
                 {
@@ -735,6 +738,7 @@ namespace srouter::handlers
             }
             else if (tld == "loki"sv)
             {
+                // TODO: .sesh SNS resolution, once implemented
                 _router.session_endpoint().resolve_sns(
                     "{}.loki"_format(hostname),
                     [this, reply, reply_with_mapped_address, msg](std::optional<NetworkAddress> maybe_netaddr) mutable {
@@ -816,7 +820,7 @@ namespace srouter::handlers
           {
             auto srv_for = msg.questions[0].Subdomains();
             auto name = msg.questions[0].qname;
-            if (is_localhost_loki(msg))
+            if (is_localhost(msg))
             {
               msg.AddSRVReply(intro_set().GetMatchingSRVRecords(srv_for));
               reply(msg);
@@ -851,19 +855,17 @@ namespace srouter::handlers
         return true;
     }
 
-    // FIXME: pass in which question it should be addressing
     bool TunEndpoint::should_hook_dns_message(const dns::Message& msg) const
     {
         // srouter::service::Address addr;
         if (msg.questions.size() == 1)
         {
-            /// hook every .loki
-            if (msg.questions[0].HasTLD(".loki"))
-                return true;
-            /// hook every .snode
-            if (msg.questions[0].HasTLD(".snode"))
-                return true;
-            // hook any ranges we own
+            // Hook every .sesh/.snode/.loki
+            for (auto tld : {CLIENT_TLD, RELAY_TLD, "loki"sv})
+                if (msg.questions[0].HasTLD(tld))
+                    return true;
+
+            // hook any PTR records for ranges we own
             if (msg.questions[0].qtype == srouter::dns::qTypePTR)
             {
                 if (auto ip = dns::DecodePTR(msg.questions[0].qname))
@@ -876,12 +878,9 @@ namespace srouter::handlers
             }
         }
         for (const auto& answer : msg.answers)
-        {
-            if (answer.HasCNameForTLD(".loki"))
-                return true;
-            if (answer.HasCNameForTLD(".snode"))
-                return true;
-        }
+            for (auto tld : {"sesh"sv, "snode"sv, "loki"sv})
+                if (answer.HasCNameForTLD(tld))
+                    return true;
         return false;
     }
 

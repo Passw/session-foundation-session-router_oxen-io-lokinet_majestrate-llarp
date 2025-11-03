@@ -1,5 +1,6 @@
 #include "router_id.hpp"
 
+#include "address/address.hpp"
 #include "util/formattable.hpp"
 
 #include <nlohmann/json.hpp>
@@ -11,8 +12,6 @@ namespace srouter
 {
     namespace
     {
-        constexpr auto RELAY_DOT_TLD = ".snode"sv;
-        constexpr auto CLIENT_DOT_TLD = ".loki"sv;
         constexpr auto B32Z_ID_SIZE = oxenc::to_base32z_size(RouterID::SIZE);
     }  // namespace
 
@@ -37,7 +36,7 @@ namespace srouter
             str.remove_suffix(CLIENT_DOT_TLD.size());
         else
             throw std::invalid_argument{
-                "Did not find expected .loki or .snode TLD in network address '{}'"_format(str)};
+                "Did not find expected .{} or .{} TLD in network address '{}'"_format(CLIENT_TLD, RELAY_TLD, str)};
 
         if (str.size() != B32Z_ID_SIZE || !oxenc::is_base32z(str) || !(str.back() == 'o' || str.back() == 'y'))
             throw std::invalid_argument{"RouterID input is incorrect (input: {})"_format(str)};

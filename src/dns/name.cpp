@@ -1,7 +1,9 @@
 #include "name.hpp"
 
+#include "address/address.hpp"
 #include "util/str.hpp"
 
+#include <oxenc/endian.h>
 #include <oxenc/hex.h>
 
 namespace srouter::dns
@@ -111,32 +113,31 @@ namespace srouter::dns
 
             assert(in_pos == in.data() + in.size());
 
-            // our string right now is the little endian representation, so load it as such on
-            // little endian, or in reverse on big endian.
-
-            std::string arg;
-
-            if constexpr (oxenc::little_endian)
-                arg = oxenc::from_hex(in.begin(), in.end());
-            else
-                arg = std::string{in.data(), in.size()};
-
-            return ipv6{arg};
+            // our string right now is the little endian hex representation, so reading that
+            // directly into the lo/hi values will suffice for little-endian, but need a flip for
+            // big endian:
+            ipv6 result;
+            oxenc::from_hex(in.begin(), in.begin() + 16, reinterpret_cast<char*>(&result.lo));
+            oxenc::from_hex(in.begin() + 16, in.end(), reinterpret_cast<char*>(&result.hi));
+            oxenc::little_to_host_inplace(result.lo);
+            oxenc::little_to_host_inplace(result.hi);
+            return result;
         }
         return std::nullopt;
     }
 
     bool NameIsReserved(std::string_view name)
     {
-        const std::vector<std::string_view> reserved_names = {
-            ".snode.loki"sv, ".loki.loki"sv, ".snode.loki."sv, ".loki.loki."sv};
-        for (const auto& reserved : reserved_names)
+        if (name.ends_with('.'))
+            name.remove_suffix(1);
+        if (name.ends_with(".loki"sv) || name.ends_with(CLIENT_DOT_TLD))
         {
-            if (ends_with(name, reserved))  // subdomain foo.loki.loki
-                return true;
-            if (name == reserved.substr(1))  // loki.loki itself
-                return true;
+            name.remove_suffix(5);
+            for (const auto& sld : {CLIENT_DOT_TLD, RELAY_DOT_TLD, ".loki"sv})
+                if (name.ends_with(sld) || name == sld.substr(1))
+                    return true;
         }
+
         return false;
     }
 }  // namespace srouter::dns

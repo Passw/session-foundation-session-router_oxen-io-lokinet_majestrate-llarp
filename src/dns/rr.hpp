@@ -27,7 +27,7 @@ namespace srouter::dns
 
         std::string to_string() const;
 
-        bool HasCNameForTLD(const std::string& tld) const;
+        bool HasCNameForTLD(std::string_view tld) const;
 
         std::string rr_name;
         RRType_t rr_type;

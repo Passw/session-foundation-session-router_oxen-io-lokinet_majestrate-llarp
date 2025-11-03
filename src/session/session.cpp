@@ -416,12 +416,7 @@ namespace srouter::session
 
     void InboundClientSession::handle_path_switch(HopID pivot, std::shared_ptr<path::Path> path)
     {
-        log::debug(
-            logcat,
-            "Session with {} switching to path {} with pivot hopid {}",
-            _remote,
-            *path,
-            pivot.to_view());
+        log::debug(logcat, "Session with {} switching to path {} with pivot hopid {}", _remote, *path, pivot.to_view());
         _current_path = std::move(path);
         _dead_path = !_current_path;
         _remote_pivot_txid = std::move(pivot);
@@ -1153,27 +1148,26 @@ namespace srouter::session
             return;
         updating_intros = true;
         log::debug(logcat, "Initiating intro lookup for {}", _remote);
-        _parent.lookup_client_intro(
-            _remote.pubkey, [this, alive = canary()](std::optional<ClientContact> cc) mutable {
-                if (!alive.lock())
-                {
-                    log::debug(
-                        logcat,
-                        "OutboundClientSession::refresh_intros lookup_client_intro callback returning early; "
-                        "session-alive canary is dead");
-                    return;
-                }
-                updating_intros = false;
-                if (cc)
-                {
-                    log::debug(logcat, "Session initiation returned client contact: {}", *cc);
-                    cc_ok = true;
-                    _intro_update_processed = false;
-                    update_intros(*cc);
-                }
-                else
-                    log::warning(logcat, "Failed to lookup intros for {}", _remote);
-            });
+        _parent.lookup_client_intro(_remote.pubkey, [this, alive = canary()](std::optional<ClientContact> cc) mutable {
+            if (!alive.lock())
+            {
+                log::debug(
+                    logcat,
+                    "OutboundClientSession::refresh_intros lookup_client_intro callback returning early; "
+                    "session-alive canary is dead");
+                return;
+            }
+            updating_intros = false;
+            if (cc)
+            {
+                log::debug(logcat, "Session initiation returned client contact: {}", *cc);
+                cc_ok = true;
+                _intro_update_processed = false;
+                update_intros(*cc);
+            }
+            else
+                log::warning(logcat, "Failed to lookup intros for {}", _remote);
+        });
     }
 
     void OutboundClientSession::update_intros(const ClientContact& cc)

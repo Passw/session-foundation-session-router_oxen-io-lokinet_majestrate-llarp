@@ -88,7 +88,7 @@ namespace srouter
 
             public_key.assign(secret_key.pubkey_span());
 
-            log::info(logcat, "Client public key: {}", public_key);
+            log::info(logcat, "Client public key: {}.{}", public_key, CLIENT_TLD);
         }
         // else nothing to do: router's identity self.signed is always regenerated on the fly from
         // the keys we get from oxend.

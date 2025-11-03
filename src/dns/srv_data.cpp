@@ -1,5 +1,6 @@
 #include "srv_data.hpp"
 
+#include "address/address.hpp"
 #include "util/formattable.hpp"
 #include "util/logging.hpp"
 #include "util/str.hpp"
@@ -49,19 +50,8 @@ namespace srouter::dns
             return false;
         }
 
-        // does target end in .loki?
-        size_t pos = target.find(".loki");
-        if (pos != std::string::npos && pos == (target.size() - 5))
-        {
+        if (target.ends_with(".loki") || target.ends_with(CLIENT_DOT_TLD))
             return true;
-        }
-
-        // does target end in .snode?
-        pos = target.find(".snode");
-        if (pos != std::string::npos && pos == (target.size() - 6))
-        {
-            return true;
-        }
 
         // if we're here, target is invalid
         log::warning(logcat, "SRVData invalid");

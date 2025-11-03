@@ -2,23 +2,38 @@
 
 #include "util/formattable.hpp"
 
+#include <oxen/log.hpp>
 #include <oxenc/base32z.h>
 
 #include <stdexcept>
 
 namespace srouter
 {
+    namespace log = oxen::log;
+    static auto logcat = log::Cat("address");
+
     NetworkAddress::NetworkAddress(std::string_view arg)
     {
-        if (arg.ends_with(DOT_RELAY_TLD))
+        if (arg.ends_with(RELAY_DOT_TLD))
         {
             is_client = false;
-            arg.remove_suffix(DOT_RELAY_TLD.size());
+            arg.remove_suffix(RELAY_DOT_TLD.size());
         }
-        else if (arg.ends_with(DOT_CLIENT_TLD))
+        else if (arg.ends_with(CLIENT_DOT_TLD))
         {
             is_client = true;
-            arg.remove_suffix(DOT_CLIENT_TLD.size());
+            arg.remove_suffix(CLIENT_DOT_TLD.size());
+        }
+        else if (arg.ends_with(".loki"))
+        {
+            is_client = true;
+            arg.remove_suffix(5);
+            log::warning(
+                logcat,
+                "Address {0}…{1}.loki is deprecated: use {0}…{1}.{2} instead",
+                arg.substr(0, 5),
+                arg.substr(arg.size() - 3),
+                CLIENT_TLD);
         }
         else
             throw std::invalid_argument{
@@ -35,8 +50,6 @@ namespace srouter
             throw std::invalid_argument{"Invalid NetworkAddress pubkey: {}"_format(arg)};
     }
 
-    std::string NetworkAddress::to_string() const {
-        return "{}.{}"_format(pubkey, is_client ? CLIENT_TLD : RELAY_TLD);
-    }
+    std::string NetworkAddress::to_string() const { return "{}.{}"_format(pubkey, is_client ? CLIENT_TLD : RELAY_TLD); }
 
 }  //  namespace srouter

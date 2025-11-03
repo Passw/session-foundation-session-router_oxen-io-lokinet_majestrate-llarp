@@ -92,14 +92,20 @@ namespace srouter::dns
             rr_name, rr_type, rr_class, ttl, rData.size());
     }
 
-    bool ResourceRecord::HasCNameForTLD(const std::string& tld) const
+    bool ResourceRecord::HasCNameForTLD(std::string_view tld) const
     {
         if (rr_type != qTypeCNAME)
             return false;
         buffer_t buf(rData);
-        if (auto name = DecodeName(&buf))
-            return name->rfind(tld) == name->size() - tld.size() - 1;
-        return false;
+        auto maybe_name = DecodeName(&buf);
+        if (!maybe_name)
+            return false;
+        std::string_view name{*maybe_name};
+        if (name.ends_with('.'))
+            name.remove_suffix(1);
+        if (tld.starts_with('.'))
+            tld.remove_prefix(1);
+        return name.size() > tld.size() && name.ends_with(tld) && name[name.size() - tld.size() - 1] == '.';
     }
 
 }  // namespace srouter::dns

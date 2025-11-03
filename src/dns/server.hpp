@@ -175,7 +175,7 @@ namespace srouter::dns
             std::span<const std::byte> buf);
 
         /// set which dns mode we are in.
-        /// true for intercepting all queries. false for just .loki and .snode
+        /// true for intercepting all queries. false for just .sesh/.loki/.snode
         void set_dns_mode(bool all_queries);
 
       protected:

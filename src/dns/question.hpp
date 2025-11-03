@@ -34,20 +34,21 @@ namespace srouter::dns
         /// determine if we match a name
         bool IsName(const std::string& other) const;
 
-        /// is the name [something.]localhost.loki. ?
+        /// is the name [something.]localhost.sesh.  (or .loki)?
         bool IsLocalhost() const;
 
-        /// return true if we have subdomains in ths question
-        bool HasSubdomains() const;
+        /// return true if we have a subdomain in this question
+        bool HasSubdomain() const;
 
         /// get subdomain(s), if any, from qname
-        std::string Subdomains() const;
+        std::string Subdomain() const;
 
         /// return qname with no trailing .
         std::string Name() const;
 
-        /// determine if we are using this TLD
-        bool HasTLD(const std::string& tld) const;
+        /// Returns true if the qname ends with a dot followed by the given `tld` value.  (`tld`
+        /// can, but does not require, the leading dot, i.e. ".sesh" and "sesh" are equivalent).
+        bool HasTLD(std::string_view tld) const;
 
         nlohmann::json ToJSON() const override;
     };

@@ -288,7 +288,7 @@ namespace srouter::rpc
     //    Initiate session to remote instance
     //
     //  Inputs:
-    //    "pk" : remote pubkey terminating with `.loki` or `.snode`
+    //    "pk" : remote pubkey (with .sesh or .snode on the end)
     //
     //  Returns:
     //    "ip" : mapped IP address, or error string

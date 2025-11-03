@@ -1,5 +1,6 @@
 #include "question.hpp"
 
+#include "address/address.hpp"
 #include "dns.hpp"
 #include "name.hpp"
 #include "util/str.hpp"
@@ -68,16 +69,17 @@ namespace srouter::dns
 
     bool Question::IsLocalhost() const
     {
-        return (qname == "localhost.loki." or srouter::ends_with(qname, ".localhost.loki."));
+        return qname == "localhost.loki." or qname.ends_with(".localhost.loki.")
+            or qname == "localhost.{}."_format(CLIENT_TLD) or qname.ends_with(".localhost.{}."_format(CLIENT_TLD));
     }
 
-    bool Question::HasSubdomains() const
+    bool Question::HasSubdomain() const
     {
         const auto parts = split(qname, ".", true);
         return parts.size() >= 3;
     }
 
-    std::string Question::Subdomains() const
+    std::string Question::Subdomain() const
     {
         if (qname.size() < 2)
             return "";
@@ -97,9 +99,14 @@ namespace srouter::dns
 
     std::string Question::Name() const { return qname.substr(0, qname.find_last_of('.')); }
 
-    bool Question::HasTLD(const std::string& tld) const
+    bool Question::HasTLD(std::string_view tld) const
     {
-        return qname.find(tld) != std::string::npos && qname.rfind(tld) == (qname.size() - tld.size()) - 1;
+        if (tld.starts_with('.'))
+            tld.remove_prefix(1);
+        std::string_view qnodot{qname};
+        if (qnodot.ends_with('.'))
+            qnodot.remove_suffix(1);
+        return qnodot.size() > tld.size() && qnodot.ends_with(tld) && qnodot[qnodot.size() - tld.size() - 1] == '.';
     }
 
     std::string Question::to_string() const
