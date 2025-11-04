@@ -634,9 +634,9 @@ namespace srouter
                 "",
                 "For example, 172.16.0.1/16 will use 172.16.0.1 for this Session Router",
                 "instance's IPv4 address and 172.16.x.y will be used to map connections to remote",
-                "peer addresses.  For IPv6, fd2e:6c6f:6b69::1/64 will use fd2e:6c6f:6b69::1 for",
+                "peer addresses.  For IPv6, fd2e:7365:7368::1/64 will use fd2e:7365:7368::1 for",
                 "this Session Router instance, and will map other remotes to addresses in",
-                "fd2e:6c6f:6b69:0:w:x:y:z.  (These two ranges are the defaults if not specified",
+                "fd2e:7365:7368:0:w:x:y:z.  (These two ranges are the defaults if not specified",
                 "*and* they are not already in use on the system).",
                 "",
                 "This option can be given twice: once to set an IPv4 address and range, and once",
@@ -712,9 +712,9 @@ namespace srouter
                 "Map a remote `.{}` or `.{}` address to always use a fixed local IPv4, IPv6, or both"_format(
                     CLIENT_TLD, RELAY_TLD),
                 "(separated by a comma). For example:",
-                "    mapaddr=kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.{}:172.16.0.42,fd2e:6c6f:6b69::42"_format(
+                "    mapaddr=kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.{}:172.16.0.42,fd2e:7365:7368::42"_format(
                     RELAY_TLD),
-                "    mapaddr=55fxrybf3jtausbnmxpgwcsz9t8qkf5pr8t5f4xyto4omjrkorpy.{}:fd2e:6c6f:6b69::deca:f20"_format(
+                "    mapaddr=55fxrybf3jtausbnmxpgwcsz9t8qkf5pr8t5f4xyto4omjrkorpy.{}:fd2e:7365:7368::deca:f20"_format(
                     RELAY_TLD),
                 "reserves the given IPv4/IPv6 address for the indicated pubkeys.",
                 "",
