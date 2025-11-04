@@ -368,11 +368,11 @@ namespace srouter::link
 #else
         log::trace(logcat, "Received request to publish client contact!");
 
-        std::string name_hash;
-
+        std::string_view name_hash;
         try
         {
-            name_hash = ResolveSNS::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer req{body};
+            name_hash = req.require<std::string_view>("s");
         }
         catch (const std::exception& e)
         {
@@ -382,18 +382,19 @@ namespace srouter::link
 
         assert(router.oxend());
         router.oxend()->lookup_sns_hash(
-            name_hash, [respond = std::move(respond)](std::optional<EncryptedSNSRecord> maybe_enc) mutable {
+            name_hash, [respond = std::move(respond)](std::optional<std::pair<std::string, SymmNonce>> maybe_enc) {
                 if (maybe_enc)
                 {
-                    log::info(logcat, "RPC lookup successfully returned encrypted SNS record!");
-                    auto resp = ResolveSNS::serialize_response(*maybe_enc);
-                    // FIXME: eventually respond func should take a byte span or something, but
-                    //        string was easier for now
-                    respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
+                    log::debug(logcat, "RPC lookup successfully returned encrypted SNS record!");
+                    auto& [ciphertext, nonce] = *maybe_enc;
+                    oxenc::bt_dict_producer resp;
+                    resp.append("c", std::move(ciphertext));
+                    resp.append("n", nonce.span());
+                    respond(std::move(resp).str());
                 }
                 else
                 {
-                    log::warning(logcat, "RPC lookup could not find SNS registry!");
+                    log::debug(logcat, "SNS registration not found");
                     respond(messages::NOT_FOUND_RESPONSE);
                 }
             });

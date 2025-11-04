@@ -39,26 +39,4 @@ namespace srouter
 
     }  //  namespace FindClientContact
 
-    namespace ResolveSNS
-    {
-        /** Bt-encoded contents:
-            - 's' : SNS name
-
-            Note: we are bt-encoding to leave space for future fields (ex: version)
-         */
-        std::vector<std::byte> serialize(std::span<const std::byte, SHORTHASHSIZE> name_hash);
-
-        std::string deserialize(oxenc::bt_dict_consumer&& btdc);
-
-        /** Bt-encoded contents:
-            - 'x' : EncryptedSNSRecord
-
-            Note: we are bt-encoding to leave space for future fields (ex: version)
-         */
-        std::vector<std::byte> serialize_response(const EncryptedSNSRecord& enc);
-
-        EncryptedSNSRecord deserialize_response(oxenc::bt_dict_consumer&& btdc);
-
-    }  // namespace ResolveSNS
-
 }  // namespace srouter

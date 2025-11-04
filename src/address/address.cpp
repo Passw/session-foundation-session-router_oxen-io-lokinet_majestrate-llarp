@@ -14,6 +14,7 @@ namespace srouter
 
     NetworkAddress::NetworkAddress(std::string_view arg)
     {
+        bool was_pk_loki = false;
         if (arg.ends_with(RELAY_DOT_TLD))
         {
             is_client = false;
@@ -28,12 +29,7 @@ namespace srouter
         {
             is_client = true;
             arg.remove_suffix(5);
-            log::warning(
-                logcat,
-                "Address {0}…{1}.loki is deprecated: use {0}…{1}.{2} instead",
-                arg.substr(0, 5),
-                arg.substr(arg.size() - 3),
-                CLIENT_TLD);
+            was_pk_loki = true;
         }
         else
             throw std::invalid_argument{
@@ -42,6 +38,14 @@ namespace srouter
         if (!pubkey.from_base32z(arg))
             throw std::invalid_argument{"Invalid network address '{}.{}': expected full pubkey"_format(
                 arg, is_client ? CLIENT_TLD : RELAY_TLD)};
+
+        if (was_pk_loki)
+            log::warning(
+                logcat,
+                "Address {0}…{1}.loki is deprecated: use {0}…{1}.{2} instead",
+                arg.substr(0, 5),
+                arg.substr(arg.size() - 3),
+                CLIENT_TLD);
     }
 
     NetworkAddress::NetworkAddress(std::string_view arg, bool is_client) : is_client{is_client}

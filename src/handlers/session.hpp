@@ -246,8 +246,12 @@ namespace srouter
                 std::shared_ptr<path::TransitHop> path,
                 const SharedSecret& session_key);
 
-            // lookup SNS address to return "{pubkey}.sesh" hidden service or exit node operated on a remote client
-            void resolve_sns(std::string name, std::function<void(std::optional<NetworkAddress>)> func);
+            // lookup SNS address to return "{pubkey}.sesh" address of a remote client
+            //
+            // If the optional is empty then the bool indicates whether this was an assertive
+            // response (true; i.e. name does not exist or is invalid), or a failure getting/parsing
+            // a lookup response (false).  (The bool will always be true for a positive response).
+            void resolve_sns(std::string name, std::function<void(std::optional<NetworkAddress>, bool assertive)> func);
 
             void lookup_remote_srv(
                 std::string name, std::string service, std::function<void(std::vector<dns::SRVData>)> handler);

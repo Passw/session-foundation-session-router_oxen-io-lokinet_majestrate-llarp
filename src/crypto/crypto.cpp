@@ -58,7 +58,7 @@ namespace srouter::crypto
         return true;
     }
 
-    std::optional<RouterID> maybe_decrypt_name(std::string_view ciphertext, SymmNonce nonce, std::string_view namestr)
+    std::optional<NetworkAddress> maybe_decrypt_name(std::string_view ciphertext, const SymmNonce& nonce, std::string_view namestr)
     {
         const auto payloadsize = ciphertext.size() - MAC_SIZE;
         if (payloadsize != 32)
@@ -80,9 +80,11 @@ namespace srouter::crypto
             namehash.data(),
             namehash.size());
 
-        auto result = std::make_optional<RouterID>();
+        auto result = std::make_optional<NetworkAddress>();
+        result->is_client = true;
+
         if (crypto_aead_xchacha20poly1305_ietf_decrypt(
-                result->data(),
+                result->pubkey.data(),
                 nullptr,
                 nullptr,
                 reinterpret_cast<const uint8_t*>(ciphertext.data()),

@@ -184,7 +184,10 @@ namespace srouter::path
     void Path::resolve_sns(
         std::span<const std::byte, SHORTHASHSIZE> name_hash, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("resolve_sns", ResolveSNS::serialize(name_hash), std::move(func));
+        oxenc::bt_dict_producer sns;
+        sns.append("s", name_hash);
+
+        send_path_control_message("resolve_sns", sns.span<std::byte>(), std::move(func));
     }
 
     void Path::encrypt_path_message(std::vector<std::byte>& data, SymmNonce&& nonce, std::byte type, bool with_mac)

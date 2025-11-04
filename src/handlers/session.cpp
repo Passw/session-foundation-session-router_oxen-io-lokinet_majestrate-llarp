@@ -527,7 +527,7 @@ namespace srouter::handlers
 
             for (const auto& [name, ip_range] : sns_ranges)
             {
-                resolve_sns(name, [this, ip_range](std::optional<NetworkAddress> maybe_addr) {
+                resolve_sns(name, [this, ip_range](std::optional<NetworkAddress> maybe_addr, bool assertive) {
                     if (maybe_addr)
                     {
                         log::critical(
@@ -552,7 +552,7 @@ namespace srouter::handlers
 
             for (const auto& [name, auth_token] : sns_auths)
             {
-                resolve_sns(name, [this, auth_token](std::optional<NetworkAddress> maybe_addr) {
+                resolve_sns(name, [this, auth_token](std::optional<NetworkAddress> maybe_addr, bool assertive) {
                     if (maybe_addr)
                     {
                         log::debug(
@@ -565,76 +565,176 @@ namespace srouter::handlers
         }
     }
 
-    void SessionEndpoint::resolve_sns(std::string sns, std::function<void(std::optional<NetworkAddress>)> func)
+    void SessionEndpoint::resolve_sns(
+        std::string sns, std::function<void(std::optional<NetworkAddress>, bool assertive)> func)
     {
         Lock_t l{paths_mutex};
         if (not is_valid_sns(sns))
         {
-            log::debug(logcat, "Invalid SNS name ({}) queried for lookup", sns);
-            return func(std::nullopt);
+            log::warning(logcat, "Invalid SNS name ({}) queried for lookup", sns);
+            try
+            {
+                func(std::nullopt, true);
+            }
+            catch (const std::exception& e)
+            {
+                log::error(logcat, "resolve_sns callback raised an uncaught exception: {}", e.what());
+            }
+            return;
         }
 
         log::debug(logcat, "Looking up SNS name {}", sns);
 
-        auto remaining = std::make_shared<int>(0);
-        auto response_handler = [sns, remaining, func = std::move(func)](auto resp) {
-            int rem = --*remaining;
-            if (rem < 0)
-                return;  // Some other request beat us to it
+        struct sns_results_t
+        {
+            // We send the request to multiple nodes, and then confirm responses:
+            // - if we get at least half of the responses that agree (same address, or all say not
+            //   found) then we return that result.
+            // - otherwise (i.e. if we reach the end of responses without getting a 50%+ winning
+            //   result) then we return the most popular: In the case of ties, if "not found" is one
+            //   of the tied values, we return not found; otherwise we randomize among any with the
+            //   same number of confirmations.
+            std::unordered_map<NetworkAddress, int> result_count;
+            int not_found_count = 0;
+            int remaining = 0;
+            int threshold = 0;
+            std::string name;
+        };
+        auto sns_results = std::make_shared<sns_results_t>();
+        sns_results->name = sns;
 
-            std::optional<NetworkAddress> client_addr;
+        auto response_handler = [sns_results, func = std::move(func)](path::path_control_response resp) {
+            if (--sns_results->remaining < 0)
+                return;  // Already processed and sent the response
 
+            const auto& name = sns_results->name;
             if (resp.ok())
             {
                 try
                 {
                     log::debug(logcat, "Call to ResolveSNS succeeded!");
 
-                    auto enc = ResolveSNS::deserialize_response(oxenc::bt_dict_consumer{resp.body});
-
-                    client_addr = enc.decrypt(sns);
-                    if (client_addr)
+                    oxenc::bt_dict_consumer sns{resp.body};
+                    if (auto err = sns.maybe<std::string_view>(messages::STATUS_KEY);
+                        err && *err != messages::STATUS_OK)
                     {
-                        log::debug(
-                            logcat, "Successfully decrypted SNS record (name: {}, address: {})", sns, *client_addr);
+                        if (*err == messages::STATUS_NOT_FOUND)
+                        {
+                            log::debug(logcat, "Relay returned CC not found");
+                            sns_results->not_found_count++;
+                        }
+                        else
+                        {
+                            throw std::runtime_error{"Relay returned unknown status {}"_format(*err)};
+                        }
                     }
                     else
-                        log::warning(logcat, "Failed to decrypt SNS record (name: {})", sns);
+                    {
+                        auto ciphertext = sns.require<std::string_view>("c");
+                        SymmNonce nonce{sns.require_span<std::byte, SymmNonce::SIZE>("n")};
+                        sns.finish();
+
+                        if (auto addr = crypto::maybe_decrypt_name(ciphertext, nonce, name))
+                        {
+                            log::debug(logcat, "Successfully decrypted SNS response {} -> {}", name, *addr);
+
+                            ++sns_results->result_count[*addr];
+                        }
+                        else
+                            log::warning(logcat, "Failed to decrypt SNS record (name: {})", name);
+                    }
+
+                    // See if we have a two-response confirmation with no dissent, and if so return
+                    // early:
+                    if (sns_results->not_found_count >= sns_results->threshold)
+                    {
+                        log::debug(logcat, "SNS result: {} not found ({} confs)", name, sns_results->not_found_count);
+                        func(std::nullopt, true);
+                        sns_results->remaining = 0;
+                        return;
+                    }
+                    for (const auto& [addr, count] : sns_results->result_count)
+                    {
+                        if (count >= sns_results->threshold)
+                        {
+                            log::debug(logcat, "SNS result: {} -> {} ({} confs)", name, addr, count);
+                            func(addr, true);
+                            sns_results->remaining = 0;
+                            return;
+                        }
+                    }
                 }
                 catch (const std::exception& e)
                 {
-                    log::warning(logcat, "Exception during SNS response handling: {}", e.what());
+                    log::warning(logcat, "Exception during SNS response handling for {}: {}", name, e.what());
                 }
             }
 
-            if (client_addr)
+            if (sns_results->remaining == 0)
             {
-                *remaining = 0;
-                func(std::move(client_addr));
-            }
-            else if (rem == 0)
-            {
-                // If this is the last outstanding response, and still didn't succeed, then signal
-                // the lookup failure to the callback:
-                func(std::nullopt);
+                // We are the last response handler, and we didn't exit via the above threshold
+                // confirmation offramps, so we need to pick a winner based on whatever results we
+                // got:
+                if (sns_results->result_count.empty())
+                    // No resolved results; return DNE, authoritatively if we saw at least one not found response:
+                    func(std::nullopt, /*assertive=*/sns_results->not_found_count > 0);
+                else
+                {
+                    std::vector<NetworkAddress> best;
+                    int best_count = 0;
+                    for (auto& [addr, count] : sns_results->result_count)
+                    {
+                        if (count >= best_count)
+                        {
+                            if (count > best_count)
+                            {
+                                best_count = count;
+                                best.clear();
+                            }
+                            best.push_back(addr);
+                        }
+                    }
+                    if (sns_results->not_found_count >= best_count)
+                        // If "does not exist" has at least as many results as the best "found"
+                        // result, return DNE:
+                        func(std::nullopt, true);
+                    else
+                    {
+                        // If we have one single best, send it; if tied, randomize:
+                        size_t i = 0;
+                        if (best.size() > 1)
+                            i = std::uniform_int_distribution<size_t>{0, best.size() - 1}(csrng);
+                        func(best[i], true);
+                    }
+                }
             }
         };
 
         auto name_hash = crypto::shorthash(as_bspan(sns));
 
-        // TODO FIXME: this should not be fired down *every* path.
-        for (auto& path : paths())
+        // We fire this request down at most 5 utility paths so that if you've configured lots of
+        // paths, we don't spam them all for every ONS lookup.
+        for (auto& path : active_paths())
         {
-            ++*remaining;
+            ++sns_results->remaining;
             log::debug(
                 logcat, "Querying pivot:{} for name lookup (target: {})", path.terminal_rid().short_string(), sns);
             path.resolve_sns(name_hash, response_handler);
-        }
 
-        if (*remaining == 0)
+            if (sns_results->remaining >= 5)
+                break;
+        }
+        sns_results->threshold = (sns_results->remaining + 1) / 2;
+
+        if (sns_results->remaining == 0)
         {
-            log::warning(logcat, "Unable to resolve Session Router SNS {}: we have no active paths", sns);
-            func(std::nullopt);
+            log::warning(logcat, "Unable to resolve SNS name {}: we have no active paths", sns);
+            // Since we didn't make any actual requests, construct a fake response so that we can go
+            // through the lambda above for response processing as if we got a single error response
+            sns_results->remaining = 1;
+            path::path_control_response fake_resp{};
+            fake_resp.error = true;
+            response_handler(std::move(fake_resp));
         }
     }
 
@@ -1164,7 +1264,7 @@ namespace srouter::handlers
 
             std::pair<uint16_t, std::shared_ptr<session::Session>> result;
             auto& [local_port, session] = result;
-            session = initiate_remote_session(remote); // throws on immediate error
+            session = initiate_remote_session(remote);  // throws on immediate error
 
             mapped_remote target{.remote = remote, .port = port};
             auto& [udp_handle, cports] = _udp_handles[target];

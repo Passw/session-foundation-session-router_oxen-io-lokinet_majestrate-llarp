@@ -1,5 +1,6 @@
 #pragma once
 
+#include "address/address.hpp"
 #include "contact/router_id.hpp"
 #include "keys.hpp"
 #include "types.hpp"
@@ -13,8 +14,9 @@ namespace srouter
 
 namespace srouter::crypto
 {
-    /// decrypt cipherText given the key generated from name
-    std::optional<RouterID> maybe_decrypt_name(std::string_view ciphertext, SymmNonce nonce, std::string_view name);
+    /// Decrypt cipherText given the key generated from name, for ONS name encryption.
+    std::optional<NetworkAddress> maybe_decrypt_name(
+        std::string_view ciphertext, const SymmNonce& nonce, std::string_view name);
 
     /// xchacha symmetric cipher
     void xchacha20(std::span<std::byte> buf, const SharedSecret&, const SymmNonce&);

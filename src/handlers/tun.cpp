@@ -753,7 +753,7 @@ namespace srouter::handlers
                 _router.session_endpoint().resolve_sns(
                     lookup,
                     [this, lookup, reply, reply_with_mapped_address, msg](
-                        std::optional<NetworkAddress> maybe_netaddr) mutable {
+                        std::optional<NetworkAddress> maybe_netaddr, bool assertive) mutable {
                         bool created_session = false;
                         if (maybe_netaddr)
                         {
@@ -772,10 +772,25 @@ namespace srouter::handlers
                                     e.what());
                             }
                         }
-                        std::optional<ipv6> mapped;
+
                         if (created_session)
-                            mapped = map6(*maybe_netaddr);
-                        reply_with_mapped_address(std::nullopt, std::move(mapped));
+                            reply_with_mapped_address(std::nullopt, map6(*maybe_netaddr));
+                        else if (maybe_netaddr || assertive)
+                        {
+                            // We either failed (immediately) to create the session, or we were
+                            // told the name doesn't exist, so send NX with a long-ish timeout.
+                            msg.add_nx_reply(120);
+                            reply(msg);
+                        }
+                        else
+                        {
+                            // We failed to get a response at all so just NX with a short timeout so
+                            // that they will try again soon to resolve it.  (We don't want to
+                            // SERVFAIL here because that could make the resolver try another DNS
+                            // server).
+                            assert(!assertive);
+                            msg.add_nx_reply(5);
+                        }
                     });
             }
             /*
