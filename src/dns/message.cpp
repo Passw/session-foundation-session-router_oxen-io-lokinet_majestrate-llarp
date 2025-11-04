@@ -49,24 +49,6 @@ namespace srouter::dns
 
     nlohmann::json MessageHeader::ToJSON() const { return nlohmann::json{}; }
 
-    Message::Message(Message&& other)
-        : hdr_id(std::move(other.hdr_id)),
-          hdr_fields(std::move(other.hdr_fields)),
-          questions(std::move(other.questions)),
-          answers(std::move(other.answers)),
-          authorities(std::move(other.authorities)),
-          additional(std::move(other.additional))
-    {}
-
-    Message::Message(const Message& other)
-        : hdr_id(other.hdr_id),
-          hdr_fields(other.hdr_fields),
-          questions(other.questions),
-          answers(other.answers),
-          authorities(other.authorities),
-          additional(other.additional)
-    {}
-
     Message::Message(const MessageHeader& hdr) : hdr_id(hdr._id), hdr_fields(hdr._fields)
     {
         questions.resize(size_t(hdr._qd_count));
@@ -169,7 +151,7 @@ namespace srouter::dns
         {
             hdr_fields = reply_flags(hdr_fields);
             auto& rec = answers.emplace_back();
-            rec.rr_name = questions[0].qname;
+            rec.rr_name = get_rr_name();
             rec.rr_class = qClassIN;
             rec.ttl = ttl;
             rec.rr_type = qTypeA;
@@ -184,7 +166,7 @@ namespace srouter::dns
         {
             hdr_fields = reply_flags(hdr_fields);
             auto& rec = answers.emplace_back();
-            rec.rr_name = questions[0].qname;
+            rec.rr_name = get_rr_name();
             rec.rr_class = qClassIN;
             rec.ttl = ttl;
             rec.rr_type = qTypeAAAA;
@@ -194,7 +176,7 @@ namespace srouter::dns
         }
     }
 
-    void Message::set_IN_reply_rr_name(std::string_view name) { answers.back().rr_name = name; }
+    void Message::set_rr_name(std::optional<std::string> name) { rr_name_override = std::move(name); }
 
     void Message::add_reply(std::string name, RR_TTL_t ttl)
     {
@@ -202,11 +184,9 @@ namespace srouter::dns
         {
             hdr_fields = reply_flags(hdr_fields);
 
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
-            rec.rr_type = question.qtype;
+            auto& rec = answers.emplace_back();
+            rec.rr_name = get_rr_name();
+            rec.rr_type = questions[0].qtype;
             rec.rr_class = qClassIN;
             rec.ttl = ttl;
             std::array<uint8_t, 512> tmp = {{0}};
@@ -232,10 +212,8 @@ namespace srouter::dns
         {
             hdr_fields = reply_flags(hdr_fields);
 
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
+            auto& rec = answers.emplace_back();
+            rec.rr_name = get_rr_name();
             rec.rr_type = qTypeNS;
             rec.rr_class = qClassIN;
             rec.ttl = ttl;
@@ -256,10 +234,8 @@ namespace srouter::dns
         {
             hdr_fields = reply_flags(hdr_fields);
 
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
+            auto& rec = answers.emplace_back();
+            rec.rr_name = get_rr_name();
             rec.rr_type = qTypeCNAME;
             rec.rr_class = qClassIN;
             rec.ttl = ttl;
@@ -280,10 +256,8 @@ namespace srouter::dns
         {
             hdr_fields = reply_flags(hdr_fields);
 
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
+            auto& rec = answers.emplace_back();
+            rec.rr_name = get_rr_name();
             rec.rr_type = qTypeMX;
             rec.rr_class = qClassIN;
             rec.ttl = ttl;
@@ -313,9 +287,8 @@ namespace srouter::dns
                 return;
             }
 
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
+            auto& rec = answers.emplace_back();
+            rec.rr_name = get_rr_name();
             rec.rr_type = qTypeSRV;
             rec.rr_class = qClassIN;
             rec.ttl = ttl;
@@ -356,7 +329,7 @@ namespace srouter::dns
     void Message::add_txt_reply(std::string str, RR_TTL_t ttl)
     {
         auto& rec = answers.emplace_back();
-        rec.rr_name = questions[0].qname;
+        rec.rr_name = get_rr_name();
         rec.rr_class = qClassIN;
         rec.rr_type = qTypeTXT;
         rec.ttl = ttl;

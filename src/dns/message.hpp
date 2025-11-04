@@ -47,32 +47,39 @@ namespace srouter
             explicit Message(const MessageHeader& hdr);
             explicit Message(const Question& question);
 
-            Message(Message&& other);
-            Message(const Message& other);
-
             nlohmann::json ToJSON() const override;
 
-            void add_nx_reply(RR_TTL_t ttl = 1);
+            constexpr static RR_TTL_t DEFAULT_ANSWER_TTL = 10;
+
+            void add_nx_reply(RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
 
             void add_serv_fail(RR_TTL_t ttl = 30);
 
             void add_NODATA_reply();
 
-            void add_mx_reply(std::string name, uint16_t priority, RR_TTL_t ttl = 1);
+            void add_mx_reply(std::string name, uint16_t priority, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
 
-            void add_CNAME_reply(std::string name, RR_TTL_t ttl = 1);
+            void add_CNAME_reply(std::string name, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
 
-            void add_IN_reply(ipv4 addr, RR_TTL_t ttl = 1);
-            void add_IN_reply(ipv6 addr, RR_TTL_t ttl = 1);
-            void set_IN_reply_rr_name(std::string_view name);
+            void add_IN_reply(ipv4 addr, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
+            void add_IN_reply(ipv6 addr, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
 
-            void add_reply(std::string name, RR_TTL_t ttl = 1);
+            // Sets the RR name for future added entries, or resets it to default with nullopt.  The
+            // default (if not called or reset) is to use the question's name value.  Once set, the
+            // value persists for any added answers until this method is called again.
+            void set_rr_name(std::optional<std::string> name);
+            std::string_view get_rr_name() const
+            {
+                return rr_name_override ? *rr_name_override : questions.size() ? questions.front().qname : ""sv;
+            }
 
-            void add_srv_reply(std::vector<SRVData> records, RR_TTL_t ttl = 1);
+            void add_reply(std::string name, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
 
-            void add_ns_reply(std::string name, RR_TTL_t ttl = 1);
+            void add_srv_reply(std::vector<SRVData> records, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
 
-            void add_txt_reply(std::string value, RR_TTL_t ttl = 1);
+            void add_ns_reply(std::string name, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
+
+            void add_txt_reply(std::string value, RR_TTL_t ttl = DEFAULT_ANSWER_TTL);
 
             bool Encode(buffer_t* buf) const override;
 
@@ -89,6 +96,7 @@ namespace srouter
             std::vector<ResourceRecord> answers;
             std::vector<ResourceRecord> authorities;
             std::vector<ResourceRecord> additional;
+            std::optional<std::string> rr_name_override;
         };
 
         std::optional<Message> maybe_parse_dns_msg(std::span<const std::byte> buf);

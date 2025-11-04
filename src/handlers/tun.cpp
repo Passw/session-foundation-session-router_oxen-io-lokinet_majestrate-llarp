@@ -482,9 +482,11 @@ namespace srouter::handlers
             return false;
         }
 
+        auto& q = msg.questions[0];
+
         std::string our_name = _router.id().to_network_address(_router.is_service_node).to_string();
 
-        std::string qname = msg.questions[0].Name();
+        std::string qname = q.Name();
         const auto nameparts = split(qname, ".");
         std::string hostname, tld;
         if (nameparts.size() >= 2)
@@ -626,7 +628,7 @@ namespace srouter::handlers
         }
         */
         /*else*/
-        if (const bool aaaa = msg.questions[0].qtype == dns::qTypeAAAA; aaaa || msg.questions[0].qtype == dns::qTypeA)
+        if (const bool aaaa = q.qtype == dns::qTypeAAAA; aaaa || q.qtype == dns::qTypeA)
         {
             /*
             if (isV6 && !ipv6_enabled)
@@ -683,18 +685,17 @@ namespace srouter::handlers
                 */
 
                 if (tld == "loki")
-                    msg.add_CNAME_reply(qname.substr(0, qname.size() - 4) + "sesh");
+                {
+                    auto dot_sesh = qname.substr(0, qname.size() - 4) + "sesh";
+                    msg.add_CNAME_reply(dot_sesh);
+                    msg.set_rr_name(dot_sesh);
+                }
                 msg.add_CNAME_reply(our_name);
+                msg.set_rr_name(our_name);
                 if (aaaa)
-                {
                     msg.add_IN_reply(_local_ipv6_net.ip);
-                    msg.set_IN_reply_rr_name(our_name);
-                }
                 else
-                {
                     msg.add_IN_reply(_local_net.ip);
-                    msg.set_IN_reply_rr_name(our_name);
-                }
                 reply(msg);
             }
             else if (auto maybe_netaddr = try_making<NetworkAddress>("{}.{}"_format(hostname, tld)))
