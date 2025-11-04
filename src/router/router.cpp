@@ -53,7 +53,7 @@ namespace srouter
           _vpn{std::move(vpnPlatform)},
           _close_promise{std::move(p)},
           _contact_db{std::make_unique<ContactDB>(*this)},
-          _last_tick{srouter::time_now_ms()}
+          _last_tick{}
     {
 #ifndef SROUTER_EMBEDDED_ONLY
         // Not actually shared, but unique_ptr would require destructor visibility which
@@ -614,9 +614,9 @@ namespace srouter
         }
     }
 
-    bool Router::should_report_stats(sys_ms now) const
+    bool Router::should_report_stats(steady_ms now) const
     {
-        return now >= _started_at + 10s
+        return uptime() >= 10s
             and now >= _last_stats_report
                 + (log::get_level(logcat) <= log::Level::debug ? REPORT_STATS_INTERVAL_DEBUG : REPORT_STATS_INTERVAL);
     }
@@ -670,7 +670,7 @@ namespace srouter
 
         log::info(log_global, "Local {}: {}", is_service_node ? "Relay" : "Client", _stats_line(now));
 
-        _last_stats_report = now;
+        _last_stats_report = steady_now_ms();
 
         oxen::log::flush();
     }
@@ -688,24 +688,25 @@ namespace srouter
 #ifndef SROUTER_EMBEDDED_ONLY
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-        if (should_report_stats(now))
+        auto steady_now = steady_now_ms();
+        if (should_report_stats(steady_now))
             report_stats();
 
         bool registered = appears_registered();
 
-        if (now >= _next_dereg_warning)
+        if (steady_now >= _next_dereg_warning)
         {
             if (not registered)
             {
                 // complain about being deregistered/decommed
                 log::error(logcat, "We are running as a relay but are not a registered service node");
-                _next_dereg_warning = now + DECOMM_WARNING_INTERVAL;
+                _next_dereg_warning = steady_now + DECOMM_WARNING_INTERVAL;
             }
             else if (insufficient_peers())
             {
                 log::error(
                     logcat, "We are an active service node, but have too few ({}) known peers!", node_db().num_rcs());
-                _next_dereg_warning = now + DECOMM_WARNING_INTERVAL;
+                _next_dereg_warning = steady_now + DECOMM_WARNING_INTERVAL;
             }
         }
 
@@ -731,7 +732,8 @@ namespace srouter
 
         _router_profiling.tick();
 
-        if (should_report_stats(now))
+        auto steady_now = steady_now_ms();
+        if (should_report_stats(steady_now))
             report_stats();
 
         // if we need more sessions to routers we shall connect out to others
@@ -762,10 +764,11 @@ namespace srouter
             return;
         }
 
-        const auto now = srouter::time_now_ms();
+        const auto now = time_now_ms();
+        const auto steady_now = steady_now_ms();
 
-        if (const auto delta = now - _last_tick; _last_tick != sys_ms::min()
-            and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
+        if (const auto delta = steady_now - _last_tick;
+            _last_tick != steady_ms{} and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
         {
             // TODO: this, if needed?
             // we detected a time skip into the futre, thaw the network
@@ -778,7 +781,7 @@ namespace srouter
             _client_tick(now);
 
         // update tick timestamp
-        _last_tick = srouter::time_now_ms();
+        _last_tick = steady_now_ms();
     }
 
     void Router::start()
@@ -824,8 +827,6 @@ namespace srouter
         log::debug(logcat, "Starting Router main tick interval");
         _loop_ticker = _loop->call_every(ROUTER_TICK_INTERVAL, [this] { tick(); });
 
-        _started_at = srouter::time_now_ms();
-
         start_tickers();
         _is_running = true;
 
@@ -844,8 +845,6 @@ namespace srouter
         // the first tick):
         tick();
     }
-
-    std::chrono::milliseconds Router::Uptime() const { return time_now_ms() - _started_at; }
 
     bool Router::is_connected() const
     {

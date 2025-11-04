@@ -154,9 +154,8 @@ namespace srouter
 
         std::shared_ptr<quic::Ticker> _gossip_ticker;
 
-        sys_ms _started_at = time_now_ms();
-        sys_ms _last_stats_report{sys_ms::min()};
-        sys_ms _next_dereg_warning{time_now_ms() + 15s};
+        steady_ms _last_stats_report{};
+        steady_ms _next_dereg_warning{steady_now_ms() + 15s};
 
         // Application callback(s) to fire as soon as we reach "connected" or "disconnected" status,
         // which means when we have established our target number of edge connections or lost all
@@ -174,7 +173,7 @@ namespace srouter
 
         Profiling _router_profiling;
 
-        bool should_report_stats(sys_ms now) const;
+        bool should_report_stats(steady_ms now) const;
 
         std::string _stats_line(sys_ms now) const;
 
@@ -282,15 +281,13 @@ namespace srouter
         /// return true if we a registered service node (either active or decommissioned).
         bool appears_registered() const;
 
-        std::chrono::milliseconds Uptime() const;
-
-        sys_ms _last_tick;
+        steady_ms _last_tick;
 
         std::function<void(void)> _router_close_cb;
 
         void set_router_close_cb(std::function<void(void)> hook) { _router_close_cb = hook; }
 
-        bool looks_alive() const { return srouter::time_now_ms() - _last_tick <= 30s; }
+        bool looks_alive() const { return steady_now_ms() - _last_tick <= 30s; }
 
         // RoutePoker& route_poker() { return *_route_poker; }
         // const RoutePoker& route_poker() const { return *_route_poker; }

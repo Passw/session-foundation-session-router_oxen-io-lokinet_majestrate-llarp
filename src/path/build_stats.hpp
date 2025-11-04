@@ -17,9 +17,9 @@ namespace srouter::path
         uint64_t path_fails{0};   // path failures post-build
         uint64_t timeouts{0};
 
-        sys_ms last_warn_time{sys_ms::min()};
+        steady_ms last_warn_time{};
 
-        void update(sys_ms now);
+        void update();
 
         std::string to_string() const;
         static constexpr bool to_string_formattable = true;

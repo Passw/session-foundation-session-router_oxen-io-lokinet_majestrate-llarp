@@ -14,12 +14,16 @@ namespace srouter
     using loop_time = std::chrono::microseconds;
 
     using sys_ms = std::chrono::sys_time<std::chrono::milliseconds>;
+    using steady_ms = std::chrono::time_point<std::chrono::steady_clock, std::chrono::milliseconds>;
 
-    /// get time right now as milliseconds, this is monotonic
+    /// get system time, millisecond precision
     sys_ms time_now_ms();
 
+    /// get steady clock (monotonic) time, millisecond precision
+    steady_ms steady_now_ms();
+
     /// get the uptime of the process
-    std::chrono::milliseconds uptime();
+    std::chrono::milliseconds uptime(steady_ms now = steady_now_ms());
 
     /// convert to milliseconds
     uint64_t to_milliseconds(std::chrono::milliseconds duration);

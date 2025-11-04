@@ -78,7 +78,7 @@ namespace srouter::path
         return "{:.1f}%, {:.0f}ms avg, {:.1f}ms s.d."_format(success_pct, mean, sd);
     }
 
-    void Path::do_ping(sys_ms start_time)
+    void Path::do_ping(steady_ms start_time)
     {
         if (!is_active() || start_time < next_ping)
             return;
@@ -93,7 +93,7 @@ namespace srouter::path
                 auto sself = wself.lock();
                 if (!sself)
                     return;
-                sys_ms now = srouter::time_now_ms();
+                auto now = steady_now_ms();
                 auto time_taken = now - start_time;
                 if (resp.ok())
                 {
@@ -149,7 +149,7 @@ namespace srouter::path
                             buffer_printer(resp.body));
 
                     if (expire)
-                        _expiry = start_time;
+                        _expiry = {};
                 }
             });
     }

@@ -9,7 +9,6 @@
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "util/compare_ptr.hpp"
-#include "util/decaying_hashset.hpp"
 #include "util/zstd.hpp"
 
 #include <oxen/quic/btstream.hpp>
@@ -70,8 +69,6 @@ namespace srouter::link
       private:
         friend class Endpoint;
         friend class srouter::NodeDB;
-
-        util::DecayingHashSet<RouterID> clients{path::MAX_LIFETIME_ACCEPTED};
 
         quic::Address addr;
 

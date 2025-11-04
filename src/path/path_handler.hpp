@@ -4,7 +4,6 @@
 #include "contact/client_intro.hpp"
 #include "hopid.hpp"
 #include "path/path.hpp"
-#include "util/decaying_hashset.hpp"
 #include "util/thread/threading.hpp"
 #include "util/time.hpp"
 
@@ -48,8 +47,7 @@ namespace srouter
             int64_t _path_counter = 0;
 
             int _consecutive_failures = 0;
-            sys_ms _last_failure = sys_ms::min();
-            sys_ms _last_build = sys_ms::min();
+            steady_ms _last_failure{};
 
             using Lock_t = util::NullLock;
             mutable util::NullMutex paths_mutex;
@@ -60,7 +58,7 @@ namespace srouter
 
             // Returns true if we are currently in the cooldown period because of path build
             // failures and thus should not currently be trying new path builds.
-            bool cooldown(sys_ms now = srouter::time_now_ms()) const;
+            bool cooldown() const;
 
             void drop_path(const Path& p);
 
@@ -144,7 +142,7 @@ namespace srouter
 
             virtual void tick(sys_ms now);
 
-            void ping_paths(sys_ms now);
+            void ping_paths();
 
             Path* build_path_to_remote(const RouterID& remote, std::chrono::seconds lifetime = path::MAX_LIFETIME);
 

@@ -56,10 +56,11 @@ namespace srouter::path
         return &*std::next(active_paths().begin(), std::uniform_int_distribution<int>{0, n_paths - 1}(srouter::csrng));
     }
 
-    void PathHandler::ping_paths(sys_ms now)
+    void PathHandler::ping_paths()
     {
         Lock_t l{paths_mutex};
 
+        auto now = steady_now_ms();
         for (const auto& [h, p] : _paths)
             if (p)
                 p->do_ping(now);
@@ -129,9 +130,9 @@ namespace srouter::path
         if (!is_stopped())
             update_paths(now);
 
-        router.path_builds.update(now);
+        router.path_builds.update();
 
-        ping_paths(now);
+        ping_paths();
     }
 
     const RelayContact* PathHandler::select_first_hop(std::function<bool(const RelayContact&)> pred) const
@@ -434,8 +435,6 @@ namespace srouter::path
             return false;
         }
 
-        _last_build = srouter::time_now_ms();
-
         return true;
     }
 
@@ -735,7 +734,7 @@ namespace srouter::path
         else
             router.path_builds.build_fails++;
 
-        _last_failure = srouter::time_now_ms();
+        _last_failure = steady_now_ms();
         _consecutive_failures++;
 
         on_path_build_failure(build_id, p, timeout);
@@ -755,8 +754,9 @@ namespace srouter::path
         on_path_build_success(build_id, p);
     }
 
-    bool PathHandler::cooldown(sys_ms now) const
+    bool PathHandler::cooldown() const
     {
+        auto now = steady_now_ms();
         if (_consecutive_failures < BACKOFF_THRESHOLD)
             return false;
 

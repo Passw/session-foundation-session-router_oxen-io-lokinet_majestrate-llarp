@@ -76,7 +76,7 @@ namespace srouter::path
 
         sys_ms LastRemoteActivityAt() const { return last_recv_msg; }
 
-        void do_ping(sys_ms start_time);
+        void do_ping(steady_ms start_time);
 
         size_t num_hops() const { return hops.size(); }
 
@@ -215,7 +215,7 @@ namespace srouter::path
         static size_t next_path_log_id;
         const size_t path_log_id;  // Only used for log output
 
-        sys_ms next_ping{sys_ms::min()};
+        steady_ms next_ping{};
         int ping_responses{0}, ping_timeouts{0};
         int ping_recent_timeouts{0};
         // Cumulative time of all `ping_responses` pings (divide by ping_responses for an average).

@@ -10,8 +10,9 @@ namespace srouter::path
 
     static auto logcat = log::Cat("path");
 
-    void BuildStats::update(sys_ms now)
+    void BuildStats::update()
     {
+        auto now = steady_now_ms();
         if (attempts > 50 && attempts >= (success * 4) && now - last_warn_time > 5s)
         {
             log::warning(logcat, "Low path build success: {}", *this);

@@ -5,7 +5,6 @@
 #include "path_handler.hpp"
 #include "transit_hop.hpp"
 #include "util/compare_ptr.hpp"
-#include "util/decaying_hashset.hpp"
 
 #include <memory>
 #include <unordered_map>

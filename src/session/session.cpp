@@ -837,11 +837,12 @@ namespace srouter::session
         // TODO: kick off path builds immediately
     }
 
-    void OutboundSession::fire_waiting(sys_ms now)
+    void OutboundSession::fire_waiting()
     {
         // If we're established then we can immediately fire everything in the queue, otherwise we
         // fire callbacks that have reached their timer (to signal a non-established timeout).
         const bool est = is_established();
+        const auto now = steady_now_ms();
         while (!_on_established.empty() && (est || _on_established.top().first <= now))
         {
             try
@@ -860,7 +861,7 @@ namespace srouter::session
         std::function<void(OutboundSession&)> callback, std::optional<std::chrono::milliseconds> timeout)
     {
         _on_established.emplace(
-            srouter::time_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
+            steady_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
     }
 
     void Session::tick(sys_ms now)
@@ -880,7 +881,7 @@ namespace srouter::session
 
         close_old_paths(now);
         path::PathHandler::tick(now);
-        fire_waiting(now);
+        fire_waiting();
     }
 
     void OutboundClientSession::tick(sys_ms now)
@@ -1554,7 +1555,7 @@ namespace srouter::session
             pre_establish_data_queue.reset();
         }
 
-        fire_waiting(srouter::time_now_ms());
+        fire_waiting();
     }
 
     InboundClientSession::InboundClientSession(

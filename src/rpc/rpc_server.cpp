@@ -136,9 +136,7 @@ namespace srouter::rpc
         log_print_rpc(version);
 
         nlohmann::json result{
-            {"version", srouter::VERSION},
-            {"version_full", srouter::VERSION_FULL},
-            {"uptime", to_json(_router.Uptime())}};
+            {"version", srouter::VERSION}, {"version_full", srouter::VERSION_FULL}, {"uptime", to_json(uptime())}};
 
         SetJSONResponse(result, version.response);
     }
