@@ -726,7 +726,7 @@ namespace srouter::handlers
                 auto lookup = "{}.loki"_format(hostname);
                 _router.session_endpoint().resolve_sns(
                     lookup,
-                    [this, lookup, reply, msg](
+                    [this, lookup, reply, msg, aaaa](
                         std::optional<NetworkAddress> maybe_netaddr,
                         bool assertive,
                         std::chrono::milliseconds ttl) mutable {
@@ -751,12 +751,19 @@ namespace srouter::handlers
                             }
                         }
 
-                        if (created_session)
-                            msg.add_IN_reply(map6(*maybe_netaddr));
-                        else if (maybe_netaddr || assertive)
-                            // We either failed (immediately) to create the session, or we were
-                            // told the name doesn't exist, so send NX with a long-ish timeout.
-                            msg.add_nx_reply(120);
+                        if (created_session) {
+                            if (aaaa)
+                                msg.add_IN_reply(map6(*maybe_netaddr));
+                            // Otherwise they asked for A but we don't currently map that.
+                        }
+                        else if (maybe_netaddr)
+                            // We failed (immediately) to create the session which means this record
+                            // is pointing to something invalid, so send NX with a long-ish timeout.
+                            msg.add_nx_reply(300);
+                        else if (assertive)
+                            // We got an assertive "does not exist" message (and not just a failure
+                            // or timeout), so add the nx reply
+                            msg.add_nx_reply(std::chrono::ceil<std::chrono::seconds>(ttl).count());
                         else
                         {
                             // We failed to get a response at all so just NX with a short timeout so
@@ -872,6 +879,7 @@ namespace srouter::handlers
         }
 
         msg.add_serv_fail();
+        reply(msg);
         return true;
     }
 

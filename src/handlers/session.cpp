@@ -593,6 +593,10 @@ namespace srouter::handlers
             auto now = std::chrono::steady_clock::now();
             if (expiry > now)
             {
+                if (addr)
+                    log::debug(logcat, "Found SNS entry in cache: {} -> {}", sns, *addr);
+                else
+                    log::debug(logcat, "Found SNS does-not-exist entry in cache for {}", sns);
                 try
                 {
                     func(addr, true, std::chrono::ceil<std::chrono::milliseconds>(expiry - now));
