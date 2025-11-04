@@ -142,6 +142,15 @@ namespace srouter
 
             uint16_t _next_udp_client_port{0};
 
+            // onsname.loki -> {address, expiry}.  The address can be nullopt if we received an
+            // affirmative "not registered" response (but the entry will not be added if we failed
+            // to get or parse the response).
+            std::unordered_map<
+                std::string,
+                std::pair<std::optional<NetworkAddress>, std::chrono::steady_clock::time_point>>
+                sns_cache_;
+            static constexpr auto SNS_CACHE_TIME = 5min;
+
           public:
             SessionEndpoint(Router& r);
 
@@ -251,7 +260,12 @@ namespace srouter
             // If the optional is empty then the bool indicates whether this was an assertive
             // response (true; i.e. name does not exist or is invalid), or a failure getting/parsing
             // a lookup response (false).  (The bool will always be true for a positive response).
-            void resolve_sns(std::string name, std::function<void(std::optional<NetworkAddress>, bool assertive)> func);
+            //
+            // The TTL indicates how long is remaining for the cached value before another lookup
+            // will be needed.
+            void resolve_sns(
+                std::string name,
+                std::function<void(std::optional<NetworkAddress>, bool assertive, std::chrono::milliseconds ttl)> func);
 
             void lookup_remote_srv(
                 std::string name, std::string service, std::function<void(std::vector<dns::SRVData>)> handler);

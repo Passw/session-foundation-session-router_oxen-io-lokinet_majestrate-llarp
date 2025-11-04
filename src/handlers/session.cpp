@@ -21,6 +21,7 @@
 
 #include <oxenc/base32z.h>
 
+#include <chrono>
 #include <memory>
 #include <random>
 
@@ -527,7 +528,7 @@ namespace srouter::handlers
 
             for (const auto& [name, ip_range] : sns_ranges)
             {
-                resolve_sns(name, [this, ip_range](std::optional<NetworkAddress> maybe_addr, bool assertive) {
+                resolve_sns(name, [this, ip_range](std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
                     if (maybe_addr)
                     {
                         log::critical(
@@ -552,7 +553,7 @@ namespace srouter::handlers
 
             for (const auto& [name, auth_token] : sns_auths)
             {
-                resolve_sns(name, [this, auth_token](std::optional<NetworkAddress> maybe_addr, bool assertive) {
+                resolve_sns(name, [this, auth_token](std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
                     if (maybe_addr)
                     {
                         log::debug(
@@ -566,7 +567,8 @@ namespace srouter::handlers
     }
 
     void SessionEndpoint::resolve_sns(
-        std::string sns, std::function<void(std::optional<NetworkAddress>, bool assertive)> func)
+        std::string sns,
+        std::function<void(std::optional<NetworkAddress>, bool assertive, std::chrono::milliseconds ttl)> func)
     {
         Lock_t l{paths_mutex};
         if (not is_valid_sns(sns))
@@ -574,7 +576,7 @@ namespace srouter::handlers
             log::warning(logcat, "Invalid SNS name ({}) queried for lookup", sns);
             try
             {
-                func(std::nullopt, true);
+                func(std::nullopt, true, 0ms);
             }
             catch (const std::exception& e)
             {
@@ -584,6 +586,29 @@ namespace srouter::handlers
         }
 
         log::debug(logcat, "Looking up SNS name {}", sns);
+
+        if (auto it = sns_cache_.find(sns); it != sns_cache_.end())
+        {
+            auto& [addr, expiry] = it->second;
+            auto now = std::chrono::steady_clock::now();
+            if (expiry > now)
+            {
+                try
+                {
+                    func(addr, true, std::chrono::ceil<std::chrono::milliseconds>(expiry - now));
+                }
+                catch (const std::exception& e)
+                {
+                    log::error(logcat, "resolve_sns callback raised an uncaught exception: {}", e.what());
+                }
+                return;
+            }
+
+            // Else it's expired, so erase it.  (We don't worry about cleaning it periodically; a
+            // few stale entries sitting around until the next time we try to look them up won't
+            // hurt anything).
+            sns_cache_.erase(it);
+        }
 
         struct sns_results_t
         {
@@ -603,7 +628,7 @@ namespace srouter::handlers
         auto sns_results = std::make_shared<sns_results_t>();
         sns_results->name = sns;
 
-        auto response_handler = [sns_results, func = std::move(func)](path::path_control_response resp) {
+        auto response_handler = [this, sns_results, func = std::move(func)](path::path_control_response resp) {
             if (--sns_results->remaining < 0)
                 return;  // Already processed and sent the response
 
@@ -649,7 +674,8 @@ namespace srouter::handlers
                     if (sns_results->not_found_count >= sns_results->threshold)
                     {
                         log::debug(logcat, "SNS result: {} not found ({} confs)", name, sns_results->not_found_count);
-                        func(std::nullopt, true);
+                        sns_cache_[name] = {std::nullopt, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
+                        func(std::nullopt, true, SNS_CACHE_TIME);
                         sns_results->remaining = 0;
                         return;
                     }
@@ -658,7 +684,8 @@ namespace srouter::handlers
                         if (count >= sns_results->threshold)
                         {
                             log::debug(logcat, "SNS result: {} -> {} ({} confs)", name, addr, count);
-                            func(addr, true);
+                            sns_cache_[name] = {addr, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
+                            func(addr, true, SNS_CACHE_TIME);
                             sns_results->remaining = 0;
                             return;
                         }
@@ -676,8 +703,13 @@ namespace srouter::handlers
                 // confirmation offramps, so we need to pick a winner based on whatever results we
                 // got:
                 if (sns_results->result_count.empty())
+                {
                     // No resolved results; return DNE, authoritatively if we saw at least one not found response:
-                    func(std::nullopt, /*assertive=*/sns_results->not_found_count > 0);
+                    bool assertive = sns_results->not_found_count > 0;
+                    if (assertive)
+                        sns_cache_[name] = {std::nullopt, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
+                    func(std::nullopt, assertive, assertive ? SNS_CACHE_TIME : 0ms);
+                }
                 else
                 {
                     std::vector<NetworkAddress> best;
@@ -695,16 +727,20 @@ namespace srouter::handlers
                         }
                     }
                     if (sns_results->not_found_count >= best_count)
+                    {
                         // If "does not exist" has at least as many results as the best "found"
                         // result, return DNE:
-                        func(std::nullopt, true);
+                        sns_cache_[name] = {std::nullopt, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
+                        func(std::nullopt, true, SNS_CACHE_TIME);
+                    }
                     else
                     {
                         // If we have one single best, send it; if tied, randomize:
                         size_t i = 0;
                         if (best.size() > 1)
                             i = std::uniform_int_distribution<size_t>{0, best.size() - 1}(csrng);
-                        func(best[i], true);
+                        sns_cache_[name] = {best[i], std::chrono::steady_clock::now() + SNS_CACHE_TIME};
+                        func(best[i], true, SNS_CACHE_TIME);
                     }
                 }
             }

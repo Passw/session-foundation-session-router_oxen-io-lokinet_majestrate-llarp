@@ -726,11 +726,15 @@ namespace srouter::handlers
                 auto lookup = "{}.loki"_format(hostname);
                 _router.session_endpoint().resolve_sns(
                     lookup,
-                    [this, lookup, reply, msg](std::optional<NetworkAddress> maybe_netaddr, bool assertive) mutable {
+                    [this, lookup, reply, msg](
+                        std::optional<NetworkAddress> maybe_netaddr,
+                        bool assertive,
+                        std::chrono::milliseconds ttl) mutable {
                         bool created_session = false;
                         if (maybe_netaddr)
                         {
-                            msg.add_CNAME_reply(maybe_netaddr->to_string(), 120);
+                            msg.add_CNAME_reply(
+                                maybe_netaddr->to_string(), std::chrono::ceil<std::chrono::seconds>(ttl).count());
                             try
                             {
                                 created_session =
