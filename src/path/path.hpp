@@ -70,8 +70,6 @@ namespace srouter::path
         // Constructs a ClientInfo from this path, i.e. for including in a client contact.
         ClientIntro make_intro() const;
 
-        nlohmann::json ExtractStatus() const;
-
         path_hop_stringifier hop_string() const;
 
         std::vector<std::pair<std::string, std::string>> get_hops_strings_and_ips() const;

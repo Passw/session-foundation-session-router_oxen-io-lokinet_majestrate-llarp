@@ -94,8 +94,6 @@ namespace srouter::handlers
         const ipv4_net& get_ipv4_network() const;
         const ipv6_net& get_ipv6_network() const;
 
-        nlohmann::json ExtractStatus() const;
-
         bool should_hook_dns_message(const dns::Message& msg) const;
 
         bool handle_hooked_dns_message(dns::Message query, std::function<void(dns::Message)> sendreply);

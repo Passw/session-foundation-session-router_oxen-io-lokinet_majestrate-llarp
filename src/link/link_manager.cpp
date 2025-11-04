@@ -8,7 +8,6 @@
 #include "messages/dht.hpp"
 #include "messages/fetch.hpp"
 #include "messages/path.hpp"
-#include "messages/session.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"
@@ -133,22 +132,6 @@ namespace srouter::link
 
     Manager::Manager(Router& r) : router{r}, endpoint{*this} {}
 
-    // void Manager::close_connection(RouterID rid) { return ep->close_connection(rid); }
-
-#if 0
-    /*
-     * TODO FIXME - fix reachability logic (see router.cpp)
-     */
-    void Manager::test_reachability(
-        const RouterID& rid, connection_established_callback on_open, connection_closed_callback on_close)
-    {
-        if (auto rc = router.node_db().get_rc(rid))
-            connect_to(*rc, std::move(on_open), std::move(on_close));
-        else
-            log::warning(logcat, "Could not find RelayContact for connection to rid:{}", rid);
-    }
-#endif
-
     void Manager::stop()
     {
         if (is_stopping.exchange(true))
@@ -158,9 +141,6 @@ namespace srouter::link
     }
 
     Manager::~Manager() { stop(); }
-
-    // TODO: this
-    nlohmann::json Manager::extract_status() const { return {}; }
 
     void Manager::connect_to_keep_alive(int num_conns)
     {
@@ -582,8 +562,7 @@ namespace srouter::link
             // various reasons.
         }
 
-        // If the optional was nullopt, then this was a relay <-> relay request. As a result, we should NOT
-        // allow it to continue propagating
+        // If this was a relay <-> relay request, we should NOT allow it to continue propagating
         if (source_is_relay)
         {
             log::critical(

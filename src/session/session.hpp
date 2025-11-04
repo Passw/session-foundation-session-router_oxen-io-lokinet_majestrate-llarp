@@ -373,8 +373,6 @@ namespace srouter
 
             void recv_close() override;
 
-            nlohmann::json ExtractStatus() const;
-
             const RouterID& remote_endpoint() const { return _remote.router_id(); }
         };
 

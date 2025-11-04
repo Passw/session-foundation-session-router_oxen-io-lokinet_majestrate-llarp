@@ -25,45 +25,17 @@ namespace srouter
     inline constexpr auto FETCH_INTERVAL{5min};
     inline constexpr auto PURGE_INTERVAL{5min};
 
-    /*  RC Fetch Constants  */
     // fallback to bootstrap if we have less than this many RCs
     inline constexpr int MIN_ACTIVE_RCS{6};
-    // max number of attempts we make in non-bootstrap fetch requests
-    inline constexpr int MAX_FETCH_ATTEMPTS{10};
 
-    // when pro-actively fetching RCs, ask for this many for which we have RouterID but no RC
-    inline constexpr int RC_FETCH_COUNT{5};
-
-    // the total number of accepted returned rids should be above this number
-    inline constexpr size_t MIN_GOOD_RID_FETCH_TOTAL{};
-    // the ratio of accepted:rejected rids must be above this ratio
-    inline constexpr double GOOD_RID_FETCH_THRESHOLD{};
-
-    /*  RID Fetch Constants  */
     // the number of rid sources that we make rid fetch requests to
     inline constexpr size_t RID_SOURCE_COUNT{5};
-    // upper limit on how many rid fetch requests to rid sources can fail
-    inline constexpr int MAX_RID_ERRORS{1};
-    // each returned rid must appear this number of times across all responses
-    inline constexpr int MIN_RID_FETCH_FREQ{6};  //  TESTNET:
-
-    /*  Bootstrap Constants  */
-    // the number of rc's we query the bootstrap for; service nodes pass 0, which means
-    // gimme all dat RCs
-    inline constexpr size_t SERVICE_NODE_BOOTSTRAP_SOURCE_COUNT{0};
-    inline constexpr size_t CLIENT_BOOTSTRAP_SOURCE_COUNT{10};
 
     // After a bootstrap (success or failure) that results in not enough RCs, this is how long we
     // wait before bootstrapping again.  In the case of repeated failures, we apply an linear
     // backoff in incrments of this value up to BOOTSTRAP_COOLDOWN_MAX.
     inline constexpr auto BOOTSTRAP_COOLDOWN = 3s;
     inline constexpr auto BOOTSTRAP_COOLDOWN_MAX = 60s;
-
-    /*  Other Constants  */
-    // threshold net number of verifications needed to promote an RID to known (positive) or drop
-    // (negative) an unconfirmed rid.  Each observation or omission contributes +1 or -1 vote until
-    // we have ± this threshold.
-    inline constexpr int CONFIRMATION_THRESHOLD{3};
 
     // Maximum number of 0rtt tickets we will store, per relay.  The server generally sends new ones
     // shortly after reconnecting so there is no much benefit in storing lots of these.

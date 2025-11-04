@@ -19,8 +19,6 @@ namespace srouter::path
 
         sys_ms last_warn_time{sys_ms::min()};
 
-        nlohmann::json ExtractStatus() const;
-
         void update(sys_ms now);
 
         std::string to_string() const;

@@ -9,7 +9,6 @@
 #include "messages/dht.hpp"
 #include "messages/fetch.hpp"
 #include "messages/path.hpp"
-#include "messages/session.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"

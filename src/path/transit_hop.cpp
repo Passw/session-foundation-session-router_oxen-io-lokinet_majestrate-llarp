@@ -33,15 +33,6 @@ namespace srouter::path
         return {downstream, rxid};
     }
 
-    nlohmann::json TransitHop::ExtractStatus() const
-    {
-        return {
-            {"rid", router_id.ToHex()},
-            {"rxid", rxid.ToHex()},
-            {"txid", txid.ToHex()},
-            {"expiry", to_json(expiry.time_since_epoch())}};
-    }
-
     static std::string short_string(const std::variant<RouterID, quic::ConnectionID>& downstream)
     {
         if (auto* rid = std::get_if<RouterID>(&downstream))

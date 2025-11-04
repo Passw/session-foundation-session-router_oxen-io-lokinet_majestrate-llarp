@@ -10,12 +10,6 @@ namespace srouter::path
 
     static auto logcat = log::Cat("path");
 
-    nlohmann::json BuildStats::ExtractStatus() const
-    {
-        return nlohmann::json{
-            {"success", success}, {"attempts", attempts}, {"timeouts", timeouts}, {"fails", build_fails}};
-    }
-
     void BuildStats::update(sys_ms now)
     {
         if (attempts > 50 && attempts >= (success * 4) && now - last_warn_time > 5s)

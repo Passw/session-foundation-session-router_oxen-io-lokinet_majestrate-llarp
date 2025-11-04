@@ -1433,16 +1433,6 @@ namespace srouter::session
         select_new_current_impl(std::move(good), std::move(fallback));
     }
 
-    nlohmann::json OutboundClientSession::ExtractStatus() const
-    {
-        auto obj = path::PathHandler::ExtractStatus();
-        // obj["lastExitUse"] = to_json(_last_use);
-        //  auto pub = _auth->session_key().to_pubkey();
-        //  obj["exitIdentity"] = pub.to_string();
-        obj["endpoint"] = _remote.to_string();
-        return obj;
-    }
-
     std::optional<std::pair<RouterID, std::pair<std::chrono::seconds, HopID>>> OutboundClientSession::select_pivot()
     {
         // We've been asked to select a new pivot to build a path to.  We select using various
@@ -1618,7 +1608,7 @@ namespace srouter::session
     }
 
     void InboundRelaySession::send_path_control_message(
-        std::vector<std::byte>&& data, SymmNonce&& nonce, bool path_switch)
+        std::vector<std::byte>&& data, SymmNonce&& nonce, bool /*path_switch*/)
     {
         update_active();
         if (check_dead(_current_thop, *this))

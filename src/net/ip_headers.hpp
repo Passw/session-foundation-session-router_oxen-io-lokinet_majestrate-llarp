@@ -70,9 +70,6 @@ namespace srouter
 
     static_assert(sizeof(ipv6_header) == 40);
 
-    /** TODO: for mobile ipv6, implement ipv6 routing headers
-     */
-
     enum class TCPFLAG : uint8_t
     {
         FIN = 0x01,

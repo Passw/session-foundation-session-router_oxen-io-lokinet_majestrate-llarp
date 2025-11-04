@@ -165,10 +165,4 @@ namespace srouter::dns
 
         return std::nullopt;
     }
-
-    nlohmann::json SRVData::ExtractStatus() const
-    {
-        return nlohmann::json{
-            {"proto", service_proto}, {"priority", priority}, {"weight", weight}, {"port", port}, {"target", target}};
-    }
 }  // namespace srouter::dns

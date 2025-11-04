@@ -315,24 +315,6 @@ namespace srouter::path
         return ret;
     }
 
-    nlohmann::json Path::ExtractStatus() const
-    {
-        auto now = srouter::time_now_ms();
-
-        nlohmann::json obj{
-            {"lastRecvMsg", to_json(last_recv_msg.time_since_epoch())},
-            {"expired", is_expired(now)},
-            {"ready", is_active()},
-        };
-
-        auto json_hops = nlohmann::json::array();
-        for (const auto& hop : hops)
-            json_hops.push_back(hop.ExtractStatus());
-        obj["hops"] = std::move(json_hops);
-
-        return obj;
-    }
-
     void Path::set_established()
     {
         if (_is_established)

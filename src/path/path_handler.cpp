@@ -134,16 +134,6 @@ namespace srouter::path
         ping_paths(now);
     }
 
-    nlohmann::json PathHandler::ExtractStatus() const
-    {
-        auto paths = nlohmann::json::array();
-        for (auto& [h, path] : _paths)
-            if (path)
-                paths.push_back(path->ExtractStatus());
-
-        return nlohmann::json{{"numHops", _num_hops}, {"targetPaths", _target_paths}, {"paths", std::move(paths)}};
-    }
-
     const RelayContact* PathHandler::select_first_hop(std::function<bool(const RelayContact&)> pred) const
     {
 #ifdef SROUTER_DEBUG_PATH_SEED
@@ -457,9 +447,7 @@ namespace srouter::path
 
         if (auto [it, b] = _paths.try_emplace(path->edge().rxid, path); not b)
         {
-            // TODO FIXME: doesn't this mean we somehow selected an invalid rxid for the path
-            // build, not that there is a path to the same remote?
-            log::debug(logcat, "Pending build to {} already underway... aborting...", path->edge().rxid);
+            log::debug(logcat, "Pending path build aborted, ludicrously unlikely hop id collision.");
             return nullptr;
         }
 
@@ -674,12 +662,10 @@ namespace srouter::path
         return ret;
     }
 
-    // TODO FIXME: investigate return type?
     Path* PathHandler::build(std::span<const RelayContact> hops, sys_ms expiry_ts)
     {
         Lock_t lock{paths_mutex};
 
-        // error message logs in function scope
         if (can_build(hops))
         {
             if (auto new_path = build_init_path(hops, expiry_ts))
@@ -687,7 +673,6 @@ namespace srouter::path
                 auto ptr = new_path.get();
                 auto id = ++_path_counter;
                 send_path_build(std::move(new_path), id);
-                // send_path_build calls the appropriate success/failure method
                 return ptr;
             }
         }

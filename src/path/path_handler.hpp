@@ -99,8 +99,6 @@ namespace srouter
             Path* get_path_by_edge(const HopID& edge_hop_id);
             Path* get_path_by_terminus(const HopID& terminal_hop_id);
 
-            nlohmann::json ExtractStatus() const;
-
             void expire_paths(sys_ms now);
 
             // In case we know none of our paths are still valid, e.g. we received a close on a

@@ -279,10 +279,6 @@ namespace srouter
             return *_public_address;
         }
 
-        nlohmann::json ExtractStatus() const;
-
-        nlohmann::json ExtractSummaryStatus() const;
-
         /// return true if we a registered service node (either active or decommissioned).
         bool appears_registered() const;
 

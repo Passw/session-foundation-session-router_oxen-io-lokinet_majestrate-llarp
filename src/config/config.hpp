@@ -228,17 +228,10 @@ namespace srouter
 
         std::vector<std::filesystem::path> hostfiles;
 
-        /* TESTNET: Under modification */
         std::vector<quic::Address> _upstream_dns;
         quic::Address _default_dns{"9.9.9.10", DEFAULT_DNS_PORT};
         std::optional<quic::Address> _query_bind;
         std::vector<quic::Address> _bind_addrs;
-
-        // Deprecated
-        // std::vector<SockAddr_deprecated> upstream_dns;
-        // std::optional<SockAddr_deprecated> query_bind;
-        // std::vector<SockAddr_deprecated> bind_addr;
-        /*************************************/
 
         std::unordered_multimap<std::string, std::string> extra_opts;
 

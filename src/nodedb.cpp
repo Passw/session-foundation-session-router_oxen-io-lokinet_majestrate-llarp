@@ -411,8 +411,6 @@ namespace srouter
         if (_router.is_stopping() || not _router.is_running())
         {
             log::debug(logcat, "NodeDB skipping RouterID fetch -- router is stopped!");
-            // FIXME: this *was* calling post_rid_fetch, but that seems wrong (and can segfault),
-            //        might need to see *why* it was doing so, if for any logical reason
             return;
         }
 
