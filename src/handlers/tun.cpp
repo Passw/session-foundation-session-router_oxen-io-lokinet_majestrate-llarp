@@ -628,33 +628,6 @@ namespace srouter::handlers
         /*else*/
         if (const bool aaaa = msg.questions[0].qtype == dns::qTypeAAAA; aaaa || msg.questions[0].qtype == dns::qTypeA)
         {
-            auto reply_with_mapped_address =
-                [reply, msg, aaaa](const std::optional<ipv4>& v4a, const std::optional<ipv6>& v6a) mutable {
-                    if (aaaa)
-                    {
-                        if (v6a)
-                            msg.add_IN_reply(*v6a);
-                        else if (v4a)
-                            // Send a reply with no data: this indicates the domain exists, but
-                            // doesn't have the requested record type, unlike an NX which would
-                            // indicate the domain doesn't exist at all.
-                            msg.add_NODATA_reply();
-                        else
-                            msg.add_nx_reply();
-                    }
-                    else
-                    {  // 'A' request
-                        if (v4a)
-                            msg.add_IN_reply(*v4a);
-                        else if (v6a)
-                            msg.add_NODATA_reply();  // as above
-                        else
-                            msg.add_nx_reply();
-                    }
-
-                    reply(msg);
-                };
-
             /*
             if (isV6 && !ipv6_enabled)
             {  // empty reply but not a NXDOMAIN so that client can retry IPv4
@@ -738,11 +711,11 @@ namespace srouter::handlers
                 {
                     log::warning(logcat, "Failed to initiate remote session to {}: {}", *maybe_netaddr, e.what());
                 }
-                std::optional<ipv6> mapped;
                 if (created_session)
-                    mapped = map6(*maybe_netaddr);
-
-                reply_with_mapped_address(std::nullopt, std::move(mapped));
+                    msg.add_IN_reply(map6(*maybe_netaddr));
+                else
+                    msg.add_nx_reply();
+                reply(msg);
 
                 return true;
             }
@@ -752,11 +725,11 @@ namespace srouter::handlers
                 auto lookup = "{}.loki"_format(hostname);
                 _router.session_endpoint().resolve_sns(
                     lookup,
-                    [this, lookup, reply, reply_with_mapped_address, msg](
-                        std::optional<NetworkAddress> maybe_netaddr, bool assertive) mutable {
+                    [this, lookup, reply, msg](std::optional<NetworkAddress> maybe_netaddr, bool assertive) mutable {
                         bool created_session = false;
                         if (maybe_netaddr)
                         {
+                            msg.add_CNAME_reply(maybe_netaddr->to_string(), 120);
                             try
                             {
                                 created_session =
@@ -774,14 +747,11 @@ namespace srouter::handlers
                         }
 
                         if (created_session)
-                            reply_with_mapped_address(std::nullopt, map6(*maybe_netaddr));
+                            msg.add_IN_reply(map6(*maybe_netaddr));
                         else if (maybe_netaddr || assertive)
-                        {
                             // We either failed (immediately) to create the session, or we were
                             // told the name doesn't exist, so send NX with a long-ish timeout.
                             msg.add_nx_reply(120);
-                            reply(msg);
-                        }
                         else
                         {
                             // We failed to get a response at all so just NX with a short timeout so
@@ -791,6 +761,7 @@ namespace srouter::handlers
                             assert(!assertive);
                             msg.add_nx_reply(5);
                         }
+                        reply(msg);
                     });
             }
             /*
