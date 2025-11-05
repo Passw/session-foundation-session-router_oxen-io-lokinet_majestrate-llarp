@@ -115,7 +115,6 @@ namespace srouter::handlers
         void rewrite_and_send_packet(IPPacket&& pkt, const ipv4& src, const ipv4& dest);
         void rewrite_and_send_packet(IPPacket&& pkt, const ipv6& src, const ipv6& dest);
 
-        // TESTNET: TODO: new inbound packet handling logic
         void handle_inbound_packet(IPPacket pkt, uint8_t type, NetworkAddress remote) override;
 
         // Handles an inbound packet coming IN from the network

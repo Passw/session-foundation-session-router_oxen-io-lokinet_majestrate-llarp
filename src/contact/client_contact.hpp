@@ -20,7 +20,6 @@ namespace srouter
 {
     struct EncryptedClientContact;
 
-    // TESTNET:
     inline static constexpr auto CC_PUBLISH_INTERVAL{5min};
 
     /** ClientContact

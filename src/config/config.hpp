@@ -212,7 +212,7 @@ namespace srouter
         std::unordered_map<std::string, std::string> sns_exit_auths;
         std::optional<net::ExitPolicy> traffic_policy;
 
-        // TESTNET: move into ExitConfig!
+        // FIXME: move into ExitConfig!
         bool enable_route_poker{false};
         bool blackhole_routes{false};
 
