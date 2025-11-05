@@ -61,8 +61,6 @@ namespace srouter
         // for oxend, so we don't close the connection when syncing the registered relay (which can
         // exceed the defaut 1MB limit).
         _omq->MAX_MSG_SIZE = -1;
-        if (_config.router.worker_threads > 0)
-            _omq->set_general_threads(_config.router.worker_threads);
 
         _router_testing = std::make_shared<consensus::reachability_testing>(*this);
 #endif
@@ -451,7 +449,7 @@ namespace srouter
             sys::service_manager->starting();
 #endif
 
-        if (_is_exit_node and is_service_node)
+        if (_config.exit.exit_enabled and is_service_node)
             throw std::runtime_error{
                 "Session Router cannot simultaneously operate as a service node and client-operated exit node "
                 "service!"};
@@ -565,7 +563,7 @@ namespace srouter
             log::debug(logcat, "Not initializing TUN device; running as an embedded client");
     }
 
-    bool Router::is_exit_node() const { return _is_exit_node; }
+    bool Router::is_exit_node() const { return _config.exit.exit_enabled; }
 
     bool Router::insufficient_peers() const
     {

@@ -111,9 +111,6 @@ namespace srouter
 
         bool _is_connected{false};
 
-        // FIXME: we probably don't need two separate config options for this!
-        bool _is_exit_node{_config.network.allow_exit || _config.exit.exit_enabled};
-
         // Not actually shared, but not available at all in non-full builds.
         std::shared_ptr<consensus::reachability_testing> _router_testing;
 

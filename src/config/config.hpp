@@ -61,7 +61,6 @@ namespace srouter
 
         bool block_bogons = false;
 
-        int worker_threads = -1;
         int net_threads = -1;
 
         size_t job_que_size = 0;
@@ -208,8 +207,6 @@ namespace srouter
         std::unordered_map<NetworkAddress, ipv4> _reserved_local_ipv4;
         std::unordered_map<NetworkAddress, ipv6> _reserved_local_ipv6;
 
-        // TESTNET: moved into ExitConfig!
-        bool allow_exit{false};
         // Used by RemoteHandler to provide auth tokens for remote exits
         std::unordered_map<NetworkAddress, std::string> exit_auths;
         std::unordered_map<std::string, std::string> sns_exit_auths;

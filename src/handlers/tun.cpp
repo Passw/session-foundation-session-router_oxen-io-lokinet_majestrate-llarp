@@ -1166,9 +1166,7 @@ namespace srouter::handlers
         send_packet_to_net_if(std::move(pkt));
     }
 
-    // FIXME: replace session_tag with packet type flag (uint8_t), because session_tag is definitely
-    // not the right thing.
-    // FIXME 2: we need separate flags for to-exit and from-exit
+    // FIXME: we need separate flags for to-exit and from-exit
     void TunEndpoint::handle_inbound_packet(IPPacket pkt, uint8_t type, NetworkAddress remote)
     {
         (void)type;              // TODO FIXME use this

@@ -1183,6 +1183,8 @@ namespace srouter::handlers
                     /*gso=*/false,
                     [this, target](quic::Packet&& pkt) {
                         // FIXME: cache most recently used mapping/session/etc.?
+                        //        i.e. if this packet is for the same remote as the last packet
+                        //        we can skip the map lookup.
 
                         auto session = initiate_remote_session(target.remote);
                         if (!session)

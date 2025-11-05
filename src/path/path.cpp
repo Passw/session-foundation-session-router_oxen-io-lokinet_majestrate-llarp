@@ -4,7 +4,6 @@
 #include "link/endpoint.hpp"
 #include "messages/common.hpp"
 #include "nodedb.hpp"
-#include <oxenc/bt_producer.h>
 #include "path_handler.hpp"
 #include "profiling.hpp"
 #include "router/router.hpp"
@@ -12,6 +11,7 @@
 #include "util/logging/buffer.hpp"
 
 #include <nlohmann/json.hpp>
+#include <oxenc/bt_producer.h>
 
 #include <chrono>
 #include <ranges>

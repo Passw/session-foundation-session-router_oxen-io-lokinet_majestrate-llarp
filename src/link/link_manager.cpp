@@ -897,7 +897,6 @@ namespace srouter::link
         handle_session_message(std::move(payload), true);
     }
 
-    // FIXME: overhead for session MAC?
     static constexpr size_t MIN_PATH_DATA_MESSAGE_SIZE = 0 /*payload*/ + 1 /*packet type*/ + sizeof(HopID) /*pivot*/
         + path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD /*nonce, hop, type*/;
 

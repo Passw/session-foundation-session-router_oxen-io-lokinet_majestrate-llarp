@@ -221,9 +221,6 @@ namespace srouter
 
             // FIXME: should SessionEndpoint have these mappings at all?
             std::optional<ipv6> map_session(const session::Session& s);
-            void map_remote_to_local_addr(NetworkAddress remote, quic::Address local);
-            void unmap_local_addr_by_remote(const NetworkAddress& remote);
-            void unmap_remote_by_name(const std::string& name);
 
             void handle_session_init(std::vector<std::byte>&& payload, std::shared_ptr<path::Path> path);
             void handle_session_init(std::vector<std::byte>&& payload, std::shared_ptr<path::TransitHop> thop);
