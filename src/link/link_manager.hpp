@@ -5,7 +5,6 @@
 #include "constants/path.hpp"
 #include "crypto/crypto.hpp"
 #include "endpoint.hpp"
-#include "messages/common.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "util/compare_ptr.hpp"

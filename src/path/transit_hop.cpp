@@ -2,8 +2,6 @@
 
 #include "crypto/crypto.hpp"
 #include "link/endpoint.hpp"
-#include "messages/common.hpp"
-#include "messages/path.hpp"
 #include "router/router.hpp"
 #include "util/bspan.hpp"
 #include "util/buffer.hpp"

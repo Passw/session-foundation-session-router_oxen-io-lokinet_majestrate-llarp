@@ -4,8 +4,6 @@
 #include "handlers/session.hpp"
 #include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/path.hpp"
 #include "net/policy.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
@@ -347,9 +345,11 @@ namespace srouter::session
             log::warning(logcat, "Dropping session control message: session has no current path");
             return false;
         }
-        auto inner_body = PATH::CONTROL::serialize(method, body);
 
-        send_session_data_message(std::move(inner_body), 0, true);
+        oxenc::bt_dict_producer btdp;
+        btdp.append("e", method);
+        btdp.append("p", body);
+        send_session_data_message(std::move(btdp).span<std::byte>(), 0, true);
 
         return true;
     }
@@ -1364,8 +1364,11 @@ namespace srouter::session
             auto switch_nonce = dh_nonce ^ switch_xor_factor;
             oxenc::bt_dict_producer btdp;
             btdp.append("p"sv, path.terminal_hopid().span());
-            auto maybe_path_switch_msg = make_session_data_message(
-                PATH::CONTROL::serialize("path_switch"sv, btdp.span<std::byte>()), 0, true, false, switch_nonce);
+            oxenc::bt_dict_producer btdp_path_switch;
+            btdp_path_switch.append("e", "path_switch"sv);
+            btdp_path_switch.append("p", btdp.span<std::byte>());
+            auto maybe_path_switch_msg =
+                make_session_data_message(btdp_path_switch.span<std::byte>(), 0, true, false, switch_nonce);
             if (!maybe_path_switch_msg)
             {
                 log::warning(logcat, "Failed to create path switch message");

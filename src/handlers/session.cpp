@@ -6,15 +6,14 @@
 #include "crypto/crypto.hpp"
 #include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
+#include "messages/common.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "session/session.hpp"
 #include "util/bspan.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 
@@ -587,6 +586,7 @@ namespace srouter::handlers
             {
                 try
                 {
+                    /* FIXME conflict resolution
                     log::debug(logcat, "Call to ResolveSNS succeeded!");
 
                     auto enc = ResolveSNS::deserialize_response(oxenc::bt_dict_consumer{resp.body});
@@ -599,6 +599,7 @@ namespace srouter::handlers
                     }
                     else
                         log::warning(logcat, "Failed to decrypt SNS record (name: {})", sns);
+                    */
                 }
                 catch (const std::exception& e)
                 {
@@ -663,7 +664,11 @@ namespace srouter::handlers
                 if (resp.ok())
                 {
                     log::info(logcat, "Call to FetchRC succeeded!");
-                    auto rcs = FetchRC::deserialize_response(router.netid(), oxenc::bt_dict_consumer{resp.body});
+
+                    std::vector<RelayContact> rcs;
+                    oxenc::bt_dict_consumer btdc{resp.body};
+                    for (auto sublist = btdc.require<oxenc::bt_list_consumer>("r"); not sublist.is_finished();)
+                        rcs.emplace_back(sublist.consume_dict_data(), router.netid());
 
                     if (rcs.empty())
                         log::warning(logcat, "Received empty response from `fetch_rc` request!");
@@ -781,6 +786,7 @@ namespace srouter::handlers
                     }
                     if (!failed)
                     {
+                        /* FIXME conflict resolution
                         log::info(logcat, "Call to FindClientContact succeeded!");
                         auto enc = FindClientContact::deserialize_response(std::move(cc_dict));
                         if (auto intro = enc.decrypt(remote))
@@ -790,6 +796,7 @@ namespace srouter::handlers
                         }
                         else
                             log::warning(logcat, "Failed to decrypt returned EncryptedClientContact!");
+                        */
                     }
                 }
                 else

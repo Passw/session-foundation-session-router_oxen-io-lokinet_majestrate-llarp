@@ -32,9 +32,6 @@ session_router_add_library(session-router-core-utils
   handlers/session.cpp
 
   messages/common.cpp
-  messages/dht.cpp
-  messages/fetch.cpp
-  messages/path.cpp
 )
 
 if (SROUTER_FULL)

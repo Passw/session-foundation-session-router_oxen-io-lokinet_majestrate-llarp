@@ -8,7 +8,6 @@
 #include "contact/contactdb.hpp"
 #include "crypto/crypto.hpp"
 #include "link/link_manager.hpp"
-#include "messages/dht.hpp"
 #include "nodedb.hpp"
 #include "util/formattable.hpp"
 #include "util/logging.hpp"

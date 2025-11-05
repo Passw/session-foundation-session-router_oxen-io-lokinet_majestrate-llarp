@@ -2,8 +2,8 @@
 
 #include "crypto/types.hpp"
 #include "link/link_manager.hpp"
-#include "messages/fetch.hpp"
 #include "util/file.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 #include "util/zstd.hpp"

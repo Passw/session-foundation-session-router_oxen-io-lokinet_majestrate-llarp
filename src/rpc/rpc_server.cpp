@@ -6,7 +6,6 @@
 #include "contact/client_contact.hpp"
 #include "dns/dns.hpp"
 #include "dns/server.hpp"
-#include "messages/common.hpp"
 #include "router/router.hpp"
 #include "rpc/rpc_request_definitions.hpp"
 #include "rpc_request.hpp"
@@ -434,7 +433,7 @@ namespace srouter::rpc
                         {
                             oxenc::bt_dict_consumer btdc{m.body()};
 
-                            if (auto s = btdc.maybe<std::string>(messages::STATUS_KEY))
+                            if (auto s = btdc.maybe<std::string>("!"sv))
                                 status = std::move(*s);
                         }
                         catch (const std::exception& e)

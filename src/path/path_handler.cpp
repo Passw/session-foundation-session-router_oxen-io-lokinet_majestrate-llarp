@@ -3,7 +3,7 @@
 #include "constants/path.hpp"
 #include "crypto/crypto.hpp"
 #include "link/link_manager.hpp"
-#include "messages/path.hpp"
+#include "messages/common.hpp"
 #include "nodedb.hpp"
 #include "path.hpp"
 #include "path_context.hpp"
@@ -11,6 +11,7 @@
 #include "router/router.hpp"
 #include "util/bspan.hpp"
 #include "util/logging.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 

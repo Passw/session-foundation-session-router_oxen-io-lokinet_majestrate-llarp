@@ -23,17 +23,3 @@ namespace srouter::messages
     extern const std::string OK_RESPONSE;
     extern const std::string NOT_FOUND_RESPONSE;
 }  // namespace srouter::messages
-
-namespace srouter
-{
-
-    // Copies the contents out of a bt_dict_producer into a std::vector<std::byte>.
-    // TODO FIXME - avoid the need to use this, by making bt_dict_producer able to write into and
-    // extract a vector directly.
-    inline std::vector<std::byte> to_bytes(const oxenc::bt_dict_producer& btdp)
-    {
-        auto content = btdp.span<std::byte>();
-        return {content.begin(), content.end()};
-    }
-
-}  // namespace srouter

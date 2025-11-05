@@ -2,15 +2,14 @@
 
 #include "crypto/crypto.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
+#include "messages/common.hpp"
 #include "nodedb.hpp"
+#include <oxenc/bt_producer.h>
 #include "path_handler.hpp"
 #include "profiling.hpp"
 #include "router/router.hpp"
 #include "util/bspan.hpp"
-#include "util/buffer.hpp"
+#include "util/logging/buffer.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -162,7 +161,10 @@ namespace srouter::path
 
     void Path::fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("fetch_rcs", FetchRC::serialize({&needed, 1}), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        auto btlp = btdp.append_list("x"sv);
+        btlp.append(needed.span());
+        send_path_control_message("fetch_rcs", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::fetch_relay_contacts(std::span<const std::byte> body, std::function<void(path_control_response)> func)
@@ -172,19 +174,26 @@ namespace srouter::path
 
     void Path::find_client_contact(const PubKey& blinded_pk, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("find_cc", FindClientContact::serialize(blinded_pk), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        btdp.append("k"sv, blinded_pk.span());
+        send_path_control_message("find_cc", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::publish_client_contact(
         const EncryptedClientContact& ecc, int location, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("publish_cc", PublishClientContact::serialize(ecc, location), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        btdp.append("e"sv, ecc.bt_payload());
+        btdp.append("n"sv, location);
+        send_path_control_message("publish_cc", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::resolve_sns(
         std::span<const std::byte, SHORTHASHSIZE> name_hash, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("resolve_sns", ResolveSNS::serialize(name_hash), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        btdp.append("s"sv, name_hash);
+        send_path_control_message("resolve_sns", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::encrypt_path_message(std::vector<std::byte>& data, SymmNonce&& nonce, std::byte type, bool with_mac)
@@ -279,7 +288,10 @@ namespace srouter::path
             func(std::move(resp));
         };
 
-        auto inner_payload = PATH::CONTROL::serialize(method, body);
+        oxenc::bt_dict_producer btdp;
+        btdp.append("e"sv, method);
+        btdp.append("p"sv, body);
+        auto inner_payload = btdp.view();
         std::vector<std::byte> payload;
         payload.reserve(inner_payload.size() + ENCRYPT_PATH_MESSAGE_OVERHEAD_MAC);
         payload.resize(inner_payload.size());

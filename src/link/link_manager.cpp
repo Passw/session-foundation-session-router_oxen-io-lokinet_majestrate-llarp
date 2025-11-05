@@ -5,15 +5,13 @@
 #include "contact/router_id.hpp"
 #include "crypto/crypto.hpp"
 #include "messages/common.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "session/session.hpp"
 #include "util/bspan.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 #include "util/zstd.hpp"
@@ -355,6 +353,7 @@ namespace srouter::link
 
         std::string name_hash;
 
+        /* FIXME conflict resolution
         try
         {
             name_hash = ResolveSNS::deserialize(oxenc::bt_dict_consumer{body});
@@ -364,23 +363,26 @@ namespace srouter::link
             log::warning(logcat, "Exception: {}", e.what());
             return respond(messages::ERROR_RESPONSE);
         }
+        */
 
         assert(router.oxend());
         router.oxend()->lookup_sns_hash(
             name_hash, [respond = std::move(respond)](std::optional<EncryptedSNSRecord> maybe_enc) mutable {
-                if (maybe_enc)
-                {
-                    log::info(logcat, "RPC lookup successfully returned encrypted SNS record!");
-                    auto resp = ResolveSNS::serialize_response(*maybe_enc);
-                    // FIXME: eventually respond func should take a byte span or something, but
-                    //        string was easier for now
-                    respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
-                }
-                else
-                {
-                    log::warning(logcat, "RPC lookup could not find SNS registry!");
-                    respond(messages::NOT_FOUND_RESPONSE);
-                }
+                /* FIXME conflict resolution
+                    if (maybe_enc)
+                    {
+                        log::info(logcat, "RPC lookup successfully returned encrypted SNS record!");
+                        auto resp = ResolveSNS::serialize_response(*maybe_enc);
+                        // FIXME: eventually respond func should take a byte span or something, but
+                        //        string was easier for now
+                        respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
+                    }
+                    else
+                    {
+                        log::warning(logcat, "RPC lookup could not find SNS registry!");
+                        respond(messages::NOT_FOUND_RESPONSE);
+                    }
+                */
             });
 #endif
     }
@@ -391,11 +393,13 @@ namespace srouter::link
         log::trace(logcat, "Received request to publish client contact!");
 
         EncryptedClientContact enc;
-        std::optional<int> location;
+        int location;
 
         try
         {
-            std::tie(enc, location) = PublishClientContact::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer btdc{body};
+            enc = EncryptedClientContact{btdc.require_span<std::byte>("e"sv)};
+            location = btdc.require<int>("n"sv);
         }
         catch (const std::exception& e)
         {
@@ -406,7 +410,7 @@ namespace srouter::link
         if (enc.is_expired())
         {
             log::warning(logcat, "Received expired EncryptedClientContact!");
-            return respond(PublishClientContact::EXPIRED);
+            return respond(messages::serialize_status_response("EXPIRED CC"));
         }
 
         if (not router.is_service_node)
@@ -439,18 +443,18 @@ namespace srouter::link
 
         if (!source_is_relay)
         {
-            if (!location || *location < 0 || *location >= path::CC_PUBLISH_LOCATIONS)
+            if (location < 0 || location >= path::CC_PUBLISH_LOCATIONS)
             {
                 log::warning(
                     logcat,
                     "Ignoring ECC publish from a client with {} publish index",
-                    location ? "invalid ({})"_format(*location) : "missing");
+                    location ? "invalid ({})"_format(location) : "missing");
                 respond(messages::serialize_status_response(
                     location ? "INVALID PUBLISH LOCATION" : "MISSING PUBLISH LOCATION"));
                 return;
             }
 
-            const auto& rid = closest_rids[*location];
+            const auto& rid = closest_rids[location];
 
             if (rid == router.id())
             {
@@ -464,13 +468,13 @@ namespace srouter::link
                 logcat,
                 "Received PublishClientContact (key: {}, index: {}); forwarding to {}",
                 enc.key(),
-                *location,
+                location,
                 rid);
 
             endpoint.send_command(
                 rid,
                 "publish_cc",
-                PublishClientContact::serialize(std::move(enc)),
+                std::vector<std::byte>{body.begin(), body.end()},
                 [respond = std::move(respond)](quic::message msg) mutable {
                     log::info(
                         logcat,
@@ -518,7 +522,8 @@ namespace srouter::link
         PubKey blinded_pubkey;
         try
         {
-            blinded_pubkey = FindClientContact::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer btdc{body};
+            blinded_pubkey.assign(btdc.require_span<std::byte, PubKey::SIZE>("k"));
         }
         catch (const std::exception& e)
         {
@@ -547,10 +552,12 @@ namespace srouter::link
                     logcat,
                     "Received FindClientContact request (key: {}); returning local EncryptedClientContact...",
                     blinded_pubkey);
+                /* FIXME conflict resolution
                 auto resp = FindClientContact::serialize_response(*maybe_cc);
                 // FIXME: eventually respond func should take a byte span or something, but
                 //        string was easier for now
                 return respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
+                */
             }
 
             log::debug(
@@ -596,12 +603,13 @@ namespace srouter::link
 
         log::debug(logcat, "Relaying FindClientContactMessage (key: {}) to {} peers", blinded_pubkey, *remaining);
 
-        auto forwarded_find_cc = FindClientContact::serialize(blinded_pubkey);
+        auto forwarded_find_cc = body;
         for (const auto& rid : closest_rids)
         {
             if (rid == router.id())
                 continue;
-            endpoint.send_command(rid, "find_cc", forwarded_find_cc, hook);
+            endpoint.send_command(
+                rid, "find_cc", std::vector<std::byte>{forwarded_find_cc.begin(), forwarded_find_cc.end()}, hook);
         }
     }
 
@@ -612,10 +620,10 @@ namespace srouter::link
 
     void Manager::handle_path_build(quic::message m, const std::variant<RouterID, quic::ConnectionID>& from)
     {
-        if (!router.path_context.is_transit_allowed())
+        if (not router.is_service_node)
         {
-            log::warning(logcat, "got path build request when not permitting transit");
-            return m.respond(PATH::BUILD::NO_TRANSIT, true);
+            log::warning(logcat, "got path build request when not relay node!");
+            return m.respond(messages::ERROR_RESPONSE, true);
         }
 
         try
@@ -630,7 +638,7 @@ namespace srouter::link
                     frames_in.size(),
                     path::BUILD_LENGTH,
                     path::BUILD_FRAME_SIZE);
-                m.respond(PATH::BUILD::BAD_FRAMES, true);
+                m.respond(messages::serialize_status_response("BAD FRAMES"sv), true);
                 return;
             }
 
@@ -1233,7 +1241,9 @@ namespace srouter::link
         try
         {
             // FIXME: unnecessary copy
-            std::tie(endpoint, body) = PATH::CONTROL::deserialize(oxenc::bt_dict_consumer{payload});
+            oxenc::bt_dict_consumer btdc{payload};
+            endpoint = btdc.require<std::string>("e");
+            body = btdc.require<std::string>("p");
         }
         catch (const std::exception& e)
         {
