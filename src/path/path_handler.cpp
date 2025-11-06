@@ -63,8 +63,7 @@ namespace srouter::path
 
         auto now = steady_now_ms();
         for (const auto& [h, p] : _paths)
-            if (p)
-                p->do_ping(now);
+            p->do_ping(now);
     }
 
     void PathHandler::expire_paths(sys_ms now)
@@ -109,7 +108,7 @@ namespace srouter::path
     Path* PathHandler::get_path_by_terminus(const HopID& terminal_hop_id)
     {
         for (auto& p : std::views::values(_paths))
-            if (p && p->terminal_hopid() == terminal_hop_id)
+            if (p->terminal_hopid() == terminal_hop_id)
                 return p.get();
         return nullptr;
     }
@@ -202,7 +201,7 @@ namespace srouter::path
 
         int n = 0;
         for (const auto& [_, p] : _paths)
-            if (p and p->is_active() and not p->is_expired(expiry_ts))
+            if (p->is_active() and not p->is_expired(expiry_ts))
                 n++;
         return n;
     }
@@ -213,8 +212,7 @@ namespace srouter::path
 
         int n = 0;
         for (const auto& [_, p] : _paths)
-            // TODO FIXME: what does a nullptr path mean?
-            if (p and not p->is_expired(expiry_ts))
+            if (not p->is_expired(expiry_ts))
                 n++;
         return n;
     }
@@ -723,13 +721,11 @@ namespace srouter::path
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-        if (p)
-            drop_path(*p);
+        drop_path(*p);
 
         if (timeout)
         {
-            if (p)
-                router.router_profiling().path_timeout(*p);
+            router.router_profiling().path_timeout(*p);
             router.path_builds.timeouts++;
         }
         else
