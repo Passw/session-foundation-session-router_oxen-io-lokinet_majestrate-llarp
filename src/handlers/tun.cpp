@@ -434,14 +434,6 @@ namespace srouter::handlers
         }
         bool localhost = is_localhost(qname);
 
-        // FIXME: should this subdomain with a non-A type be considered an invalid request?
-        //        Also, should this subdomain with "snode" TLD be considered invalid?
-        //
-        // 'A' record requests like "ipv4.somepubkey.sesh" for clients trigger mapping ipv4
-        // for that remote, which is not done by default any more.
-        bool ipv4_mapping_request =
-            sub.size() == 1 && q.qtype == dns::RRType::A && tld != "snode" && sub[0] == "ipv4"sv;
-
         // localhost.sesh/localhost.loki is always a CNAME to our own pubkey, regardless of the
         // question type.
         if (localhost)
@@ -610,14 +602,20 @@ namespace srouter::handlers
                 {
                     if (aaaa)
                         msg.add_reply(map6(*maybe_netaddr));
-                    else if (ipv4_mapping_request)
+                    else if (!sub.empty() && sub.back() == "ipv4"sv)
                     {
+                        // We don't map IPv4 addresses by default, but it is still possible to get
+                        // one by requesting ipv4.somepubkey.sesh/snode (or a subdomain thereof).
                         if (auto v4_addr = map4(*maybe_netaddr); v4_addr)
                             msg.add_reply(*v4_addr);
                         else
                             log::warning(logcat, "IPv4 mapping requested for {} failed.", *maybe_netaddr);
                     }
-                    // else they requested A but we only have AAAA, so return without an answer
+                    // else they requested A *not* using the magic ipv4 subdomain, so we only have
+                    // AAAA to offer and thus we return a reply without an answer record (which is
+                    // the proper DNS way to say "something exists at this address, but not with the
+                    // type you requested requested", as opposed to this nx_reply below, which means
+                    // "this record does not exist").
                 }
                 else
                     msg.add_nx_reply();

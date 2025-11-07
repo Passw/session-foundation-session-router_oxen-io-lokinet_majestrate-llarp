@@ -676,12 +676,13 @@ namespace srouter::session
 
         auto pkt = IPPacket{std::move(data)};
 
-        // If the packet is ipv4 and we are an inbound client session with a tun interface, check
-        // if we've mapped ipv4 for the remote and do so if not.
+        // If the packet is ipv4 and we are a relay or inbound client session with a tun interface,
+        // check if we've mapped ipv4 for the remote and do so if not.
         //
-        // NOTE: at this time, tun clients always support ipv4.  if this changes, a check for that
-        // should short-circuit the call to map_session below.
-        if (!_r.embedded() && !is_relay_session && !is_outbound && pkt.is_ipv4() && !ipv4_mapped)
+        // NOTE: At this time, tun clients always support ipv4, but ipv4 is only activated on use
+        // (unlike IPv6 which is activated all the time).  If this changes, a check for that should
+        // short-circuit the call to map_session below.
+        if (!_r.embedded() && pkt.is_ipv4() && !ipv4_mapped)
         {
             if (!_parent.map_session_v4(*this))
             {

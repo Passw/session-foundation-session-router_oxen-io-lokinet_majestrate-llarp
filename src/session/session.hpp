@@ -101,9 +101,10 @@ namespace srouter
 
             void update_active();
 
-            // We no longer always map an ipv4 address for a remote.  For inbound client sessions,
-            // we want to make this mapping automatically if we receive ipv4 traffic, are not
-            // embedded, and support ipv4.  Caching this here saves a map lookup on every packet.
+            // We always map ipv6 address for remotes, but ipv4 address are only mapped on demand
+            // (i.e. by requesting a "ipv4.pubkey.sesh" address on the initiator, or by receiving an
+            // IPv4 packet from the remote).  This variable caches/tracks whether we've already done
+            // that assignment to avoid needing an address map lookup on every IPv4 packet.
             bool ipv4_mapped{false};
 
             // We capture a weak_ptr to this shared_ptr to avoid needing to use shared_from_this
