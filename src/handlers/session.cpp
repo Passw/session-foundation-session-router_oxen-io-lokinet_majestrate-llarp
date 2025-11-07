@@ -875,7 +875,10 @@ namespace srouter::handlers
         auto new_exp = cc ? cc->expiry() : time_now_ms() + NO_CC_CACHE_TIME;
         auto [it, new_entry] = _cc_cache.try_emplace(remote, std::move(cc), new_exp);
         if (new_entry)
+        {
+            log::debug(logcat, "New CC stored for {}.{}", remote, CLIENT_TLD);
             return it->second.first;
+        }
 
         // Otherwise the cache already had an entry, so we need to figure out whether the new value
         // is better than the old one:
@@ -888,13 +891,18 @@ namespace srouter::handlers
         auto now = time_now_ms();
         if (!entry || exp < now || (cc && cc->signed_at() > entry->signed_at()))
         {
+            bool was_null = !entry;
             entry = std::move(cc);
             exp = new_exp;
-            log::debug(logcat, "CC updated for {}.{}", remote, CLIENT_TLD);
+            log::debug(logcat, "{} for {}.{}", was_null ? "New CC stored" : "Updated CC", remote, CLIENT_TLD);
         }
         else
         {
-            log::trace(logcat, "Ignoring stale/redundant/older CC received for {}.{}", remote, CLIENT_TLD);
+            log::debug(
+                logcat,
+                "Ignoring CC received for {}.{}: current cached value is the same or newer",
+                remote,
+                CLIENT_TLD);
         }
         return entry;
     }
@@ -974,7 +982,6 @@ namespace srouter::handlers
                         auto enc = FindClientContact::deserialize_response(std::move(cc_dict));
                         if (auto intro = enc.decrypt(remote))
                         {
-                            log::debug(logcat, "Storing ClientContact for remote rid:{}", remote);
                             cc = std::move(intro);
                         }
                         else
