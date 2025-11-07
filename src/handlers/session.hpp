@@ -279,7 +279,10 @@ namespace srouter
 
             void lookup_relay_contact(RouterID remote, std::function<void(std::optional<RelayContact>)> func);
 
-            void lookup_client_intro(RouterID remote, std::function<void(const std::optional<ClientContact>&)> func);
+            void lookup_client_intro(
+                RouterID remote,
+                std::function<void(const std::optional<ClientContact>&)> func,
+                bool allow_cache = true);
 
             // resolves any config mappings that parsed ONS addresses to their pubkey network address
             void resolve_sns_mappings();

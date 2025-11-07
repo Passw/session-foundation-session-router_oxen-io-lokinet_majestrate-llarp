@@ -1169,36 +1169,39 @@ namespace srouter::session
             return;
         updating_intros = true;
         log::debug(logcat, "Initiating intro lookup for {}", _remote);
-        _parent.lookup_client_intro(_remote.pubkey, [this, alive = canary()](std::optional<ClientContact> cc) mutable {
-            if (!alive.lock())
-            {
-                log::debug(
-                    logcat,
-                    "OutboundClientSession::refresh_intros lookup_client_intro callback returning early; "
-                    "session-alive canary is dead");
-                return;
-            }
-            updating_intros = false;
-            if (cc)
-            {
-                log::debug(logcat, "Session initiation returned client contact: {}", *cc);
-                cc_ok = true;
-                _intro_update_processed = false;
-                update_intros(*cc);
-            }
-            else
-            {
-                _cc_fetch_fail_count++;
-                auto try_again_in = std::min(_cc_fetch_fail_count * CC_FETCH_BACKOFF, CC_FETCH_BACKOFF_MAX);
-                _next_cc_update = time_now_ms() + try_again_in;
-                log::warning(
-                    logcat,
-                    "Failed to lookup intros for {} ({} consecutive failures); will try again in {}",
-                    _remote,
-                    _cc_fetch_fail_count,
-                    std::chrono::round<std::chrono::seconds>(try_again_in));
-            }
-        });
+        _parent.lookup_client_intro(
+            _remote.pubkey,
+            [this, alive = canary()](std::optional<ClientContact> cc) mutable {
+                if (!alive.lock())
+                {
+                    log::debug(
+                        logcat,
+                        "OutboundClientSession::refresh_intros lookup_client_intro callback returning early; "
+                        "session-alive canary is dead");
+                    return;
+                }
+                updating_intros = false;
+                if (cc)
+                {
+                    log::debug(logcat, "Session initiation returned client contact: {}", *cc);
+                    cc_ok = true;
+                    _intro_update_processed = false;
+                    update_intros(*cc);
+                }
+                else
+                {
+                    _cc_fetch_fail_count++;
+                    auto try_again_in = std::min(_cc_fetch_fail_count * CC_FETCH_BACKOFF, CC_FETCH_BACKOFF_MAX);
+                    _next_cc_update = time_now_ms() + try_again_in;
+                    log::warning(
+                        logcat,
+                        "Failed to lookup intros for {} ({} consecutive failures); will try again in {}",
+                        _remote,
+                        _cc_fetch_fail_count,
+                        std::chrono::round<std::chrono::seconds>(try_again_in));
+                }
+            },
+            /*allow_cache=*/false);
     }
 
     void OutboundClientSession::update_intros(const ClientContact& cc)

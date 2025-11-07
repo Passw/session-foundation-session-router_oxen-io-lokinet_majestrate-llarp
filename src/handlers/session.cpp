@@ -908,7 +908,7 @@ namespace srouter::handlers
     }
 
     void SessionEndpoint::lookup_client_intro(
-        RouterID remote, std::function<void(const std::optional<ClientContact>&)> func)
+        RouterID remote, std::function<void(const std::optional<ClientContact>&)> func, bool allow_cache)
     {
         if (remote == router.id())
         {
@@ -917,17 +917,20 @@ namespace srouter::handlers
             return;
         }
 
-        if (auto it = _cc_cache.find(remote); it != _cc_cache.end())
+        if (allow_cache)
         {
-            const auto& [cc, exp] = it->second;
-            auto now = time_now_ms();
-            if (exp <= now)
-                _cc_cache.erase(it);
-            else
+            if (auto it = _cc_cache.find(remote); it != _cc_cache.end())
             {
-                log::debug(logcat, "Found cached CC for remote {}", remote.to_network_address(false));
-                try_calling(logcat, func, cc);
-                return;
+                const auto& [cc, exp] = it->second;
+                auto now = time_now_ms();
+                if (exp <= now)
+                    _cc_cache.erase(it);
+                else
+                {
+                    log::debug(logcat, "Found cached CC for remote {}", remote.to_network_address(false));
+                    try_calling(logcat, func, cc);
+                    return;
+                }
             }
         }
 
