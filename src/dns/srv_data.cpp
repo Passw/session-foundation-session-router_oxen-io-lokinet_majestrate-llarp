@@ -10,14 +10,31 @@
 
 namespace srouter::dns
 {
-    static auto logcat = log::Cat("SRVData");
+    static auto logcat = log::Cat("dns");
 
-    SRVData::SRVData(std::string _proto, uint16_t _priority, uint16_t _weight, uint16_t _port, std::string _target)
-        : service_proto{std::move(_proto)},
-          priority{_priority},
-          weight{_weight},
-          port{_port},
-          target{std::move(_target)}
+    SRVData::SRVData(std::string_view srv_proto, uint16_t priority, uint16_t weight, uint16_t port, std::string target)
+
+        : priority{priority}, weight{weight}, port{port}, target{std::move(target)}
+    {
+        auto pieces = split(srv_proto, ".");
+        if (pieces.size() != 2)
+            throw std::invalid_argument{"{} is not a valid _service._proto value"};
+        service = pieces[0];
+        proto = pieces[1];
+
+        if (not is_valid())
+            throw std::invalid_argument{"Invalid SRVData!"};
+    }
+
+    SRVData::SRVData(
+        std::string service, std::string proto, uint16_t priority, uint16_t weight, uint16_t port, std::string target)
+
+        : service{std::move(service)},
+          proto{std::move(proto)},
+          priority{priority},
+          weight{weight},
+          port{port},
+          target{std::move(target)}
     {
         if (not is_valid())
             throw std::invalid_argument{"Invalid SRVData!"};
@@ -37,10 +54,20 @@ namespace srouter::dns
 
     bool SRVData::is_valid() const
     {
-        // if target is of first two forms outlined above
-        if (target == "." or target.size() == 0)
-        {
+        auto check_piece = [](std::string_view p) {
+            if (p.size() < 2 || !p.starts_with('_'))
+                return false;
+            p.remove_prefix(1);
+            // Upper-case is deliberately excluded because those should have been lower-cased when
+            // loaded from the config file.
+            if (p.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789-") != std::string::npos)
+                return false;
             return true;
+        };
+        if (!check_piece(service) || !check_piece(proto))
+        {
+            log::warning(logcat, "Invalid SRV _service._proto value: {}.{}", service, proto);
+            return false;
         }
 
         // check target size is not absurd
@@ -50,11 +77,15 @@ namespace srouter::dns
             return false;
         }
 
-        if (target.ends_with(".loki") || target.ends_with(CLIENT_DOT_TLD))
+        if (target.ends_with(CLIENT_DOT_TLD) || target.ends_with(".loki"))
+            return true;
+
+        // A target of just "." in an SRV record is an explicit "does not exist" value:
+        if (target == "." or target.size() == 0)
             return true;
 
         // if we're here, target is invalid
-        log::warning(logcat, "SRVData invalid");
+        log::warning(logcat, "SRV target {} is invalid", target);
         return false;
     }
 
@@ -65,13 +96,22 @@ namespace srouter::dns
         // split on spaces, discard trailing empty strings
         auto splits = split(srvString, " ", false);
 
-        if (splits.size() != 5 && splits.size() != 4)
+        if (splits.size() != 5)
         {
-            log::warning(logcat, "SRV record should have either 4 or 5 space-separated parts");
+            log::warning(logcat, "SRV records must have 5 space-separated parts");
             return false;
         }
 
-        service_proto = splits[0];
+        if (auto svc_proto = split(splits[0], "."); svc_proto.size() == 2)
+        {
+            service = svc_proto[0];
+            proto = svc_proto[1];
+        }
+        else
+        {
+            log::warning(logcat, "SRV record failed to parse \"{}\" as _service._proto value", splits[0]);
+            return false;
+        }
 
         if (not parse_int(splits[1], priority))
         {
@@ -91,10 +131,7 @@ namespace srouter::dns
             return false;
         }
 
-        if (splits.size() == 5)
-            target = splits[4];
-        else
-            target = "";
+        target = splits[4];
 
         return is_valid();
     }
@@ -102,7 +139,7 @@ namespace srouter::dns
     void SRVData::bt_encode(oxenc::bt_dict_producer&& btdp) const
     {
         btdp.append("p", port);
-        btdp.append("s", service_proto);
+        btdp.append("s", "{}.{}"_format(service, proto));
         btdp.append("t", target);
         btdp.append("u", priority);
         btdp.append("w", weight);
@@ -133,7 +170,11 @@ namespace srouter::dns
         try
         {
             port = btdc.require<uint16_t>("p");
-            service_proto = btdc.require<std::string>("s");
+            auto s_p = split(btdc.require<std::string_view>("s"), ".");
+            if (s_p.size() != 2)
+                throw std::invalid_argument{"Invalid _service._proto value {}"_format(fmt::join(s_p, "."))};
+            service = s_p[0];
+            proto = s_p[1];
             target = btdc.require<std::string>("t");
             priority = btdc.require<uint16_t>("u");
             weight = btdc.require<uint16_t>("w");
@@ -159,6 +200,11 @@ namespace srouter::dns
     nlohmann::json SRVData::ExtractStatus() const
     {
         return nlohmann::json{
-            {"proto", service_proto}, {"priority", priority}, {"weight", weight}, {"port", port}, {"target", target}};
+            {"service", service},
+            {"proto", proto},
+            {"priority", priority},
+            {"weight", weight},
+            {"port", port},
+            {"target", target}};
     }
 }  // namespace srouter::dns

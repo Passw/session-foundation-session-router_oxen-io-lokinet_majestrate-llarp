@@ -160,12 +160,11 @@ if (SROUTER_FULL)
   # session-router-dns is the dns parsing and hooking library that we use to
   # parse modify and reconstitute dns wire proto, dns queries and RR
   target_sources(session-router-dns PRIVATE
-    dns/message.cpp   # dns/server
-    dns/name.cpp      # srv_data, question, rr
+    dns/encode.cpp
+    dns/message.cpp
     dns/platform.cpp
-    dns/question.cpp  # message
+    dns/question.cpp
     dns/rr.cpp
-    dns/serialize.cpp
     dns/server.cpp
   )
 

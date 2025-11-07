@@ -187,7 +187,7 @@ namespace srouter
 
         std::vector<std::filesystem::path> auth_files;
 
-        std::unordered_set<srouter::dns::SRVData> srv_records;
+        std::vector<srouter::dns::SRVData> srv_records;
 
         // Contents of this file are read directly into ::_reserved_local_addrs
         // TODO.  Perhaps this should be in a sqlite db, though?

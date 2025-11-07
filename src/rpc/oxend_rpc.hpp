@@ -39,7 +39,8 @@ namespace srouter::rpc
         uint64_t block_height() const { return _block_height; }
 
         void lookup_sns_hash(
-            std::string_view namehash, std::function<void(std::optional<std::pair<std::string, SymmNonce>>)> resultHandler);
+            std::string_view namehash,
+            std::function<void(std::optional<std::pair<std::string, SymmNonce>>)> resultHandler);
 
         /// inform that if connected to a router successfully
         void inform_connection(RouterID router, bool success);

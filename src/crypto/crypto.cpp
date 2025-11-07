@@ -58,7 +58,8 @@ namespace srouter::crypto
         return true;
     }
 
-    std::optional<NetworkAddress> maybe_decrypt_name(std::string_view ciphertext, const SymmNonce& nonce, std::string_view namestr)
+    std::optional<NetworkAddress> maybe_decrypt_name(
+        std::string_view ciphertext, const SymmNonce& nonce, std::string_view namestr)
     {
         const auto payloadsize = ciphertext.size() - MAC_SIZE;
         if (payloadsize != 32)

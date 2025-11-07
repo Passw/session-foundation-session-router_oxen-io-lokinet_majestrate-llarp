@@ -27,7 +27,9 @@ namespace srouter
 
         // From byte span:
         explicit hex_printer(std::span<const std::byte> data) : buf{data} {}
-        explicit hex_printer(std::span<const unsigned char> data) : buf{oxen::quic::reinterpret_span<const std::byte>(data)} {}
+        explicit hex_printer(std::span<const unsigned char> data)
+            : buf{oxen::quic::reinterpret_span<const std::byte>(data)}
+        {}
 
         std::string to_string() const;
         static constexpr bool to_string_formattable = true;

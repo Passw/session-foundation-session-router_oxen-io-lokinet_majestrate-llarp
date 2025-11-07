@@ -29,8 +29,6 @@ namespace srouter
             friend class rpc::RPCServer;
             friend class session::Session;
 
-            std::unordered_set<dns::SRVData> _srv_records;
-
             // Inbound path lifetimes within a slot are always determined relative to this base
             // value, so that if we need a path in the (15,20] minute range, we will always pick the
             // same value in that slot by using this basis value.
@@ -142,14 +140,26 @@ namespace srouter
 
             uint16_t _next_udp_client_port{0};
 
+            template <typename K, typename V>
+            using lookup_cache = std::unordered_map<K, std::pair<std::optional<V>, sys_ms>>;
+
             // onsname.loki -> {address, expiry}.  The address can be nullopt if we received an
             // affirmative "not registered" response (but the entry will not be added if we failed
             // to get or parse the response).
-            std::unordered_map<
-                std::string,
-                std::pair<std::optional<NetworkAddress>, std::chrono::steady_clock::time_point>>
-                sns_cache_;
+            lookup_cache<std::string, NetworkAddress> _sns_cache;
             static constexpr auto SNS_CACHE_TIME = 5min;
+
+            // Client -> ClientContact+expiry for CCs we have looked up recently.  For CCs where
+            // lookup fails, we insert a nullopt with an expiry that is a few seconds from now;
+            // otherwise we set the expiry to ClientContact record's expiry.
+            lookup_cache<RouterID, ClientContact> _cc_cache;
+            static constexpr auto NO_CC_CACHE_TIME = 15s;
+
+            // Updates a CC cache entry if the given value is better than the one already in the
+            // cache.  Returns a reference to the cache entry (which *could* be a copy of the input,
+            // but also could be a previous existing entry if the existing cache value is
+            // preferrable).
+            const std::optional<ClientContact>& update_cc(const RouterID& remote, std::optional<ClientContact>&& cc);
 
           public:
             SessionEndpoint(Router& r);
@@ -179,9 +189,6 @@ namespace srouter
             std::array<int, 3> path_stats(sys_ms now = srouter::time_now_ms()) const;
 
             // quic::Address local_address() const { return _local_addr; }
-
-            // get copy of all srv records
-            std::unordered_set<dns::SRVData> srv_records() const { return _srv_records; }
 
             template <std::derived_from<session::Session> S = session::Session>
             S* get_session(const session_tag& tag) const
@@ -272,7 +279,7 @@ namespace srouter
 
             void lookup_relay_contact(RouterID remote, std::function<void(std::optional<RelayContact>)> func);
 
-            void lookup_client_intro(RouterID remote, std::function<void(std::optional<ClientContact>)> func);
+            void lookup_client_intro(RouterID remote, std::function<void(const std::optional<ClientContact>&)> func);
 
             // resolves any config mappings that parsed ONS addresses to their pubkey network address
             void resolve_sns_mappings();

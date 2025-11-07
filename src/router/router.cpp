@@ -581,6 +581,14 @@ namespace srouter
                     logcat,
                     "Local client configured to maintain {} random router edge connections",
                     config().paths.edge_connections);
+
+            // If any SRV records are pointing at localhost.loki, replace that with our actual
+            // address
+            for (auto& srv : netconf.srv_records)
+            {
+                if (srv.target == "localhost.{}"_format(CLIENT_TLD) || srv.target == "localhost.loki")
+                    srv.target = "{}.{}"_format(id(), CLIENT_TLD);
+            }
         }
     }
 

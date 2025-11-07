@@ -1,5 +1,6 @@
 #pragma once
 
+#include "address/address.hpp"
 #include "net/id.hpp"
 #include "router_id.hpp"
 #include "util/time.hpp"
@@ -69,9 +70,13 @@ namespace srouter
 
         const RouterID& router_id() const { return _router_id; }
 
+        NetworkAddress network_addr() const { return {_router_id, false}; }
+
         const std::chrono::sys_seconds& timestamp() const { return _timestamp; }
 
         NetID netid() const { return _netid; }
+
+        const std::array<uint8_t, 3>& version() const { return _router_version; }
 
       private:
         // public signing public key

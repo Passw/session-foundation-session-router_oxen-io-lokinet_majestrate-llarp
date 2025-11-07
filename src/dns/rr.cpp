@@ -1,111 +1,45 @@
 #include "rr.hpp"
 
 #include "dns.hpp"
-#include "name.hpp"
+#include "encode.hpp"
 
+#include <fmt/chrono.h>
 #include <nlohmann/json.hpp>
 
 namespace srouter::dns
 {
-    static auto logcat = log::Cat("dns");
-
-    ResourceRecord::ResourceRecord(const ResourceRecord& other)
-        : rr_name(other.rr_name), rr_type(other.rr_type), rr_class(other.rr_class), ttl(other.ttl), rData(other.rData)
+    ResourceRecord::ResourceRecord(std::string name, RRType type, std::vector<std::byte> data)
+        : rr_name{std::move(name)}, rr_type{type}, rr_class{RRClass::IN}, ttl{1s}, rData{std::move(data)}
     {}
 
-    ResourceRecord::ResourceRecord(ResourceRecord&& other)
-        : rr_name(std::move(other.rr_name)),
-          rr_type(std::move(other.rr_type)),
-          rr_class(std::move(other.rr_class)),
-          ttl(std::move(other.ttl)),
-          rData(std::move(other.rData))
-    {}
-
-    ResourceRecord::ResourceRecord(std::string name, RRType_t type, RR_RData_t data)
-        : rr_name{std::move(name)}, rr_type{type}, rr_class{qClassIN}, ttl{1}, rData{std::move(data)}
-    {}
-
-    bool ResourceRecord::Encode(buffer_t* buf) const
+    size_t ResourceRecord::encode(std::span<std::byte> buf) const
     {
-        if (not EncodeNameTo(buf, rr_name))
-            return false;
-        if (!buf->put_uint16(rr_type))
-        {
-            return false;
-        }
-        if (!buf->put_uint16(rr_class))
-        {
-            return false;
-        }
-        if (!buf->put_uint32(ttl))
-        {
-            return false;
-        }
-        if (!EncodeRData(buf, rData))
-        {
-            return false;
-        }
-        return true;
-    }
-
-    bool ResourceRecord::Decode(buffer_t* buf)
-    {
-        uint16_t discard;
-        if (!buf->read_uint16(discard))
-            return false;
-        if (!buf->read_uint16(rr_type))
-        {
-            log::debug(logcat, "failed to decode rr type");
-            return false;
-        }
-        if (!buf->read_uint16(rr_class))
-        {
-            log::debug(logcat, "failed to decode rr class");
-            return false;
-        }
-        if (!buf->read_uint32(ttl))
-        {
-            log::debug(logcat, "failed to decode ttl");
-            return false;
-        }
-        if (!DecodeRData(buf, rData))
-        {
-            log::debug(logcat, "failed to decode rr rdata {}", *this);
-            return false;
-        }
-        return true;
+        auto orig = buf.size();
+        if (write_name_into(buf, rr_name)
+            && write_ints_into(
+                buf,
+                static_cast<uint16_t>(rr_type),
+                static_cast<uint16_t>(rr_class),
+                static_cast<uint32_t>(ttl.count()))
+            && write_rdata_into(buf, rData))
+            return orig - buf.size();
+        return 0;
     }
 
     nlohmann::json ResourceRecord::ToJSON() const
     {
         return nlohmann::json{
             {"name", rr_name},
-            {"type", rr_type},
-            {"class", rr_class},
-            {"ttl", ttl},
+            {"type", static_cast<uint16_t>(rr_type)},
+            {"class", static_cast<uint16_t>(rr_class)},
+            {"ttl", ttl.count()},
             {"rdata", std::string{reinterpret_cast<const char*>(rData.data()), rData.size()}}};
     }
 
     std::string ResourceRecord::to_string() const
     {
         return "RR:[ name:{} | type:{} | class:{} | ttl:{} | rdata-size:{} ]"_format(
-            rr_name, rr_type, rr_class, ttl, rData.size());
-    }
-
-    bool ResourceRecord::HasCNameForTLD(std::string_view tld) const
-    {
-        if (rr_type != qTypeCNAME)
-            return false;
-        buffer_t buf(rData);
-        auto maybe_name = DecodeName(&buf);
-        if (!maybe_name)
-            return false;
-        std::string_view name{*maybe_name};
-        if (name.ends_with('.'))
-            name.remove_suffix(1);
-        if (tld.starts_with('.'))
-            tld.remove_prefix(1);
-        return name.size() > tld.size() && name.ends_with(tld) && name[name.size() - tld.size() - 1] == '.';
+            rr_name, static_cast<uint16_t>(rr_type), static_cast<uint16_t>(rr_class), ttl, rData.size());
     }
 
 }  // namespace srouter::dns

@@ -98,7 +98,10 @@ namespace srouter::handlers
 
         bool should_hook_dns_message(const dns::Message& msg) const;
 
-        bool handle_hooked_dns_message(dns::Message query, std::function<void(dns::Message)> sendreply);
+        bool handle_hooked_dns_message(
+            dns::Message query,
+            std::function<void(dns::Message)> sendreply,
+            std::optional<std::string> qname_override = std::nullopt);
 
         void tick_tun(sys_ms now);
 
@@ -167,6 +170,18 @@ namespace srouter::handlers
         //  - Persisting address map is directly pre-loaded from config
         address_map<ipv4> _local_ipv4_mapping;
         address_map<ipv6> _local_ipv6_mapping;
+
+        template <typename IP>
+        auto _lookup_mapped_ip(const IP& ip)
+        {
+            if constexpr (std::same_as<IP, ipv4>)
+                return _local_ipv4_mapping[ip];
+            else
+            {
+                static_assert(std::same_as<IP, ipv6>);
+                return _local_ipv6_mapping[ip];
+            }
+        }
 
         // We keep a list of expired network addresses ordered by least-recently-used first.  When
         // pruning the expired list, we pop off the front of the list.

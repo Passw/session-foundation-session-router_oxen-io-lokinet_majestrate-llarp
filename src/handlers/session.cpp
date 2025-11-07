@@ -18,10 +18,13 @@
 #include "util/bspan.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
+#include "util/try_calling.hpp"
 
+#include <oxen/log/internal.hpp>
 #include <oxenc/base32z.h>
 
 #include <chrono>
+#include <concepts>
 #include <memory>
 #include <random>
 
@@ -49,8 +52,8 @@ namespace srouter::handlers
                 protocols |= protocol_flag::EXIT;
         }
 
-        client_contact =
-            ClientContact{router.key_manager.router_id(), netconf.srv_records, protocols, netconf.traffic_policy};
+        client_contact = ClientContact{
+            router.key_manager.router_id(), netconf.srv_records, protocols, sys_ms{}, netconf.traffic_policy};
     }
 
     std::array<int, 5> SessionEndpoint::session_stats() const
@@ -528,20 +531,23 @@ namespace srouter::handlers
 
             for (const auto& [name, ip_range] : sns_ranges)
             {
-                resolve_sns(name, [this, ip_range](std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
-                    if (maybe_addr)
-                    {
-                        log::critical(
-                            logcat,
-                            "UNIMPLEMENTED: Successfully resolved SNS lookup for {} mapped to IPRange:{}",
-                            *maybe_addr,
-                            ip_range);
-                        // TODO FIXME: we need to sort out how these addresses get actually
-                        // mapped.
-                        //_range_map.insert_or_assign(std::move(ip_range), std::move(*maybe_addr));
-                    }
-                    // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
-                });
+                resolve_sns(
+                    name,
+                    [this, ip_range](
+                        std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
+                        if (maybe_addr)
+                        {
+                            log::critical(
+                                logcat,
+                                "UNIMPLEMENTED: Successfully resolved SNS lookup for {} mapped to IPRange:{}",
+                                *maybe_addr,
+                                ip_range);
+                            // TODO FIXME: we need to sort out how these addresses get actually
+                            // mapped.
+                            //_range_map.insert_or_assign(std::move(ip_range), std::move(*maybe_addr));
+                        }
+                        // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
+                    });
             }
         }
 
@@ -553,15 +559,20 @@ namespace srouter::handlers
 
             for (const auto& [name, auth_token] : sns_auths)
             {
-                resolve_sns(name, [this, auth_token](std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
-                    if (maybe_addr)
-                    {
-                        log::debug(
-                            logcat, "Successfully resolved SNS lookup for {} mapped to static auth token", *maybe_addr);
-                        _auth_tokens.emplace(std::move(*maybe_addr), std::move(auth_token));
-                    }
-                    // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
-                });
+                resolve_sns(
+                    name,
+                    [this, auth_token](
+                        std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
+                        if (maybe_addr)
+                        {
+                            log::debug(
+                                logcat,
+                                "Successfully resolved SNS lookup for {} mapped to static auth token",
+                                *maybe_addr);
+                            _auth_tokens.emplace(std::move(*maybe_addr), std::move(auth_token));
+                        }
+                        // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
+                    });
             }
         }
     }
@@ -574,44 +585,30 @@ namespace srouter::handlers
         if (not is_valid_sns(sns))
         {
             log::warning(logcat, "Invalid SNS name ({}) queried for lookup", sns);
-            try
-            {
-                func(std::nullopt, true, 0ms);
-            }
-            catch (const std::exception& e)
-            {
-                log::error(logcat, "resolve_sns callback raised an uncaught exception: {}", e.what());
-            }
+            try_calling(logcat, func, std::nullopt, true, 0ms);
             return;
         }
 
         log::debug(logcat, "Looking up SNS name {}", sns);
 
-        if (auto it = sns_cache_.find(sns); it != sns_cache_.end())
+        if (auto it = _sns_cache.find(sns); it != _sns_cache.end())
         {
             auto& [addr, expiry] = it->second;
-            auto now = std::chrono::steady_clock::now();
+            auto now = time_now_ms();
             if (expiry > now)
             {
                 if (addr)
                     log::debug(logcat, "Found SNS entry in cache: {} -> {}", sns, *addr);
                 else
                     log::debug(logcat, "Found SNS does-not-exist entry in cache for {}", sns);
-                try
-                {
-                    func(addr, true, std::chrono::ceil<std::chrono::milliseconds>(expiry - now));
-                }
-                catch (const std::exception& e)
-                {
-                    log::error(logcat, "resolve_sns callback raised an uncaught exception: {}", e.what());
-                }
+                try_calling(logcat, func, addr, true, expiry - now);
                 return;
             }
 
             // Else it's expired, so erase it.  (We don't worry about cleaning it periodically; a
             // few stale entries sitting around until the next time we try to look them up won't
             // hurt anything).
-            sns_cache_.erase(it);
+            _sns_cache.erase(it);
         }
 
         struct sns_results_t
@@ -678,8 +675,8 @@ namespace srouter::handlers
                     if (sns_results->not_found_count >= sns_results->threshold)
                     {
                         log::debug(logcat, "SNS result: {} not found ({} confs)", name, sns_results->not_found_count);
-                        sns_cache_[name] = {std::nullopt, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
-                        func(std::nullopt, true, SNS_CACHE_TIME);
+                        _sns_cache[name] = {std::nullopt, time_now_ms() + SNS_CACHE_TIME};
+                        try_calling(logcat, func, std::nullopt, true, SNS_CACHE_TIME);
                         sns_results->remaining = 0;
                         return;
                     }
@@ -688,8 +685,8 @@ namespace srouter::handlers
                         if (count >= sns_results->threshold)
                         {
                             log::debug(logcat, "SNS result: {} -> {} ({} confs)", name, addr, count);
-                            sns_cache_[name] = {addr, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
-                            func(addr, true, SNS_CACHE_TIME);
+                            _sns_cache[name] = {addr, time_now_ms() + SNS_CACHE_TIME};
+                            try_calling(logcat, func, addr, true, SNS_CACHE_TIME);
                             sns_results->remaining = 0;
                             return;
                         }
@@ -711,8 +708,8 @@ namespace srouter::handlers
                     // No resolved results; return DNE, authoritatively if we saw at least one not found response:
                     bool assertive = sns_results->not_found_count > 0;
                     if (assertive)
-                        sns_cache_[name] = {std::nullopt, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
-                    func(std::nullopt, assertive, assertive ? SNS_CACHE_TIME : 0ms);
+                        _sns_cache[name] = {std::nullopt, time_now_ms() + SNS_CACHE_TIME};
+                    try_calling(logcat, func, std::nullopt, assertive, assertive ? SNS_CACHE_TIME : 0ms);
                 }
                 else
                 {
@@ -734,8 +731,8 @@ namespace srouter::handlers
                     {
                         // If "does not exist" has at least as many results as the best "found"
                         // result, return DNE:
-                        sns_cache_[name] = {std::nullopt, std::chrono::steady_clock::now() + SNS_CACHE_TIME};
-                        func(std::nullopt, true, SNS_CACHE_TIME);
+                        _sns_cache[name] = {std::nullopt, time_now_ms() + SNS_CACHE_TIME};
+                        try_calling(logcat, func, std::nullopt, true, SNS_CACHE_TIME);
                     }
                     else
                     {
@@ -743,8 +740,8 @@ namespace srouter::handlers
                         size_t i = 0;
                         if (best.size() > 1)
                             i = std::uniform_int_distribution<size_t>{0, best.size() - 1}(csrng);
-                        sns_cache_[name] = {best[i], std::chrono::steady_clock::now() + SNS_CACHE_TIME};
-                        func(best[i], true, SNS_CACHE_TIME);
+                        _sns_cache[name] = {best[i], time_now_ms() + SNS_CACHE_TIME};
+                        try_calling(logcat, func, best[i], true, SNS_CACHE_TIME);
                     }
                 }
             }
@@ -770,7 +767,8 @@ namespace srouter::handlers
         {
             log::warning(logcat, "Unable to resolve SNS name {}: we have no active paths", sns);
             // Since we didn't make any actual requests, construct a fake response so that we can go
-            // through the lambda above for response processing as if we got a single error response
+            // through the lambda above (which we moved `func` into!) for response processing as if
+            // we got a single error response
             sns_results->remaining = 1;
             path::path_control_response fake_resp{};
             fake_resp.error = true;
@@ -783,7 +781,8 @@ namespace srouter::handlers
         if (auto* maybe_rc = router.node_db().get_rc(remote))
         {
             log::debug(logcat, "RelayContact for remote (rid: {}) found locally!", remote);
-            return func(*maybe_rc);
+            try_calling(logcat, func, *maybe_rc);
+            return;
         }
 
         log::debug(logcat, "Looking up RelayContact for remote (rid:{})", remote.to_network_address(true));
@@ -837,12 +836,12 @@ namespace srouter::handlers
             if (rc)
             {
                 *remaining = 0;
-                func(std::move(rc));
+                try_calling(logcat, func, std::move(rc));
             }
             else if (rem == 0)
             {
                 // We are the last path response and there have been no successes, so signal failure
-                func(std::nullopt);
+                try_calling(logcat, func, std::nullopt);
             }
         };
 
@@ -866,32 +865,84 @@ namespace srouter::handlers
         if (*remaining == 0)
         {
             log::warning(logcat, "RC lookup failed: no usable paths!");
-            func(std::nullopt);
+            try_calling(logcat, func, std::nullopt);
         }
     }
 
-    void SessionEndpoint::lookup_client_intro(RouterID remote, std::function<void(std::optional<ClientContact>)> func)
+    const std::optional<ClientContact>& SessionEndpoint::update_cc(
+        const RouterID& remote, std::optional<ClientContact>&& cc)
     {
+        auto new_exp = cc ? cc->expiry() : time_now_ms() + NO_CC_CACHE_TIME;
+        auto [it, new_entry] = _cc_cache.try_emplace(remote, std::move(cc), new_exp);
+        if (new_entry)
+            return it->second.first;
+
+        // Otherwise the cache already had an entry, so we need to figure out whether the new value
+        // is better than the old one:
+        // - if the old entry is expired, use the new one.
+        // - if the existing cache entry is nullopt, then prefer the new one.
+        // - if the existing cache entry is set but new is nullopt, leave the existing one.
+        // - if both are set then prefer the one with the later signed-at timestamp.
+
+        auto& [entry, exp] = it->second;
+        auto now = time_now_ms();
+        if (!entry || exp < now || (cc && cc->signed_at() > entry->signed_at()))
+        {
+            entry = std::move(cc);
+            exp = new_exp;
+            log::debug(logcat, "CC updated for {}.{}", remote, CLIENT_TLD);
+        }
+        else
+        {
+            log::trace(logcat, "Ignoring stale/redundant/older CC received for {}.{}", remote, CLIENT_TLD);
+        }
+        return entry;
+    }
+
+    void SessionEndpoint::lookup_client_intro(
+        RouterID remote, std::function<void(const std::optional<ClientContact>&)> func)
+    {
+        if (remote == router.id())
+        {
+            log::debug(logcat, "lookup intro for ourself: returning stored CC");
+            try_calling(logcat, func, client_contact);
+            return;
+        }
+
+        if (auto it = _cc_cache.find(remote); it != _cc_cache.end())
+        {
+            const auto& [cc, exp] = it->second;
+            auto now = time_now_ms();
+            if (exp <= now)
+                _cc_cache.erase(it);
+            else
+            {
+                log::debug(logcat, "Found cached CC for remote {}", remote.to_network_address(false));
+                try_calling(logcat, func, cc);
+                return;
+            }
+        }
+
         PubKey remote_key;
         if (!crypto::blind(remote_key, remote, crypto::blinding::CLIENT_CONTACT))
         {
-            log::error(
+            log::warning(
                 logcat,
                 "Failed to blind remote address {}: this is most likely not a valid address",
                 remote.to_network_address(false));
-            func(std::nullopt);
+            try_calling(logcat, func, update_cc(remote, std::nullopt));
             return;
         }
 
         log::debug(
             logcat,
-            "Looking up ClientContact (key: {}) for remote (rid:{})",
+            "Initiate network ClientContact lookup (blinded key: {}) for {}",
             remote_key,
             remote.to_network_address(false));
 
         auto remaining = std::make_shared<int>(0);
 
-        auto response_handler = [remote, func, remaining](auto resp) {
+        auto response_handler = [remote, func, remaining, this](auto resp) {
             int rem = --*remaining;
             if (rem < 0)
             {
@@ -922,7 +973,7 @@ namespace srouter::handlers
                     }
                     if (!failed)
                     {
-                        log::info(logcat, "Call to FindClientContact succeeded!");
+                        log::debug(logcat, "Call to FindClientContact succeeded!");
                         auto enc = FindClientContact::deserialize_response(std::move(cc_dict));
                         if (auto intro = enc.decrypt(remote))
                         {
@@ -953,17 +1004,22 @@ namespace srouter::handlers
             if (cc)
             {
                 *remaining = 0;
-                func(std::move(cc));
+                try_calling(logcat, func, update_cc(remote, std::move(cc)));
             }
             else if (rem == 0)
             {
                 // Last chance and all failed, so trigger failure
-                func(std::nullopt);
+                try_calling(logcat, func, update_cc(remote, std::nullopt));
             }
         };
 
         Lock_t l{paths_mutex};
 
+        // TODO FIXME: add an index to this lookup, instructing the remote to fetch from one
+        // particular instance of the 4 closest storage locations.
+        // And only send 4 (trying different paths, but repeating if necessary).
+        // Then invoke the callback on the first response, but don't stop processing subsequent
+        // responses as one of the others might still return a newer CC that we want to keep.
         for (const auto& [_, p] : _paths)
         {
             if (not p or not p->is_active())
@@ -982,7 +1038,10 @@ namespace srouter::handlers
         if (*remaining == 0)
         {
             log::warning(logcat, "CC lookup failed: no usable paths!");
-            func(std::nullopt);
+            // Don't cache this nullopt: we didn't even attempt a lookup, and an immediate
+            // subsequent call to this function will either end up right back here (with nothing
+            // sent), or will send it.
+            try_calling(logcat, func, std::nullopt);
         }
     }
 
@@ -1006,11 +1065,12 @@ namespace srouter::handlers
 
         log::debug(logcat, "New ClientContact: {}", client_contact);
 #ifndef NDEBUG
-        log::trace(logcat, "ClientContact details:");
-        log::trace(logcat, "Pubkey: {}", client_contact.pubkey());
-        log::trace(logcat, "Intros ({}):", client_contact.intros().size());
+        log::debug(logcat, "ClientContact details:");
+        log::debug(logcat, "Pubkey: {}", client_contact.pubkey());
+        log::debug(logcat, "{} SRV records", client_contact.SRVs().size());
+        log::debug(logcat, "Intros ({}):", client_contact.intros().size());
         for (const auto& ci : client_contact.intros())
-            log::trace(
+            log::debug(
                 logcat,
                 "    • {}, hopid: {}, expiry: {}",
                 ci.relay.to_network_address(),

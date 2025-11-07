@@ -786,7 +786,9 @@ namespace srouter
                 "Specify SRV Records for services hosted on the SNApp for protocols that use SRV",
                 "records for service discovery. Each line specifies a single SRV record as:",
                 "    srv=_service._protocol priority weight port target.{}"_format(CLIENT_TLD),
-                "and can be specified multiple times as needed.",
+                "and can be specified multiple times as needed.  If `target.sesh` is set to",
+                "`localhost.sesh` it will be replaced with this Session Router's address.",
+                "",
                 "For more info see",
                 "https://docs.oxen.io/products-built-on-oxen/session-router/snapps/hosting-snapps",
                 "and general description of DNS SRV record configuration.",
@@ -797,7 +799,7 @@ namespace srouter
                 if (not maybe_srv)
                     throw std::invalid_argument{"Invalid SRV Record string: {}"_format(arg)};
 
-                srv_records.emplace(std::move(*maybe_srv));
+                srv_records.push_back(std::move(*maybe_srv));
             });
 
         conf.define_option<int>("network", "path-alignment-timeout", Deprecated);

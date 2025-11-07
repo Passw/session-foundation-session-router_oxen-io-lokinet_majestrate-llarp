@@ -17,10 +17,15 @@ namespace srouter
 
     ClientContact::ClientContact(
         PubKey pk,
-        std::unordered_set<dns::SRVData> srvs,
+        std::vector<dns::SRVData> srvs,
         protocol_flag protocols,
+        sys_ms signed_at,
         std::optional<net::ExitPolicy> policy)
-        : _pubkey{std::move(pk)}, _srv{std::move(srvs)}, _protos{protocols}, _exit_policy{std::move(policy)}
+        : _pubkey{std::move(pk)},
+          _srv{std::move(srvs)},
+          _protos{protocols},
+          _signed_at{signed_at},
+          _exit_policy{std::move(policy)}
     {}
 
     ClientContact::ClientContact(std::span<const std::byte> buf)
@@ -48,7 +53,7 @@ namespace srouter
 
         if (auto sublist = btdc.maybe<oxenc::bt_list_consumer>("s"))
             while (not sublist->is_finished())
-                _srv.emplace(sublist->consume_dict_consumer());
+                _srv.emplace_back(sublist->consume_dict_consumer());
 
         btdc.finish();
     }
@@ -104,6 +109,13 @@ namespace srouter
         return ret;
     }
 
+    std::chrono::sys_seconds ClientContact::expiry() const
+    {
+        if (_intros.empty())
+            return {};
+        return _intros.front().expiry;
+    }
+
     bool ClientContact::is_expired(sys_ms now) const
     {
         // We only need to check the first one, because this is sorted newest-to-oldest and so if
@@ -111,7 +123,7 @@ namespace srouter
         return _intros.empty() || _intros.front().is_expired(now);
     }
 
-    EncryptedClientContact ClientContact::encrypt_and_sign(const Ed25519BlindedKey& blinded) const
+    EncryptedClientContact ClientContact::encrypt_and_sign(const Ed25519BlindedKey& blinded)
     {
         EncryptedClientContact enc{};
 
@@ -121,7 +133,7 @@ namespace srouter
             enc.encrypted = bt_encode();
 
             crypto::xchacha20(enc.encrypted, SharedSecret{_pubkey}, enc.nonce);
-            enc.signed_at = srouter::time_now_ms();
+            _signed_at = enc.signed_at = srouter::time_now_ms();
 
             auto btdp = enc.bt_encode_for_signing();
             btdp.append_signature(

@@ -34,6 +34,10 @@ namespace srouter
                     client is embedded and therefore requires a tunneled connection. Serialized as a bitwise flag of
                     protocol_flag enums (llarp/net/policy.hpp)
             - "s" : (optional) SRV records for Session Router DNS lookup
+
+        Note that we also store a signed_at value, but that is *not* carried inside the
+        ClientContact but rather lives in the EncryptedClientContact and is stored in the
+        ClientContact via the outer wrapper value when decrypting (or when re-signing).
     */
     struct ClientContact
     {
@@ -46,20 +50,21 @@ namespace srouter
         explicit ClientContact(std::span<const std::byte> buf);
 
         /** Parameters:
-            - `private_data` : derived private subkey data
-            - `pubkey` : master identity key pubkey
+            - `pk` : master identity key pubkey
             - `srvs` : SRV records (optional, can be empty)
-            - `proto_flags` : client-supported protocols
+            - `protocols` : client-supported protocols
+            - `signed_at` : timestamp when the encrypted wrapper around this CC was signed
             - `policy` : exit-related traffic policy (optional)
          */
         ClientContact(
             PubKey pk,
-            std::unordered_set<dns::SRVData> srvs,
+            std::vector<dns::SRVData> srvs,
             protocol_flag protocols,
+            sys_ms signed_at,
             std::optional<net::ExitPolicy> policy = std::nullopt);
 
         // Encrypts and signs the client contact with the given blinded keypair
-        EncryptedClientContact encrypt_and_sign(const Ed25519BlindedKey& blinded) const;
+        EncryptedClientContact encrypt_and_sign(const Ed25519BlindedKey& blinded);
 
         /// Replaces the client intros in the current introset with the given values.  It is not
         /// necessary for the given values to be pre-sorted (i.e. this functions sorts them as
@@ -71,21 +76,26 @@ namespace srouter
         // last entry is the first to expire).
         std::span<const ClientIntro> intros() const& { return _intros; }
 
-        const std::unordered_set<dns::SRVData>& SRVs() const { return _srv; }
+        std::span<const dns::SRVData> SRVs() const { return _srv; }
 
         protocol_flag protocols() const { return _protos; }
 
         const std::optional<net::ExitPolicy>& exit_policy() const { return _exit_policy; }
 
+        std::chrono::sys_seconds expiry() const;
         bool is_expired(sys_ms now = srouter::time_now_ms()) const;
 
+        const sys_ms& signed_at() const { return _signed_at; }
+
       private:
-        PubKey _pubkey;
+        PubKey _pubkey{};
 
         std::vector<ClientIntro> _intros;
-        std::unordered_set<dns::SRVData> _srv;
+        std::vector<dns::SRVData> _srv;
 
-        protocol_flag _protos;
+        protocol_flag _protos{};
+
+        sys_ms _signed_at{};
 
         // In exit mode, we advertise our policy for accepted traffic and the corresponding ranges
         std::optional<net::ExitPolicy> _exit_policy;

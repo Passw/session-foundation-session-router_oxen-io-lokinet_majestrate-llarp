@@ -42,7 +42,7 @@ namespace srouter::rpc
         /// send packet with src and dst address containing buf on this packet source
         void send_udp(const quic::Address&, const quic::Address&, std::span<const std::byte> payload) const override
         {
-            func(dns::maybe_parse_dns_msg(payload));
+            func(dns::Message::extract(payload));
         }
 
         /// returns the sockaddr we are bound on if applicable
