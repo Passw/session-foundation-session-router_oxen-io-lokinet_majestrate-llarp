@@ -8,8 +8,6 @@
 #include "path/path_context.hpp"
 #include "profiling.hpp"
 #include "route_poker.hpp"
-#include "util/buffer.hpp"
-#include "util/mem.hpp"
 #include "util/str.hpp"
 #include "util/time.hpp"
 #include "vpn/platform.hpp"

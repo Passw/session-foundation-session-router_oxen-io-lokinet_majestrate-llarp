@@ -6,7 +6,6 @@
 #include "dns/srv_data.hpp"
 #include "net/policy.hpp"
 #include "util/aligned.hpp"
-#include "util/buffer.hpp"
 #include "util/file.hpp"
 #include "util/time.hpp"
 

@@ -3,7 +3,6 @@
 #include "contact/relay_contact.hpp"
 #include "crypto/crypto.hpp"
 #include "path/transit_hop.hpp"
-#include "util/buffer.hpp"
 #include "util/logging.hpp"
 
 #include <oxenc/bt_producer.h>

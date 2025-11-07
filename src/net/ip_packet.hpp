@@ -2,7 +2,6 @@
 
 #include "ip_headers.hpp"
 #include "policy.hpp"
-#include "util/buffer.hpp"
 #include "util/formattable.hpp"
 #include "util/time.hpp"
 

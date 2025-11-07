@@ -4,7 +4,6 @@
 #include "encode.hpp"
 #include "net/ip_packet.hpp"
 #include "srv_data.hpp"
-#include "util/buffer.hpp"
 #include "util/logging.hpp"
 
 #include <nlohmann/json.hpp>

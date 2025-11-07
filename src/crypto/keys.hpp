@@ -2,7 +2,6 @@
 
 #include "crypto/constants.hpp"
 #include "util/aligned.hpp"
-#include "util/buffer.hpp"
 
 namespace srouter
 {

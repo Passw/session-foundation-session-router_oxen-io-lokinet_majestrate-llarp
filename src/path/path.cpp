@@ -10,7 +10,6 @@
 #include "profiling.hpp"
 #include "router/router.hpp"
 #include "util/bspan.hpp"
-#include "util/buffer.hpp"
 
 #include <nlohmann/json.hpp>
 

@@ -74,10 +74,8 @@ endif()
 # config, crypto, timeplace, nodedb, net, router
 session_router_add_library(session-router-utils
   ${CMAKE_CURRENT_BINARY_DIR}/constants/version.cpp
-  util/buffer.cpp
   util/file.cpp
   util/logging.cpp
-  util/mem.cpp
   util/str.cpp
   util/thread/queue_manager.cpp  
   util/thread/threading.cpp

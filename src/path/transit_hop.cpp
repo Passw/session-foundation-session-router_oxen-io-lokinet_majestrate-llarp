@@ -6,7 +6,6 @@
 #include "messages/path.hpp"
 #include "router/router.hpp"
 #include "util/bspan.hpp"
-#include "util/buffer.hpp"
 #include "util/time.hpp"
 
 #include <nlohmann/json.hpp>
