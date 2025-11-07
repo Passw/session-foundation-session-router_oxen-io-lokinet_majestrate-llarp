@@ -28,7 +28,8 @@ namespace srouter
           _exit_policy{std::move(policy)}
     {}
 
-    ClientContact::ClientContact(std::span<const std::byte> buf)
+    ClientContact::ClientContact(std::span<const std::byte> buf, sys_ms signed_at)
+        : _signed_at{signed_at}
     {
         oxenc::bt_dict_consumer btdc{buf};
 
@@ -215,7 +216,7 @@ namespace srouter
         crypto::xchacha20(plaintext, SharedSecret{root}, nonce);
         try
         {
-            cc.emplace(plaintext);
+            cc.emplace(plaintext, signed_at);
         }
         catch (const std::exception& e)
         {

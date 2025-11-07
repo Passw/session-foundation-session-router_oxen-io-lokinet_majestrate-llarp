@@ -46,7 +46,7 @@ namespace srouter
 
         /// Constructs a ClientContact by parsing a serialized client contact value.  Throws if
         /// invalid.
-        explicit ClientContact(std::span<const std::byte> buf);
+        ClientContact(std::span<const std::byte> buf, sys_ms signed_at);
 
         /** Parameters:
             - `pk` : master identity key pubkey
@@ -134,7 +134,7 @@ namespace srouter
 
         PubKey blinded_pubkey;
         SymmNonce nonce;
-        sys_ms signed_at{sys_ms::min()};
+        sys_ms signed_at{};
         std::vector<std::byte> encrypted;
 
         std::string _bt_payload;
