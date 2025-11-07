@@ -22,7 +22,7 @@ namespace srouter
       private:
         Router& _router;
 
-        std::unordered_map<PubKey, EncryptedClientContact, AlignedHasher> _storage;
+        std::unordered_map<PubKey, EncryptedClientContact> _storage;
 
         std::shared_ptr<quic::Ticker> _purge_ticker;
 

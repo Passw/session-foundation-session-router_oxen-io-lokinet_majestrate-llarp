@@ -52,5 +52,5 @@ namespace srouter
 template <>
 struct std::hash<srouter::NetworkAddress>
 {
-    size_t operator()(const srouter::NetworkAddress& r) const { return srouter::AlignedHasher{}(r.pubkey); }
+    size_t operator()(const srouter::NetworkAddress& r) const { return std::hash<srouter::RouterID>{}(r.pubkey); }
 };
