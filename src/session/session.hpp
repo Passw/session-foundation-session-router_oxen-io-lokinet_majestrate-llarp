@@ -356,6 +356,11 @@ namespace srouter
             int _cc_fetch_fail_count = 0;
             bool cc_ok = false;
 
+            // Tracks the signed-at value whenever we update CC values: if we receive a session
+            // close message then that tells us we need to wait for a CC newer than this before we
+            // can rebuild paths to reestablish the session.
+            sys_ms _cc_last_signed{};
+
             // Chooses the next router id to pivot to, based on introset and current paths.  Returns
             // nullopt if no pivot is available right now, otherwise the router id and the lifetime
             // of paths to that pivot (so that we avoid creating paths that will become stale paths

@@ -805,6 +805,7 @@ namespace srouter::session
     {
         invalidate_paths();
         cc_ok = false;
+        _next_cc_update = time_now_ms();
     }
 
     bool Session::is_expired(sys_ms now) const { return now - last_activity > SESSION_TIMEOUT; }
@@ -1184,9 +1185,14 @@ namespace srouter::session
                 if (cc)
                 {
                     log::debug(logcat, "Session initiation returned client contact: {}", *cc);
-                    cc_ok = true;
-                    _intro_update_processed = false;
-                    update_intros(*cc);
+                    if (!cc_ok && cc->signed_at() <= _cc_last_signed)
+                        log::debug(logcat, "Ignoring CC: we need a newer one to reestablish paths");
+                    else
+                    {
+                        cc_ok = true;
+                        _intro_update_processed = false;
+                        update_intros(*cc);
+                    }
                 }
                 else
                 {
@@ -1210,6 +1216,7 @@ namespace srouter::session
         auto now = time_now_ms();
         _cc_fetch_fail_count = 0;
         _next_cc_update = now + CC_FETCH_STALE;
+        _cc_last_signed = cc.signed_at();
         last_inbound_activity = now;  // so we don't just fetch for inactivity again right away
         auto intros = cc.intros();
         _intros.assign(intros.begin(), intros.end());
