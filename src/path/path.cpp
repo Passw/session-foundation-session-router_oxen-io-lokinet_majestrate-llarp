@@ -170,9 +170,10 @@ namespace srouter::path
         send_path_control_message("fetch_rcs", FetchRC::serialize(needed), std::move(func));
     }
 
-    void Path::find_client_contact(const PubKey& blinded_pk, std::function<void(path_control_response)> func)
+    void Path::find_client_contact(
+        const PubKey& blinded_pk, int lookup_index, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("find_cc", FindClientContact::serialize(blinded_pk), std::move(func));
+        send_path_control_message("find_cc", FindClientContact::serialize(blinded_pk, lookup_index), std::move(func));
     }
 
     void Path::publish_client_contact(

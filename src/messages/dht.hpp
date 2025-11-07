@@ -21,12 +21,13 @@ namespace srouter
     {
         /** Bt-encoded contents:
             - 'k' : blinded pubkey of the queried client contact
+            - 'l' : lookup index, where 0 = closest, 3 = 4th closest.  -1 or omitted means "first to respond"
 
             Note: we are bt-encoding to leave space for future fields (ex: version)
          */
-        std::vector<std::byte> serialize(const PubKey& location);
+        std::vector<std::byte> serialize(const PubKey& location, int lookup_index);
 
-        PubKey deserialize(oxenc::bt_dict_consumer&& btdc);
+        std::pair<PubKey, int> deserialize(oxenc::bt_dict_consumer&& btdc);
 
         /** Bt-encoded contents:
             - 'x' : EncryptedClientContact

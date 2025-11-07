@@ -53,25 +53,30 @@ namespace srouter
     {
         /** Bt-encoded contents:
             - 'k' : blinded pubkey corresponding to client contact
-
-            Note: we are bt-encoding to leave space for future fields (ex: version)
+            - 'i' : 0-3 lookup index, where 0 means closest publish relay and 3 means 4th closest
          */
-        std::vector<std::byte> serialize(const PubKey& location)
+        std::vector<std::byte> serialize(const PubKey& location, int lookup_index)
         {
             oxenc::bt_dict_producer btdp;
 
             btdp.append("k", location.span());
+            if (lookup_index != -1)
+                btdp.append("l", lookup_index);
 
             return to_bytes(btdp);
         }
 
-        PubKey deserialize(oxenc::bt_dict_consumer&& btdc)
+        std::pair<PubKey, int> deserialize(oxenc::bt_dict_consumer&& btdc)
         {
-            PubKey key;
+            std::pair<PubKey, int> result;
+            auto& [key, index] = result;
 
             try
             {
                 key.assign(btdc.require_span<std::byte, PubKey::SIZE>("k"));
+                index = btdc.maybe<int>("l").value_or(-1);
+                if (index < -1 || index > 3)
+                    throw std::invalid_argument{"Invalid lookup index {}: required -1 to 3"_format(index)};
             }
             catch (const std::exception& e)
             {
@@ -79,7 +84,7 @@ namespace srouter
                 throw;
             }
 
-            return key;
+            return result;
         }
 
         /** Bt-encoded contents:

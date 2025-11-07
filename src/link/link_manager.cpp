@@ -532,9 +532,10 @@ namespace srouter::link
         log::trace(logcat, "Received request to find client contact!");
 
         PubKey blinded_pubkey;
+        int lookup_index;
         try
         {
-            blinded_pubkey = FindClientContact::deserialize(oxenc::bt_dict_consumer{body});
+            std::tie(blinded_pubkey, lookup_index) = FindClientContact::deserialize(oxenc::bt_dict_consumer{body});
         }
         catch (const std::exception& e)
         {
@@ -542,83 +543,109 @@ namespace srouter::link
             return respond(messages::ERROR_RESPONSE);
         }
 
-        auto closest_rids = router.node_db().find_many_closest_to(blinded_pubkey, path::CC_PUBLISH_LOCATIONS);
-        if (closest_rids.size() < path::CC_PUBLISH_LOCATIONS)
-            return respond(messages::ERROR_RESPONSE);
-
-        // We don't provide the answer ourselves unless we are in the closest-4 set because it's
-        // possible we *were* in the closest 4 but then dropped out, but still have a stale record
-        // hanging around.
-        auto authoritative = std::ranges::count(closest_rids, router.id());
-        assert(authoritative <= 1);
-
-        if (authoritative)
-        {
-            // TODO FIXME: Do we want to send the requests off to other relays *even if* we have it,
-            // to double-check against other relays in case ours is stale?
-
+        auto respond_if_local_cc = [&]() -> bool {
             if (auto maybe_cc = router.contact_db().get_encrypted_cc(blinded_pubkey))
             {
-                log::info(
+                log::debug(
                     logcat,
-                    "Received FindClientContact request (key: {}); returning local EncryptedClientContact...",
+                    "FindClientContact request (key: {}): found and returning local EncryptedClientContact",
                     blinded_pubkey);
                 auto resp = FindClientContact::serialize_response(*maybe_cc);
                 // FIXME: eventually respond func should take a byte span or something, but
                 //        string was easier for now
-                return respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
+                respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
+                return true;
             }
+            return false;
+        };
+        auto respond_local_cc_or_fail = [&] {
+            if (!respond_if_local_cc())
+            {
+                log::debug(
+                    logcat, "FindClientContact request (key: {}): record not found; returning error", blinded_pubkey);
+                respond(messages::NOT_FOUND_RESPONSE);
+            }
+        };
 
-            log::debug(
-                logcat,
-                "Received FindClientContact and we are authoritative, but don't have a matching CC for {}",
-                blinded_pubkey);
-            // Don't return an error because we can still possibly forward it to other authoritative
-            // nodes, below, and it's perfectly possible for us not to have it if we missed it for
-            // various reasons.
-        }
-
-        // If the optional was nullopt, then this was a relay <-> relay request. As a result, we should NOT
-        // allow it to continue propagating
         if (source_is_relay)
         {
-            log::critical(
-                logcat,
-                "Received relayed FindClientContact request (key: {}); could not find locally, relaying "
-                "error...",
-                blinded_pubkey);
-            return respond(messages::NOT_FOUND_RESPONSE);
+            // If this was forwarded from another relay, then just look for it locally: it already
+            // resolved the nth-location index and sent to us, so don't worry about the index and
+            // just go look for it.  (We don't want to hit race conditions by worrying about the
+            // index matching exactly for cases such as where we were in 3rd place a second ago but
+            // a new block just switched us to 2nd place).
+            respond_local_cc_or_fail();
+            return;
         }
 
-        auto remaining = std::make_shared<size_t>(closest_rids.size() - authoritative);
-        auto hook = [respond = std::move(respond), remaining](quic::message msg) mutable {
-            if (*remaining == 0)
-                return;  // Already answered by an earlier response
+        auto closest_rids = router.node_db().find_many_closest_to(blinded_pubkey, path::CC_PUBLISH_LOCATIONS);
+        if (closest_rids.size() < path::CC_PUBLISH_LOCATIONS)
+            return respond(messages::ERROR_RESPONSE);
 
-            if (msg)
+        if (lookup_index >= 0)
+        {
+            auto& lookup_rid = closest_rids[lookup_index];
+            if (lookup_rid == router.id())
             {
-                *remaining = 0;
-                log::info(logcat, "Relayed FindClientContact request SUCCEEDED! Relaying response");
-                log::trace(logcat, "Relayed FindClientContact response: {}", buffer_printer{msg.body()});
-                respond(std::string{msg.body()});
+                respond_local_cc_or_fail();
                 return;
             }
 
-            if (--*remaining == 0)
-                return;  // This was an error, but there are more responses to come back
-
-            log::warning(logcat, "All FindClientContact requests FAILED! Relaying failure");
-            respond(msg.timed_out ? messages::TIMEOUT_RESPONSE : std::string{msg.body()});
-        };
-
-        log::debug(logcat, "Relaying FindClientContactMessage (key: {}) to {} peers", blinded_pubkey, *remaining);
-
-        auto forwarded_find_cc = FindClientContact::serialize(blinded_pubkey);
-        for (const auto& rid : closest_rids)
+            auto forwarded_find_cc = FindClientContact::serialize(blinded_pubkey, -1);
+            endpoint.send_command(lookup_rid, "find_cc", forwarded_find_cc, [respond](quic::message msg) {
+                if (msg.timed_out)
+                    respond(messages::TIMEOUT_RESPONSE);
+                else
+                    respond(std::string{msg.body()});
+            });
+        }
+        else
         {
-            if (rid == router.id())
-                continue;
-            endpoint.send_command(rid, "find_cc", forwarded_find_cc, hook);
+            // TODO FIXME: this entire else branch can be dropped once all relays and clients are on
+            // 1.0.2+ (where a >= 0 index is always included by clients, and we can just error if it
+            // isn't).
+
+            auto authoritative = std::ranges::count(closest_rids, router.id());
+            if (authoritative)
+            {
+                if (respond_if_local_cc())
+                    return;
+
+                // Don't return an error because we can still possibly forward it to other authoritative
+                // nodes, below, and it's perfectly possible for us not to have it if we missed it for
+                // various reasons.
+            }
+
+            auto remaining = std::make_shared<size_t>(closest_rids.size() - authoritative);
+            auto hook = [respond = std::move(respond), remaining](quic::message msg) mutable {
+                if (*remaining == 0)
+                    return;  // Already answered by an earlier response
+
+                if (msg)
+                {
+                    *remaining = 0;
+                    log::info(logcat, "Relayed FindClientContact request SUCCEEDED! Relaying response");
+                    log::trace(logcat, "Relayed FindClientContact response: {}", buffer_printer{msg.body()});
+                    respond(std::string{msg.body()});
+                    return;
+                }
+
+                if (--*remaining == 0)
+                    return;  // This was an error, but there are more responses to come back
+
+                log::warning(logcat, "All FindClientContact requests FAILED! Relaying failure");
+                respond(msg.timed_out ? messages::TIMEOUT_RESPONSE : std::string{msg.body()});
+            };
+
+            log::debug(logcat, "Relaying FindClientContactMessage (key: {}) to {} peers", blinded_pubkey, *remaining);
+
+            auto forwarded_find_cc = FindClientContact::serialize(blinded_pubkey, -1);
+            for (const auto& rid : closest_rids)
+            {
+                if (rid == router.id())
+                    continue;
+                endpoint.send_command(rid, "find_cc", forwarded_find_cc, hook);
+            }
         }
     }
 

@@ -940,16 +940,13 @@ namespace srouter::handlers
             remote_key,
             remote.to_network_address(false));
 
+        // Will be set to 0 once we have seen an successful response, and so later responses will
+        // set a negative (after decrementing).  If a response callback sees 0 that means that it is
+        // responsible for sending an error (i.e. this implies all requests failed).
         auto remaining = std::make_shared<int>(0);
 
         auto response_handler = [remote, func, remaining, this](auto resp) {
             int rem = --*remaining;
-            if (rem < 0)
-            {
-                // Another path response already returned it
-                log::trace(logcat, "Dropping duplicate `find_cc` response (success: {})", resp.ok());
-                return;
-            }
 
             std::optional<ClientContact> cc;
             try
@@ -1003,8 +1000,14 @@ namespace srouter::handlers
 
             if (cc)
             {
-                *remaining = 0;
-                try_calling(logcat, func, update_cc(remote, std::move(cc)));
+                // Offer it to the cache whether or not e need to call the callback so that if one
+                // of the later callbacks return a better value, we keep that better value on hand.
+                auto& ccc = update_cc(remote, std::move(cc));
+
+                if (rem > 0)
+                    *remaining = 0;
+                if (rem >= 0)
+                    try_calling(logcat, func, ccc);
             }
             else if (rem == 0)
             {
@@ -1015,27 +1018,40 @@ namespace srouter::handlers
 
         Lock_t l{paths_mutex};
 
-        // TODO FIXME: add an index to this lookup, instructing the remote to fetch from one
-        // particular instance of the 4 closest storage locations.
-        // And only send 4 (trying different paths, but repeating if necessary).
-        // Then invoke the callback on the first response, but don't stop processing subsequent
-        // responses as one of the others might still return a newer CC that we want to keep.
-        for (const auto& [_, p] : _paths)
+        // We submit 4 CC fetches down 4 paths (reusing paths if we have less than 4), each
+        // requesting a specific network storage index.  When the first response comes back, we use
+        // it; but if we get others after that that are better (i.e. newer) then we update when they
+        // arrive as well.
+        //
+        // Doing this provides some redundancy on lookup: even if the requested CC storage "missed"
+        // some nodes (and perhaps left stale ones behind), we should still have a reasonable chance
+        // to get the latest one even if a server with a stale one happens to respond faster to all
+        // the relay endpoints of our utility path.
+        std::vector<path::Path*> paths;
+        paths.reserve(4);
+        for (auto& p : active_paths())
         {
-            if (not p or not p->is_active())
-                continue;
-
-            ++*remaining;
-            log::debug(
-                logcat,
-                "Querying pivot (rid:{}) for ClientContact lookup target (rid:{})",
-                p->terminal_rid().short_string(),
-                remote);
-
-            p->find_client_contact(remote_key, response_handler);
+            paths.push_back(&p);
+            if (paths.size() >= 4)
+                break;
         }
+        if (!paths.empty())
+        {
+            for (int lookup_idx = 0; lookup_idx < 4; lookup_idx++)
+            {
+                auto& path = *paths[lookup_idx % paths.size()];
+                ++*remaining;
 
-        if (*remaining == 0)
+                log::debug(
+                    logcat,
+                    "Querying pivot (rid:{}) for ClientContact lookup target (rid:{})",
+                    path.terminal_rid().short_string(),
+                    remote);
+
+                path.find_client_contact(remote_key, lookup_idx, response_handler);
+            }
+        }
+        else
         {
             log::warning(logcat, "CC lookup failed: no usable paths!");
             // Don't cache this nullopt: we didn't even attempt a lookup, and an immediate
