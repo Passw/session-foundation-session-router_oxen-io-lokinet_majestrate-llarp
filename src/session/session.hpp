@@ -350,11 +350,11 @@ namespace srouter
             std::vector<ClientIntro> _intros;
             std::unordered_set<RouterID> _pivots;
             bool _intro_update_processed = false;
-            bool updating_intros = false;
+            bool _updating_intros = false;
 
             sys_ms _next_cc_update{};
             int _cc_fetch_fail_count = 0;
-            bool cc_ok = false;
+            bool _cc_ok = false;
 
             // Tracks the signed-at value whenever we update CC values: if we receive a session
             // close message then that tells us we need to wait for a CC newer than this before we

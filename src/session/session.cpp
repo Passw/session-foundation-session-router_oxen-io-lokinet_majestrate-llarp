@@ -804,7 +804,7 @@ namespace srouter::session
     void OutboundClientSession::recv_close()
     {
         invalidate_paths();
-        cc_ok = false;
+        _cc_ok = false;
         _next_cc_update = time_now_ms();
     }
 
@@ -906,7 +906,7 @@ namespace srouter::session
         if (_is_closed)
             return;
 
-        if (!updating_intros && (now >= _next_cc_update || now - last_inbound_activity > 30s))
+        if (!_updating_intros && (now >= _next_cc_update || now - last_inbound_activity > 30s))
         {
             log::info(
                 logcat,
@@ -1166,9 +1166,9 @@ namespace srouter::session
 
     void OutboundClientSession::refresh_intros()
     {
-        if (updating_intros)
+        if (_updating_intros)
             return;
-        updating_intros = true;
+        _updating_intros = true;
         log::debug(logcat, "Initiating intro lookup for {}", _remote);
         _parent.lookup_client_intro(
             _remote.pubkey,
@@ -1181,15 +1181,15 @@ namespace srouter::session
                         "session-alive canary is dead");
                     return;
                 }
-                updating_intros = false;
+                _updating_intros = false;
                 if (cc)
                 {
                     log::debug(logcat, "Session initiation returned client contact: {}", *cc);
-                    if (!cc_ok && cc->signed_at() <= _cc_last_signed)
+                    if (!_cc_ok && cc->signed_at() <= _cc_last_signed)
                         log::debug(logcat, "Ignoring CC: we need a newer one to reestablish paths");
                     else
                     {
-                        cc_ok = true;
+                        _cc_ok = true;
                         _intro_update_processed = false;
                         update_intros(*cc);
                     }
@@ -1235,7 +1235,7 @@ namespace srouter::session
         // - If we killed our currently active path then switch to another.
         // - If we end up with too few paths then start some builds.
 
-        if (!cc_ok)
+        if (!_cc_ok)
         {
             log::debug(logcat, "{} returning early, client contact empty or no longer usable", __PRETTY_FUNCTION__);
             return;
