@@ -668,10 +668,30 @@ namespace srouter::session
         // packet to handle via the tun endpoint, and the same for UDP packets from embedded
         // remotes (which also send raw UDP packets):
         if (dgram_type == traffic_type::TUNNELED_QUIC)
+        {
             tcp_tunnel->quic_ep->manually_receive_packet(
                 oxen::quic::Packet{tcp_tunnel->FAKE_QUIC_PATH, std::move(data)});
-        else
-            _r.tun_endpoint()->handle_inbound_packet(IPPacket{std::move(data)}, dgram_type, _remote);
+            return;
+        }
+
+        auto pkt = IPPacket{std::move(data)};
+
+        // If the packet is ipv4 and we are an inbound client session with a tun interface, check
+        // if we've mapped ipv4 for the remote and do so if not.
+        //
+        // NOTE: at this time, tun clients always support ipv4.  if this changes, a check for that
+        // should short-circuit the call to map_session below.
+        if (!_r.embedded() && !is_relay_session && !is_outbound && pkt.is_ipv4() && !ipv4_mapped)
+        {
+            if (!_parent.map_session_v4(*this))
+            {
+                log::warning(logcat, "Failed to map ipv4 for session, dropping inbound packet.");
+                return;
+            }
+            ipv4_mapped = true;
+        }
+
+        _r.tun_endpoint()->handle_inbound_packet(std::move(pkt), dgram_type, _remote);
     }
 
     void Session::publish_client_contact(const EncryptedClientContact& ecc)

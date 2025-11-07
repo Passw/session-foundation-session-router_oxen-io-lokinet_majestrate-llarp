@@ -1121,7 +1121,21 @@ namespace srouter::handlers
         return false;
     }
 
-    std::optional<ipv6> SessionEndpoint::map_session(const session::Session& s)
+    std::optional<ipv4> SessionEndpoint::map_session_v4(const session::Session& s)
+    {
+        log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
+        assert(router.tun_endpoint());
+
+        log::debug(logcat, "Mapping ipv4 for inbound session frmo {}", s.remote());
+        auto addr = router.tun_endpoint()->map4(s.remote());
+        if (addr)
+            log::debug(logcat, "Mapping successful, address: {}", *addr);
+        else
+            log::warning(logcat, "Mapping unsuccessful; out of available addresses?");
+        return addr;
+    }
+
+    std::optional<ipv6> SessionEndpoint::map_session_v6(const session::Session& s)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
@@ -1177,7 +1191,7 @@ namespace srouter::handlers
     {
         // FIXME: for now only tun clients can have inbound sessions, but eventually that will
         //        not be the case and we'll need to "if tun" this.
-        if (!map_session(*new_session))
+        if (!map_session_v6(*new_session))
         {
             log::warning(
                 logcat,

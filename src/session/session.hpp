@@ -35,13 +35,6 @@ namespace srouter
         class SessionEndpoint;
     }  // namespace handlers
 
-    /** Snode vs Client Session
-        - client to client: shared secret (symmetric key) is negotiated
-        - client to relay:
-          - the traffic to the pivot is encrypted
-          - the pivot is the terminus, so data doesn't need to be encrypted
-    */
-
     namespace session
     {
         using session_tag = uint32_t;
@@ -107,6 +100,11 @@ namespace srouter
             sys_ms last_inbound_activity = srouter::time_now_ms();
 
             void update_active();
+
+            // We no longer always map an ipv4 address for a remote.  For inbound client sessions,
+            // we want to make this mapping automatically if we receive ipv4 traffic, are not
+            // embedded, and support ipv4.  Caching this here saves a map lookup on every packet.
+            bool ipv4_mapped{false};
 
             // We capture a weak_ptr to this shared_ptr to avoid needing to use shared_from_this
             // when we need to assure we are still alive in lambdas given to external objects.  I.e.

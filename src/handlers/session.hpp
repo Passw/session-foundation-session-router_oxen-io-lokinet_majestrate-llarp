@@ -235,8 +235,8 @@ namespace srouter
             // incoming requests to initiate a session
             bool validate(const NetworkAddress& remote, std::optional<std::string> maybe_auth = std::nullopt);
 
-            // FIXME: should SessionEndpoint have these mappings at all?
-            std::optional<ipv6> map_session(const session::Session& s);
+            std::optional<ipv4> map_session_v4(const session::Session& s);
+            std::optional<ipv6> map_session_v6(const session::Session& s);
             void map_remote_to_local_addr(NetworkAddress remote, quic::Address local);
             void unmap_local_addr_by_remote(const NetworkAddress& remote);
             void unmap_remote_by_name(const std::string& name);
