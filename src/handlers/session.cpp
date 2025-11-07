@@ -1236,7 +1236,7 @@ namespace srouter::handlers
         {
             // don't publish client contact to other end of outbound session
             if (session->is_outbound)
-                return;
+                continue;
             log::debug(
                 logcat,
                 "Publishing ClientContact#{} to remote on inbound session (remote:{})",
