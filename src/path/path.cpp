@@ -2,16 +2,16 @@
 
 #include "crypto/crypto.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
+#include "messages/common.hpp"
 #include "nodedb.hpp"
 #include "path_handler.hpp"
 #include "profiling.hpp"
 #include "router/router.hpp"
 #include "util/bspan.hpp"
+#include "util/logging/buffer.hpp"
 
 #include <nlohmann/json.hpp>
+#include <oxenc/bt_producer.h>
 
 #include <chrono>
 #include <ranges>
@@ -77,7 +77,7 @@ namespace srouter::path
         return "{:.1f}%, {:.0f}ms avg, {:.1f}ms s.d."_format(success_pct, mean, sd);
     }
 
-    void Path::do_ping(sys_ms start_time)
+    void Path::do_ping(steady_ms start_time)
     {
         if (!is_active() || start_time < next_ping)
             return;
@@ -92,7 +92,7 @@ namespace srouter::path
                 auto sself = wself.lock();
                 if (!sself)
                     return;
-                sys_ms now = srouter::time_now_ms();
+                auto now = steady_now_ms();
                 auto time_taken = now - start_time;
                 if (resp.ok())
                 {
@@ -148,7 +148,7 @@ namespace srouter::path
                             buffer_printer(resp.body));
 
                     if (expire)
-                        _expiry = start_time;
+                        _expiry = {};
                 }
             });
     }
@@ -161,33 +161,41 @@ namespace srouter::path
 
     void Path::fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("fetch_rcs", FetchRC::serialize({&needed, 1}), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        auto btlp = btdp.append_list("x"sv);
+        btlp.append(needed.span());
+        send_path_control_message("fetch_rcs", btdp.span<std::byte>(), std::move(func));
     }
 
-    void Path::fetch_relay_contacts(std::span<const RouterID> needed, std::function<void(path_control_response)> func)
+    void Path::fetch_relay_contacts(std::span<const std::byte> body, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("fetch_rcs", FetchRC::serialize(needed), std::move(func));
+        send_path_control_message("fetch_rcs", body, std::move(func));
     }
 
     void Path::find_client_contact(
         const PubKey& blinded_pk, int lookup_index, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("find_cc", FindClientContact::serialize(blinded_pk, lookup_index), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        btdp.append("k"sv, blinded_pk.span());
+        btdp.append("l"sv, lookup_index);
+        send_path_control_message("find_cc", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::publish_client_contact(
         const EncryptedClientContact& ecc, int location, std::function<void(path_control_response)> func)
     {
-        send_path_control_message("publish_cc", PublishClientContact::serialize(ecc, location), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        btdp.append("e"sv, ecc.bt_payload());
+        btdp.append("n"sv, location);
+        send_path_control_message("publish_cc", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::resolve_sns(
         std::span<const std::byte, SHORTHASHSIZE> name_hash, std::function<void(path_control_response)> func)
     {
-        oxenc::bt_dict_producer sns;
-        sns.append("s", name_hash);
-
-        send_path_control_message("resolve_sns", sns.span<std::byte>(), std::move(func));
+        oxenc::bt_dict_producer btdp;
+        btdp.append("s"sv, name_hash);
+        send_path_control_message("resolve_sns", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::encrypt_path_message(std::vector<std::byte>& data, SymmNonce&& nonce, std::byte type, bool with_mac)
@@ -282,7 +290,10 @@ namespace srouter::path
             func(std::move(resp));
         };
 
-        auto inner_payload = PATH::CONTROL::serialize(method, body);
+        oxenc::bt_dict_producer btdp;
+        btdp.append("e"sv, method);
+        btdp.append("p"sv, body);
+        auto inner_payload = btdp.view();
         std::vector<std::byte> payload;
         payload.reserve(inner_payload.size() + ENCRYPT_PATH_MESSAGE_OVERHEAD_MAC);
         payload.resize(inner_payload.size());
@@ -316,24 +327,6 @@ namespace srouter::path
             ret.emplace_back(NetworkAddress{hop.router_id, false}.to_string(), rc->addr().to_ipv4().to_string());
         }
         return ret;
-    }
-
-    nlohmann::json Path::ExtractStatus() const
-    {
-        auto now = srouter::time_now_ms();
-
-        nlohmann::json obj{
-            {"lastRecvMsg", to_json(last_recv_msg.time_since_epoch())},
-            {"expired", is_expired(now)},
-            {"ready", is_active()},
-        };
-
-        auto json_hops = nlohmann::json::array();
-        for (const auto& hop : hops)
-            json_hops.push_back(hop.ExtractStatus());
-        obj["hops"] = std::move(json_hops);
-
-        return obj;
     }
 
     void Path::set_established()

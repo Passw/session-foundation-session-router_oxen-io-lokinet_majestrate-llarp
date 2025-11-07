@@ -4,8 +4,6 @@
 #include "handlers/session.hpp"
 #include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/path.hpp"
 #include "net/policy.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
@@ -347,9 +345,11 @@ namespace srouter::session
             log::warning(logcat, "Dropping session control message: session has no current path");
             return false;
         }
-        auto inner_body = PATH::CONTROL::serialize(method, body);
 
-        send_session_data_message(std::move(inner_body), 0, true);
+        oxenc::bt_dict_producer btdp;
+        btdp.append("e", method);
+        btdp.append("p", body);
+        send_session_data_message(std::move(btdp).span<std::byte>(), 0, true);
 
         return true;
     }
@@ -854,11 +854,12 @@ namespace srouter::session
         // TODO: kick off path builds immediately
     }
 
-    void OutboundSession::fire_waiting(sys_ms now)
+    void OutboundSession::fire_waiting()
     {
         // If we're established then we can immediately fire everything in the queue, otherwise we
         // fire callbacks that have reached their timer (to signal a non-established timeout).
         const bool est = is_established();
+        const auto now = steady_now_ms();
         while (!_on_established.empty() && (est || _on_established.top().first <= now))
         {
             try
@@ -877,7 +878,7 @@ namespace srouter::session
         std::function<void(OutboundSession&)> callback, std::optional<std::chrono::milliseconds> timeout)
     {
         _on_established.emplace(
-            srouter::time_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
+            steady_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
     }
 
     void Session::tick(sys_ms now)
@@ -897,7 +898,7 @@ namespace srouter::session
 
         close_old_paths(now);
         path::PathHandler::tick(now);
-        fire_waiting(now);
+        fire_waiting();
     }
 
     void OutboundClientSession::tick(sys_ms now)
@@ -1400,8 +1401,11 @@ namespace srouter::session
             auto switch_nonce = dh_nonce ^ switch_xor_factor;
             oxenc::bt_dict_producer btdp;
             btdp.append("p"sv, path.terminal_hopid().span());
-            auto maybe_path_switch_msg = make_session_data_message(
-                PATH::CONTROL::serialize("path_switch"sv, btdp.span<std::byte>()), 0, true, false, switch_nonce);
+            oxenc::bt_dict_producer btdp_path_switch;
+            btdp_path_switch.append("e", "path_switch"sv);
+            btdp_path_switch.append("p", btdp.span<std::byte>());
+            auto maybe_path_switch_msg =
+                make_session_data_message(btdp_path_switch.span<std::byte>(), 0, true, false, switch_nonce);
             if (!maybe_path_switch_msg)
             {
                 log::warning(logcat, "Failed to create path switch message");
@@ -1468,16 +1472,6 @@ namespace srouter::session
         }
 
         select_new_current_impl(std::move(good), std::move(fallback));
-    }
-
-    nlohmann::json OutboundClientSession::ExtractStatus() const
-    {
-        auto obj = path::PathHandler::ExtractStatus();
-        // obj["lastExitUse"] = to_json(_last_use);
-        //  auto pub = _auth->session_key().to_pubkey();
-        //  obj["exitIdentity"] = pub.to_string();
-        obj["endpoint"] = _remote.to_string();
-        return obj;
     }
 
     std::optional<std::pair<RouterID, std::pair<std::chrono::seconds, HopID>>> OutboundClientSession::select_pivot()
@@ -1601,7 +1595,7 @@ namespace srouter::session
             pre_establish_data_queue.reset();
         }
 
-        fire_waiting(srouter::time_now_ms());
+        fire_waiting();
     }
 
     InboundClientSession::InboundClientSession(
@@ -1655,7 +1649,7 @@ namespace srouter::session
     }
 
     void InboundRelaySession::send_path_control_message(
-        std::vector<std::byte>&& data, SymmNonce&& nonce, bool path_switch)
+        std::vector<std::byte>&& data, SymmNonce&& nonce, bool /*path_switch*/)
     {
         update_active();
         if (check_dead(_current_thop, *this))

@@ -124,17 +124,6 @@ namespace srouter
         return true;
     }
 
-    nlohmann::json RelayContact::extract_status() const
-    {
-        nlohmann::json obj{
-            {"lastUpdated", _timestamp.time_since_epoch().count()},
-            {"publicRouter", _addr.is_public()},
-            {"identity", _router_id.to_string()},
-            {"address", _addr.to_string()}};
-
-        return obj;
-    }
-
     std::string RelayContact::to_string() const
     {
         return "RCv{}[{} @ {}, t={}]"_format(VERSION, _router_id, _addr, _timestamp.time_since_epoch().count());

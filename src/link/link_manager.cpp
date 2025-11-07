@@ -5,16 +5,13 @@
 #include "contact/router_id.hpp"
 #include "crypto/crypto.hpp"
 #include "messages/common.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
-#include "messages/session.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "session/session.hpp"
 #include "util/bspan.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 #include "util/zstd.hpp"
@@ -133,22 +130,6 @@ namespace srouter::link
 
     Manager::Manager(Router& r) : router{r}, endpoint{*this} {}
 
-    // void Manager::close_connection(RouterID rid) { return ep->close_connection(rid); }
-
-#if 0
-    /*
-     * TODO FIXME - fix reachability logic (see router.cpp)
-     */
-    void Manager::test_reachability(
-        const RouterID& rid, connection_established_callback on_open, connection_closed_callback on_close)
-    {
-        if (auto rc = router.node_db().get_rc(rid))
-            connect_to(*rc, std::move(on_open), std::move(on_close));
-        else
-            log::warning(logcat, "Could not find RelayContact for connection to rid:{}", rid);
-    }
-#endif
-
     void Manager::stop()
     {
         if (is_stopping.exchange(true))
@@ -158,9 +139,6 @@ namespace srouter::link
     }
 
     Manager::~Manager() { stop(); }
-
-    // TODO: this
-    nlohmann::json Manager::extract_status() const { return {}; }
 
     void Manager::connect_to_keep_alive(int num_conns)
     {
@@ -301,38 +279,43 @@ namespace srouter::link
         // this handler should not be registered for clients
         assert(router.is_service_node);
 
-        std::unordered_set<RouterID> explicit_ids;
+        const auto& rc_hashes = router.node_db().get_rc_hashes();
+        const auto& rc_buckets = router.node_db().get_rc_buckets();
 
         try
         {
-            auto btdc = oxenc::bt_dict_consumer{body};
-            for (auto sublist = btdc.require<oxenc::bt_list_consumer>("x"); !sublist.is_finished();)
-                explicit_ids.emplace(sublist.consume_span<uint8_t, 32>());
+            oxenc::bt_dict_producer btdp;
+            {
+                auto btlp = btdp.append_list("r"sv);
+
+                auto btdc = oxenc::bt_dict_consumer{body};
+                auto arg_buckets = btdc.require<oxenc::bt_list_consumer>("b"sv);
+                RCHash h;
+                for (uint8_t i = 0; i < 128; i++)
+                {
+                    auto h_span = arg_buckets.consume_span<std::byte, 8>();
+                    std::memcpy(h.data(), h_span.data(), 8);
+                    if (rc_buckets[i] != h)
+                    {
+                        for (const auto& [rid, _] : rc_hashes[i])
+                        {
+                            if (auto* maybe_rc = router.node_db().get_rc(rid))
+                                btlp.append(maybe_rc->view());
+                            else
+                                log::critical(logcat, "Somehow we have a bucket hash for {} but no RC!", rid);
+                        }
+                    }
+                }
+                arg_buckets.finish();
+            }
+
+            respond(std::move(btdp).str());
         }
         catch (const std::exception& e)
         {
             log::warning(logcat, "Exception handling RC Fetch request: {}", e.what());
             respond(messages::ERROR_RESPONSE);
-            return;
         }
-
-        oxenc::bt_dict_producer btdp;
-        {
-            auto sublist = btdp.append_list("r");
-
-            int count = 0;
-            for (const auto& rid : explicit_ids)
-            {
-                if (auto* maybe_rc = router.node_db().get_rc(rid))
-                {
-                    sublist.append_encoded(maybe_rc->view());
-                    ++count;
-                }
-            }
-            log::info(logcat, "Returning {} RCs for FetchRC request...", count);
-        }
-
-        respond(std::move(btdp).str());
     }
 
     void Manager::handle_path_fetch_rcs(std::span<const std::byte> body, std::function<void(std::string)> respond)
@@ -407,11 +390,13 @@ namespace srouter::link
         log::trace(logcat, "Received request to publish client contact!");
 
         EncryptedClientContact enc;
-        std::optional<int> location;
+        int location;
 
         try
         {
-            std::tie(enc, location) = PublishClientContact::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer btdc{body};
+            enc = EncryptedClientContact{btdc.require_span<std::byte>("e"sv)};
+            location = btdc.require<int>("n"sv);
         }
         catch (const std::exception& e)
         {
@@ -422,7 +407,7 @@ namespace srouter::link
         if (enc.is_expired())
         {
             log::warning(logcat, "Received expired EncryptedClientContact!");
-            return respond(PublishClientContact::EXPIRED);
+            return respond(messages::serialize_status_response("EXPIRED CC"));
         }
 
         if (not router.is_service_node)
@@ -455,18 +440,18 @@ namespace srouter::link
 
         if (!source_is_relay)
         {
-            if (!location || *location < 0 || *location >= path::CC_PUBLISH_LOCATIONS)
+            if (location < 0 || location >= path::CC_PUBLISH_LOCATIONS)
             {
                 log::warning(
                     logcat,
                     "Ignoring ECC publish from a client with {} publish index",
-                    location ? "invalid ({})"_format(*location) : "missing");
+                    location ? "invalid ({})"_format(location) : "missing");
                 respond(messages::serialize_status_response(
                     location ? "INVALID PUBLISH LOCATION" : "MISSING PUBLISH LOCATION"));
                 return;
             }
 
-            const auto& rid = closest_rids[*location];
+            const auto& rid = closest_rids[location];
 
             if (rid == router.id())
             {
@@ -480,13 +465,13 @@ namespace srouter::link
                 logcat,
                 "Received PublishClientContact (key: {}, index: {}); forwarding to {}",
                 enc.key(),
-                *location,
+                location,
                 rid);
 
             endpoint.send_command(
                 rid,
                 "publish_cc",
-                PublishClientContact::serialize(std::move(enc)),
+                std::vector<std::byte>{body.begin(), body.end()},
                 [respond = std::move(respond)](quic::message msg) mutable {
                     log::info(
                         logcat,
@@ -535,7 +520,9 @@ namespace srouter::link
         int lookup_index;
         try
         {
-            std::tie(blinded_pubkey, lookup_index) = FindClientContact::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer btdc{body};
+            blinded_pubkey.assign(btdc.require_span<std::byte, PubKey::SIZE>("k"));
+            lookup_index = btdc.require<int>("l"sv);
         }
         catch (const std::exception& e)
         {
@@ -550,6 +537,8 @@ namespace srouter::link
                     logcat,
                     "FindClientContact request (key: {}): found and returning local EncryptedClientContact",
                     blinded_pubkey);
+                oxenc::bt_dict_producer btdp;
+                btdp.append("!"sv, messages::STATUS_OK);
                 auto resp = FindClientContact::serialize_response(*maybe_cc);
                 // FIXME: eventually respond func should take a byte span or something, but
                 //        string was easier for now
@@ -656,10 +645,10 @@ namespace srouter::link
 
     void Manager::handle_path_build(quic::message m, const std::variant<RouterID, quic::ConnectionID>& from)
     {
-        if (!router.path_context.is_transit_allowed())
+        if (not router.is_service_node)
         {
-            log::warning(logcat, "got path build request when not permitting transit");
-            return m.respond(PATH::BUILD::NO_TRANSIT, true);
+            log::warning(logcat, "got path build request when not relay node!");
+            return m.respond(messages::ERROR_RESPONSE, true);
         }
 
         try
@@ -674,7 +663,7 @@ namespace srouter::link
                     frames_in.size(),
                     path::BUILD_LENGTH,
                     path::BUILD_FRAME_SIZE);
-                m.respond(PATH::BUILD::BAD_FRAMES, true);
+                m.respond(messages::serialize_status_response("BAD FRAMES"sv), true);
                 return;
             }
 
@@ -933,7 +922,6 @@ namespace srouter::link
         handle_session_message(std::move(payload), true);
     }
 
-    // FIXME: overhead for session MAC?
     static constexpr size_t MIN_PATH_DATA_MESSAGE_SIZE = 0 /*payload*/ + 1 /*packet type*/ + sizeof(HopID) /*pivot*/
         + path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD /*nonce, hop, type*/;
 
@@ -1277,7 +1265,9 @@ namespace srouter::link
         try
         {
             // FIXME: unnecessary copy
-            std::tie(endpoint, body) = PATH::CONTROL::deserialize(oxenc::bt_dict_consumer{payload});
+            oxenc::bt_dict_consumer btdc{payload};
+            endpoint = btdc.require<std::string>("e");
+            body = btdc.require<std::string>("p");
         }
         catch (const std::exception& e)
         {

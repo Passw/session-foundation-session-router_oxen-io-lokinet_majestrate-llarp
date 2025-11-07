@@ -76,8 +76,6 @@ namespace srouter::dns
 
         bool bt_decode(std::string buf);
 
-        nlohmann::json ExtractStatus() const;
-
       private:
         bool bt_decode(oxenc::bt_dict_consumer&& btdc);
         bool from_string(std::string_view srvString);

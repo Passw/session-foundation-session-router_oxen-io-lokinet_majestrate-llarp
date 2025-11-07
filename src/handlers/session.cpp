@@ -6,16 +6,14 @@
 #include "crypto/crypto.hpp"
 #include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
-#include "messages/session.hpp"
+#include "messages/common.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "session/session.hpp"
 #include "util/bspan.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 #include "util/try_calling.hpp"
@@ -803,7 +801,11 @@ namespace srouter::handlers
                 if (resp.ok())
                 {
                     log::info(logcat, "Call to FetchRC succeeded!");
-                    auto rcs = FetchRC::deserialize_response(router.netid(), oxenc::bt_dict_consumer{resp.body});
+
+                    std::vector<RelayContact> rcs;
+                    oxenc::bt_dict_consumer btdc{resp.body};
+                    for (auto sublist = btdc.require<oxenc::bt_list_consumer>("r"); not sublist.is_finished();)
+                        rcs.emplace_back(sublist.consume_dict_data(), router.netid());
 
                     if (rcs.empty())
                         log::warning(logcat, "Received empty response from `fetch_rc` request!");
@@ -1417,6 +1419,8 @@ namespace srouter::handlers
                     /*gso=*/false,
                     [this, target](quic::Packet&& pkt) {
                         // FIXME: cache most recently used mapping/session/etc.?
+                        //        i.e. if this packet is for the same remote as the last packet
+                        //        we can skip the map lookup.
 
                         std::shared_ptr<session::Session> session;
                         try

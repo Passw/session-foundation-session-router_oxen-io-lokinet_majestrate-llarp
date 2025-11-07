@@ -26,8 +26,6 @@ namespace srouter
 
     std::string RouterID::to_string() const { return oxenc::to_base32z(begin(), end()); }
 
-    nlohmann::json RouterID::ExtractStatus() const { return {{"snode", to_string()}, {"hex", ToHex()}}; }
-
     void RouterID::from_network_address(std::string_view str)
     {
         if (str.ends_with(RELAY_DOT_TLD))

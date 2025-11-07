@@ -214,48 +214,6 @@ namespace srouter::handlers
         }
     }
 
-    nlohmann::json TunEndpoint::ExtractStatus() const
-    {
-        // auto obj = service::Endpoint::ExtractStatus();
-        // obj["ifaddr"] = m_OurRange.to_string();
-        // obj["ifname"] = m_IfName;
-
-        // std::vector<std::string> upstreamRes;
-        // for (const auto& ent : m_DnsConfig.upstream_dns)
-        //   upstreamRes.emplace_back(ent.to_string());
-        // obj["ustreamResolvers"] = upstreamRes;
-
-        // std::vector<std::string> localRes;
-        // for (const auto& ent : m_DnsConfig.bind_addr)
-        //   localRes.emplace_back(ent.to_string());
-        // obj["localResolvers"] = localRes;
-
-        // // for backwards compat
-        // if (not m_DnsConfig.bind_addr.empty())
-        //   obj["localResolver"] = localRes[0];
-
-        // nlohmann::json ips{};
-        // for (const auto& item : m_IPActivity)
-        // {
-        //   nlohmann::json ipObj{{"lastActive", to_json(item.second)}};
-        //   std::string remoteStr;
-        //   AlignedBuffer<32> addr = m_IPToAddr.at(item.first);
-        //   if (m_SNodes.at(addr))
-        //     remoteStr = RouterID(addr.as_array()).to_string();
-        //   else
-        //     remoteStr = service::Address(addr.as_array()).to_string();
-        //   ipObj["remote"] = remoteStr;
-        //   std::string ipaddr = item.first.to_string();
-        //   ips[ipaddr] = ipObj;
-        // }
-        // obj["addrs"] = ips;
-        // obj["ourIP"] = m_OurIP.to_string();
-        // obj["nextIP"] = m_NextIP.to_string();
-        // obj["maxIP"] = m_MaxIP.to_string();
-        // return obj;
-        return {};
-    }
-
     void TunEndpoint::reconfigure_dns(std::vector<quic::Address> servers)
     {
         if (_dns)
@@ -1038,9 +996,7 @@ namespace srouter::handlers
         send_packet_to_net_if(std::move(pkt));
     }
 
-    // FIXME: replace session_tag with packet type flag (uint8_t), because session_tag is definitely
-    // not the right thing.
-    // FIXME 2: we need separate flags for to-exit and from-exit
+    // FIXME: we need separate flags for to-exit and from-exit
     void TunEndpoint::handle_inbound_packet(IPPacket pkt, uint8_t type, NetworkAddress remote)
     {
         (void)type;              // TODO FIXME use this

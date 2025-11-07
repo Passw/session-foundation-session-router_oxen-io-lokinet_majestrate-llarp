@@ -111,8 +111,6 @@ namespace srouter
         // Constructs a signed RC from the info in the given Router object.
         explicit RelayContact(const Router& router);
 
-        nlohmann::json extract_status() const;
-
         bool write(const std::filesystem::path& fname) const;
 
         bool operator==(const RelayContact& other) const { return compare_tuple() == other.compare_tuple(); }

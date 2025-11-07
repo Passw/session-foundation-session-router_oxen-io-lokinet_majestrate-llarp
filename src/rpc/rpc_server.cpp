@@ -6,7 +6,6 @@
 #include "contact/client_contact.hpp"
 #include "dns/dns.hpp"
 #include "dns/server.hpp"
-#include "messages/common.hpp"
 #include "router/router.hpp"
 #include "rpc/rpc_request_definitions.hpp"
 #include "rpc_request.hpp"
@@ -136,9 +135,7 @@ namespace srouter::rpc
         log_print_rpc(version);
 
         nlohmann::json result{
-            {"version", srouter::VERSION},
-            {"version_full", srouter::VERSION_FULL},
-            {"uptime", to_json(_router.Uptime())}};
+            {"version", srouter::VERSION}, {"version_full", srouter::VERSION_FULL}, {"uptime", to_json(uptime())}};
 
         SetJSONResponse(result, version.response);
     }
@@ -147,15 +144,14 @@ namespace srouter::rpc
     {
         log_print_rpc(status);
 
-        (_router.is_running()) ? SetJSONResponse(_router.ExtractStatus(), status.response)
-                               : SetJSONError("Router is not yet ready", status.response);
+        // TODO: this
     }
 
     void RPCServer::invoke(GetStatus& getstatus)
     {
         log_print_rpc(getstatus);
 
-        SetJSONResponse(_router.ExtractSummaryStatus(), getstatus.response);
+        // TODO: this
     }
 
     void RPCServer::invoke(QuicConnect& quicconnect)
@@ -437,7 +433,7 @@ namespace srouter::rpc
                         {
                             oxenc::bt_dict_consumer btdc{m.body()};
 
-                            if (auto s = btdc.maybe<std::string>(messages::STATUS_KEY))
+                            if (auto s = btdc.maybe<std::string>("!"sv))
                                 status = std::move(*s);
                         }
                         catch (const std::exception& e)
@@ -536,16 +532,7 @@ namespace srouter::rpc
     {
         log_print_rpc(listexits);
 
-        (void)listexits;
-        // if (not _router.hidden_service_context().hasEndpoints())
-        // {
-        //   SetJSONError("No mapped endpoints found", listexits.response);
-        //   return;
-        // }
-
-        // auto status = _router.hidden_service_context().GetDefault()->ExtractStatus()["exitMap"];
-
-        // SetJSONResponse((status.empty()) ? "No exits" : status, listexits.response);
+        // TODO: this
     }
 
     void RPCServer::invoke(UnmapExit& unmapexit)
@@ -575,77 +562,7 @@ namespace srouter::rpc
     {
         log_print_rpc(swapexits);
 
-        (void)swapexits;
-        // MapExit map_request;
-        // UnmapExit unmap_request;
-        // auto endpoint = _router.hidden_service_context().GetDefault();
-        // auto current_exits = endpoint->ExtractStatus()["exitMap"];
-
-        // if (current_exits.empty())
-        // {
-        //   SetJSONError("Cannot swap to new exit: no exits currently mapped", swapexits.response);
-        //   return;
-        // }
-
-        // if (swapexits.request.exit_addresses.size() < 2)
-        // {
-        //   SetJSONError("Exit addresses not passed", swapexits.response);
-        //   return;
-        // }
-
-        // // steal replier from swapexit RPC endpoint
-        // unmap_request.replier.emplace(swapexits.move());
-
-        // // set map_exit request to new address
-        // map_request.request.address = swapexits.request.exit_addresses[1];
-
-        // // set token for new exit node mapping
-        // if (not swapexits.request.token.empty())
-        //   map_request.request.token = swapexits.request.token;
-
-        // // populate map_exit request with old IP ranges
-        // for (auto& [range, exit] : current_exits.items())
-        // {
-        //   if (exit.get<std::string>() == swapexits.request.exit_addresses[0])
-        //   {
-        //     map_request.request.ip_range.emplace_back(range);
-        //     unmap_request.request.ip_range.emplace_back(range);
-        //   }
-        // }
-
-        // if (map_request.request.ip_range.empty() or unmap_request.request.ip_range.empty())
-        // {
-        //   SetJSONError("No mapped ranges found matching requested swap", swapexits.response);
-        //   return;
-        // }
-
-        // endpoint->map_exit(
-        //     map_request.request.address,
-        //     map_request.request.token,
-        //     map_request.request.ip_range,
-        //     [unmap = std::move(unmap_request),
-        //      ep = endpoint,
-        //      old_exit = swapexits.request.exit_addresses[0]](bool success, std::string result)
-        //      mutable {
-        //       if (not success)
-        //         unmap.send_response({{"error"}, std::move(result)});
-        //       else
-        //       {
-        //         try
-        //         {
-        //           for (auto& ip : unmap.request.ip_range)
-        //             ep->UnmapRangeByExit(ip, old_exit);
-        //         }
-        //         catch (std::exception& e)
-        //         {
-        //           SetJSONError("Unable to unmap to given range", unmap.response);
-        //           return;
-        //         }
-
-        //         SetJSONResponse("OK", unmap.response);
-        //         unmap.send_response();
-        //       }
-        //     });
+        // TODO: this
     }
 
 #if 0

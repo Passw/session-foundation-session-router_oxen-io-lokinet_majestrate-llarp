@@ -171,24 +171,6 @@ namespace srouter
                 throw std::invalid_argument{"[router]:public-ip is required when specifying [router]:public-port"};
         });
 
-        // FIXME: this option isn't currently used!
-        conf.define_option<int>(
-            "router",
-            "worker-threads",
-            Default{0},
-            Comment{
-                "The number of threads available for performing cryptographic functions.",
-                "The minimum is one thread, but network performance may increase with more.",
-                "threads. Should not exceed the number of logical CPU cores.",
-                "0 means use the number of logical CPU cores detected at startup.",
-            },
-            [this](int arg) {
-                if (arg < 0)
-                    throw std::invalid_argument("worker-threads must be >= 0");
-
-                worker_threads = arg;
-            });
-
         // Hidden option because this isn't something that should ever be turned off occasionally
         // when doing dev/testing work.
         conf.define_option<bool>("router", "block-bogons", Default{true}, Hidden, assignment_acceptor(block_bogons));

@@ -264,9 +264,9 @@ namespace srouter
 
             std::string make_session_init(path::Path& path);
 
-            void fire_waiting(sys_ms now);
+            void fire_waiting();
 
-            using active_item = std::pair<sys_ms, std::function<void(OutboundSession& session)>>;
+            using active_item = std::pair<steady_ms, std::function<void(OutboundSession& session)>>;
             struct on_established_sorter
             {
                 bool operator()(const active_item& a, const active_item& b) const { return a.first > b.first; }
@@ -388,8 +388,6 @@ namespace srouter
             void update_paths(sys_ms now) override;
 
             void recv_close() override;
-
-            nlohmann::json ExtractStatus() const;
 
             const RouterID& remote_endpoint() const { return _remote.pubkey; }
         };
