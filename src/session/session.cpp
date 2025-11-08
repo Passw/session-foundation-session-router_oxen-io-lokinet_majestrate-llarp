@@ -1283,15 +1283,13 @@ namespace srouter::session
             _intro_update_processed = true;
         }
 
-        int n_paths = num_paths();
-
         if (_current_path && _current_path->is_dead)
         {
             _current_path.reset();
             _dead_path = true;
         }
 
-        if (!_current_path && n_paths)
+        if (!_current_path && num_active_paths())
             // We don't have a current path, possibly because we just dropped it in the above loop,
             // so select a new one to make our current path
             select_new_current();
