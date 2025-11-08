@@ -10,6 +10,7 @@
 #include <oxenc/endian.h>
 
 #include <array>
+#include <ranges>
 
 namespace srouter::dns
 {
@@ -17,28 +18,59 @@ namespace srouter::dns
 
     Message::Message(const Question& question) : hdr_id{0}, hdr_fields{} { questions.push_back(question); }
 
-    size_t Message::encode(std::span<std::byte> buf) const
+    Message Message::clone() const
     {
-        auto orig = buf.size();
-        if (!write_ints_into(
-                buf,
-                hdr_id,
-                hdr_fields,
-                static_cast<uint16_t>(questions.size()),
-                static_cast<uint16_t>(answers.size()),
-                static_cast<uint16_t>(authorities.size()),
-                static_cast<uint16_t>(additional.size())))
-            return 0;
+        Message c;
+        c.hdr_id = hdr_id;
+        c.hdr_fields = hdr_fields;
+        c.questions = questions;
+        // Don't copy answers, or rr_name_override (which is just an intermediate answers helper)
+        return c;
+    }
+
+    std::vector<std::byte> Message::encode() const
+    {
+        // TODO FIXME: We currently aren't respect the EDNS bit, and that means our maximum message
+        // size is 512 bytes.  We should support EDNS (by checking and setting the appropriate flag
+        // in `additional`), in which case 1232 becomes the (practical) maximum.
+        //
+        // Basically:
+        // - if the client supports EDNS it sets the size in an additional flag
+        // - we can then go up to whichever of that size or 1232 is smaller.
+        // - we set the pseudo-RR in the additional flags section of the response.
+
+        std::vector<std::byte> tmp;
+        tmp.resize(512);
+
+        prev_names_t prev_names;
+        std::span<std::byte> buf{tmp};
+        uint16_t buf_offset = 0;
+
+        buf_offset += write_ints_into(
+            buf,
+            hdr_id,
+            hdr_fields,
+            static_cast<uint16_t>(questions.size()),
+            static_cast<uint16_t>(answers.size()),
+            static_cast<uint16_t>(0 /*authorities.size()*/),
+            static_cast<uint16_t>(0 /*additional.size()*/));
+
+        // if (auto written = thing.encode(buf))
+        //{
+        //     buf = buf.subspan(written);
+        //     return true;
+        // }
 
         for (const auto& question : questions)
-            if (!encode_into(buf, question))
-                return 0;
+            question.encode(buf, prev_names, buf_offset);
 
         for (auto& a : answers)
-            if (!encode_into(buf, a))
-                return 0;
+            a->encode(buf, prev_names, buf_offset);
 
-        return orig - buf.size();
+        // Trim the excess:
+        tmp.resize(tmp.size() - buf.size());
+
+        return tmp;
     }
 
     std::optional<Message> Message::extract(std::span<const std::byte>& buf)
@@ -66,9 +98,6 @@ namespace srouter::dns
                 return maybe;
             }
         }
-        for (auto* as : {&m.answers, &m.authorities, &m.additional})
-            if (!as->empty())
-                log::debug(logcat, "Ignoring answer/authorities/additional sections in dns Message");
 
         return maybe;
     }
@@ -81,68 +110,13 @@ namespace srouter::dns
         for (const auto& q : questions)
             ques.push_back(q.ToJSON());
         for (const auto& a : answers)
-            ans.push_back(a.ToJSON());
+            ans.push_back(a->ToJSON());
         return result;
-    }
-
-    std::vector<std::byte> Message::encode() const
-    {
-        std::vector<std::byte> tmp;
-        tmp.resize(1500);
-        auto size = encode(tmp);
-        if (size == 0)
-            throw std::runtime_error("cannot encode dns message");
-        tmp.resize(size);
-        return tmp;
-    }
-
-    void Message::add_serv_fail()
-    {
-        if (questions.size())
-        {
-            hdr_fields |= flags_RCODEServFail;
-            // authorative response with recursion available
-            hdr_fields |= flags_QR | flags_AA | flags_RA;
-            // don't allow recursion on this request
-            hdr_fields &= ~flags_RD;
-        }
-    }
-
-    static constexpr uint16_t reply_flags = flags_QR | flags_AA | flags_RA;
-
-    void Message::add_reply(ipv4 addr, std::chrono::seconds ttl)
-    {
-        std::vector<std::byte> a;
-        a.resize(4);
-        oxenc::write_host_as_big(addr.addr, a.data());
-        add_reply(RRClass::IN, RRType::A, std::move(a), ttl);
-    }
-
-    void Message::add_reply(ipv6 addr, std::chrono::seconds ttl)
-    {
-        std::vector<std::byte> aaaa;
-        aaaa.resize(16);
-        oxenc::write_host_as_big(addr.hi, aaaa.data());
-        oxenc::write_host_as_big(addr.lo, aaaa.data() + 8);
-        return add_reply(RRClass::IN, RRType::AAAA, std::move(aaaa), ttl);
     }
 
     void Message::set_rr_name(std::optional<std::string> name) { rr_name_override = std::move(name); }
 
-    void Message::add_reply(RRClass cls, RRType type, std::vector<std::byte> data, std::chrono::seconds ttl)
-    {
-        if (questions.empty())
-            return;
-
-        hdr_fields |= reply_flags;
-
-        auto& ans = answers.emplace_back();
-        ans.rr_name = get_rr_name();
-        ans.rr_type = type;
-        ans.rr_class = cls;
-        ans.ttl = ttl;
-        ans.rData = std::move(data);
-    }
+    static constexpr uint16_t reply_flags = flags_QR | flags_AA | flags_RA;
 
     void Message::add_nodata_reply()
     {
@@ -150,69 +124,42 @@ namespace srouter::dns
             hdr_fields |= reply_flags;
     }
 
+    template <std::derived_from<ResourceRecord> RR, typename... Args>
+    void make_reply(Message& m, std::chrono::seconds ttl, Args&&... args)
+    {
+        if (m.questions.empty())
+            return;
+
+        m.hdr_fields |= reply_flags;
+
+        m.answers.push_back(std::make_unique<RR>(std::string{m.get_rr_name()}, ttl, std::forward<Args>(args)...));
+    }
+
+    void Message::add_reply(const ipv4& addr, std::chrono::seconds ttl) { make_reply<RR_A>(*this, ttl, addr); }
+
+    void Message::add_reply(const ipv6& addr, std::chrono::seconds ttl) { make_reply<RR_AAAA>(*this, ttl, addr); }
+
     void Message::add_cname_reply(std::string_view name, std::chrono::seconds ttl)
     {
-        std::array<std::byte, 512> tmp;
-        if (auto len = encode_name(tmp, name))
-            add_reply(RRClass::IN, RRType::CNAME, std::vector<std::byte>{tmp.data(), tmp.data() + len}, ttl);
-        else
-            log::error(logcat, "Failed to encode CNAME value {}", name);
+        make_reply<RR_CNAME>(*this, ttl, std::string{name});
     }
 
     void Message::add_ptr_reply(std::string_view name, std::chrono::seconds ttl)
     {
-        std::array<std::byte, 512> tmp;
-        if (auto len = encode_name(tmp, name))
-            add_reply(RRClass::IN, RRType::PTR, std::vector<std::byte>{tmp.data(), tmp.data() + len}, ttl);
-        else
-            log::error(logcat, "Failed to encode PTR value {}", name);
+        make_reply<RR_PTR>(*this, ttl, std::string{name});
     }
 
-    void Message::add_reply(const SRVData& srv, std::chrono::seconds ttl)
-    {
-        std::array<std::byte, 512> tmp;
-        std::span<std::byte> remaining{tmp};
-        if (!write_ints_into(remaining, srv.priority, srv.weight, srv.port))
-            return;
-        if (!write_name_into(remaining, srv.target))
-            return;
+    void Message::add_reply(const SRVData& srv, std::chrono::seconds ttl) { make_reply<RR_SRV>(*this, ttl, srv); }
 
-        add_reply(
-            RRClass::IN,
-            RRType::SRV,
-            std::vector<std::byte>{tmp.data(), tmp.data() + tmp.size() - remaining.size()},
-            ttl);
-    }
+    void Message::add_txt_reply(std::string_view txt, std::chrono::seconds ttl) { make_reply<RR_TXT>(*this, ttl, txt); }
 
-    void Message::add_txt_reply(std::string_view txt, std::chrono::seconds ttl)
-    {
-        std::array<std::byte, 1024> tmp;
-        std::span<std::byte> remaining{tmp};
-        while (!txt.empty())
-        {
-            auto piecelen = std::min(txt.size(), size_t{255});
-            if (remaining.size() <= piecelen)
-                throw std::length_error{"TXT record too big"};
-            remaining.front() = static_cast<std::byte>(piecelen);
-            std::memcpy(remaining.data() + 1, txt.data(), piecelen);
-            txt.remove_prefix(piecelen);
-            remaining = remaining.subspan(1 + piecelen);
-        }
-
-        add_reply(
-            RRClass::IN,
-            RRType::SRV,
-            std::vector<std::byte>{tmp.data(), tmp.data() + tmp.size() - remaining.size()},
-            ttl);
-    }
-
-    void Message::add_nx_reply()
+    void Message::set_nx_reply()
     {
         if (questions.size())
         {
             answers.clear();
-            authorities.clear();
-            additional.clear();
+            // authorities.clear();
+            // additional.clear();
 
             // authorative response with recursion available
             hdr_fields |= reply_flags;
@@ -222,17 +169,16 @@ namespace srouter::dns
         }
     }
 
-    std::string Message::to_string() const
+    void Message::set_serv_fail()
     {
-        return fmt::format(
-            "[DNSMessage id={:x} fields={:x} questions={{{}}} answers={{{}}} authorities={{{}}} "
-            "additional={{{}}}]",
-            hdr_id,
-            hdr_fields,
-            fmt::join(questions, ","),
-            fmt::join(answers, ","),
-            fmt::join(authorities, ","),
-            fmt::join(additional, ","));
+        if (questions.size())
+        {
+            hdr_fields |= flags_RCODEServFail;
+            // authorative response with recursion available
+            hdr_fields |= flags_QR | flags_AA | flags_RA;
+            // don't allow recursion on this request
+            hdr_fields &= ~flags_RD;
+        }
     }
 
 }  // namespace srouter::dns

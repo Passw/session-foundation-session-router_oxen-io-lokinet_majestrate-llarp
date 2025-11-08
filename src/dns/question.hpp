@@ -11,7 +11,7 @@ namespace srouter::dns
         Question() = default;
         Question(std::string name, RRType type);
 
-        size_t encode(std::span<std::byte> buf) const;
+        void encode(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const;
 
         bool extract(std::span<const std::byte>& buf);
 

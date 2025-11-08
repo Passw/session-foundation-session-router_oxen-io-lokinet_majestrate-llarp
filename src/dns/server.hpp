@@ -68,11 +68,8 @@ namespace srouter::dns
 
       public:
         explicit QueryJob(
-            std::shared_ptr<PacketSource> source,
-            const Message& query,
-            const quic::Address& to_,
-            const quic::Address& from_)
-            : QueryJob_Base{query}, src{std::move(source)}, resolver{to_}, asker{from_}
+            std::shared_ptr<PacketSource> source, Message query, const quic::Address& to_, const quic::Address& from_)
+            : QueryJob_Base{std::move(query)}, src{std::move(source)}, resolver{to_}, asker{from_}
         {}
 
         void send_reply(std::vector<std::byte> buf) override { src->send_udp(asker, resolver, buf); }

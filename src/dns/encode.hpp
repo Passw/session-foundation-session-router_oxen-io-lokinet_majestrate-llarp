@@ -6,45 +6,59 @@
 
 #include <concepts>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace srouter::dns
 {
-    /// Writes the encoded version of DNS name `name` into buf, and returns how many bytes of buf
-    /// were written.  If buf is too small to store the encoded name, returns 0.
-    size_t encode_name(std::span<std::byte> buf, std::string_view name);
+    // Custom hasher to let us look up a string_view key in a string-keyed unordered map:
+    struct transparent_string_hash
+    {
+        using is_transparent = void;
+        [[nodiscard]] size_t operator()(std::string_view txt) const { return std::hash<std::string_view>{}(txt); }
+    };
 
-    /// Same as encode_name, except that instead of returning the written size, on success it mutates the span
-    /// to drop the written prefix.  Returns true (and prefix-drops the written part of the span) on success,
-    /// false on failure.  Note that the failure case can still partially write into span.
-    bool write_name_into(std::span<std::byte>& buf, std::string_view name);
+    using prev_names_t = std::unordered_map<std::string, uint16_t, transparent_string_hash, std::equal_to<>>;
+
+    /// Writes the encoded version of DNS name `name` into buf, mutating buf to eliminate the
+    /// written bytes.  Throws if buf is too small to store the encoded name.
+    ///
+    /// prev_names contains pointer values relative to the start of the message, used for name
+    /// compression, and buf_offset contains the relative positive of the beginning of buf to the
+    /// start of the message.  New names added here should be added into it so that later repeated
+    /// names (or name suffixes) can use compression.
+    void encode_name(std::span<std::byte>& buf, std::string_view name, prev_names_t& prev_names, uint16_t& buf_offset);
 
     /// decode name from buffer, mutating the buffer to begin just past the extracted name.  Return
-    /// nullopt (without mutating buf) on failure.
+    /// nullopt (without mutating buf) on failure.  Does not currently support compressed names (but
+    /// those are not typically used in questions).
     std::optional<std::string> extract_name(std::span<const std::byte>& buf);
 
     /// Encodes an integer in big-endian order into the buffer, mutating the span to start just
-    /// after the written integer.  Returns true on success, false if the span was too small.
+    /// after the written integer.  Throws if buf is too small.  Returns sizeof(T) (i.e. the amount
+    /// written into the buffer), for convenience.
     template <std::unsigned_integral T>
-    bool write_int_into(std::span<std::byte>& buf, T value)
+    size_t write_int_into(std::span<std::byte>& buf, T value)
     {
         if (buf.size() < sizeof(T))
-            return false;
+            throw std::out_of_range{"Buffer too small"};
         oxenc::write_host_as_big(value, buf.data());
         buf = buf.subspan(sizeof(T));
-        return true;
+        return sizeof(T);
     }
 
-    // Calls write_int_info multiple times with the given integers.  Returns true (and modifies buf)
-    // if all success.  If any fail then false is returned and buf is left unchanged.
+    // Calls write_int_info multiple times with the given integers.  Throws if the buffer is too
+    // small.  Returns the total size of the given integers (i.e. the number of bytes written to
+    // buf), for convenience.
     template <std::unsigned_integral... T>
-    bool write_ints_into(std::span<std::byte>& buf, T... values)
+    size_t write_ints_into(std::span<std::byte>& buf, T... values)
     {
-        if (buf.size() < (0 + ... + sizeof(T)))
-            return false;
+        // NB: it's tempting to want to use `return (0 + ... + write_int_into())` here, but
+        // left-to-right evaluation of + operands isn't guaranteed, and that could put things into
+        // buf in the wrong order.  With , as used here it is guaranteed (similarly to || or &&).
         ((void)write_int_into(buf, values), ...);
-        return true;
+        return (0 + ... + sizeof(T));
     }
 
     /// Extracts a big-endian integer of the given type from the buffer, mutating the span to start
@@ -72,23 +86,6 @@ namespace srouter::dns
         return true;
     }
 
-    // Takes some object T with an `size_t encode(buf)` function (such as various classes in this
-    // dns code) and attempts to call it with the given buffer.  If it returns success (non-0) then
-    // this mutates `buf` to skip the written data and returns true; on failure it returns false.
-    template <typename T>
-    bool encode_into(std::span<std::byte>& buf, const T& thing)
-    {
-        if (auto written = thing.encode(buf))
-        {
-            buf = buf.subspan(written);
-            return true;
-        }
-        return false;
-    }
-
-    // Writes encoded rr data into buf, mutating buf to point beyond the written data.  Returns
-    // false (without mutating buf) if buf is too short; true on success.
-    bool write_rdata_into(std::span<std::byte>& buf, std::span<const std::byte> rdata);
     // Extracts encoded rr data from buf, mutating buf to point beyond the extracted data.  Returns
     // nullopt (without mutating buf) on error, the vector of decoded data on success.
     std::optional<std::vector<std::byte>> extract_rdata(std::span<const std::byte>& buf);

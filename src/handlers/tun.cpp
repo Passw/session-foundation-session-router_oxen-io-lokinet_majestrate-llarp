@@ -36,8 +36,8 @@ namespace srouter::handlers
         if (not should_hook_dns_message(query))
             return false;
 
-        auto job = std::make_shared<dns::QueryJob>(source, query, to, from);
-        if (!handle_hooked_dns_message(query, [job](dns::Message msg) { job->send_reply(msg.encode()); }))
+        auto job = std::make_shared<dns::QueryJob>(source, query.clone(), to, from);
+        if (!handle_hooked_dns_message(query.clone(), [job](dns::Message msg) { job->send_reply(msg.encode()); }))
             job->cancel();
         return true;
     }
@@ -336,8 +336,8 @@ namespace srouter::handlers
 
     static dns::Message& clear_dns_message(dns::Message& msg)
     {
-        msg.authorities.clear();
-        msg.additional.clear();
+        // msg.authorities.clear();
+        // msg.additional.clear();
         msg.answers.clear();
         msg.hdr_fields &= ~dns::flags_RCODENxDomain;
         return msg;
@@ -451,7 +451,7 @@ namespace srouter::handlers
             }
             else
             {
-                msg.add_nx_reply();
+                msg.set_nx_reply();
                 reply(std::move(msg));
                 return true;
             }
@@ -472,11 +472,12 @@ namespace srouter::handlers
                  lookup,
                  sub = std::move(sub),
                  reply = std::move(reply),
-                 msg = std::move(msg),
+                 msg_ptr = std::make_shared<dns::Message>(std::move(msg)),
                  cname_only = q.qtype == dns::RRType::CNAME](
                     std::optional<NetworkAddress> maybe_netaddr,
                     bool assertive,
                     std::chrono::milliseconds ttl) mutable {
+                    auto& msg = *msg_ptr;
                     msg.set_rr_name(lookup);
                     if (maybe_netaddr)
                     {
@@ -494,7 +495,7 @@ namespace srouter::handlers
                     {
                         // We got an assertive "does not exist" message (and not just a failure
                         // or timeout), so add the nx reply
-                        msg.add_nx_reply();
+                        msg.set_nx_reply();
                         // FIXME: we should be able to provide a TTL here
                     }
                     else
@@ -505,7 +506,7 @@ namespace srouter::handlers
                         // server).
                         assert(!assertive);
                         // FIXME: should be able to specify a TTL here
-                        msg.add_nx_reply();
+                        msg.set_nx_reply();
                     }
                     reply(std::move(msg));
                 });
@@ -530,11 +531,11 @@ namespace srouter::handlers
                         fmt::join(rc->version(), "."), rc->addr(), rc->timestamp().time_since_epoch().count()));
                 }
                 else
-                    msg.add_nx_reply();
+                    msg.set_nx_reply();
             }
             else
-                msg.add_nx_reply();
-            reply(msg);
+                msg.set_nx_reply();
+            reply(std::move(msg));
             return true;
         }
 
@@ -576,15 +577,15 @@ namespace srouter::handlers
                     // "this record does not exist").
                 }
                 else
-                    msg.add_nx_reply();
-                reply(msg);
+                    msg.set_nx_reply();
+                reply(std::move(msg));
 
                 return true;
             }
 
             // Otherwise it's some query type we don't support, so return does-not-exist.
-            msg.add_nx_reply();
-            reply(msg);
+            msg.set_nx_reply();
+            reply(std::move(msg));
             return true;
         }
 
@@ -605,9 +606,9 @@ namespace srouter::handlers
                     *ip);
 
             if (!found)
-                msg.add_nx_reply();
+                msg.set_nx_reply();
 
-            reply(msg);
+            reply(std::move(msg));
             return true;
         }
 
@@ -618,25 +619,25 @@ namespace srouter::handlers
             {
                 _router.session_endpoint().lookup_client_intro(
                     *rid,
-                    [msg = std::move(msg), sub, reply = std::move(reply)](
+                    [msg = std::make_shared<dns::Message>(std::move(msg)), sub, reply = std::move(reply)](
                         const std::optional<ClientContact>& cc) mutable {
                         if (cc)
                         {
                             for (const auto& srv : cc->SRVs())
                                 if (srv.service == sub[0] && srv.proto == sub[1])
-                                    msg.add_reply(srv);
+                                    msg->add_reply(srv);
                         }
                         else
-                            msg.add_nx_reply();
+                            msg->set_nx_reply();
 
-                        reply(msg);
+                        reply(std::move(*msg));
                     });
                 return true;
             }
         }
 
-        msg.add_nx_reply();
-        reply(msg);
+        msg.set_nx_reply();
+        reply(std::move(msg));
         return true;
     }
 

@@ -19,14 +19,10 @@ namespace srouter::dns
             throw std::invalid_argument{"qname cannot be empty"};
     }
 
-    size_t Question::encode(std::span<std::byte> buf) const
+    void Question::encode(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const
     {
-        auto orig = buf;
-        if (!write_name_into(buf, qname))
-            return 0;
-        if (!write_ints_into(buf, static_cast<uint16_t>(qtype), static_cast<uint16_t>(qclass)))
-            return 0;
-        return orig.size() - buf.size();
+        encode_name(buf, qname, prev_names, buf_offset);
+        buf_offset += write_ints_into(buf, static_cast<uint16_t>(qtype), static_cast<uint16_t>(qclass));
     }
 
     bool Question::extract(std::span<const std::byte>& buf)

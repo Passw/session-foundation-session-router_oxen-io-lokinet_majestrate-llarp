@@ -22,8 +22,8 @@ namespace srouter::dns
 
     void QueryJob_Base::cancel()
     {
-        Message reply{_query};
-        reply.add_serv_fail();
+        Message reply = _query.clone();
+        reply.set_serv_fail();
         send_reply(reply.encode());
     }
 
@@ -416,7 +416,7 @@ namespace srouter::dns
                 const quic::Address& from) override
             {
                 log::trace(logcat, "maybe_hook_dns called");
-                auto tmp = std::make_shared<Query>(weak_from_this(), query, source, to, from);
+                auto tmp = std::make_shared<Query>(weak_from_this(), query.clone(), source, to, from);
                 // no questions, send fail
                 if (query.questions.empty())
                 {
@@ -675,7 +675,7 @@ namespace srouter::dns
             if (q.name() == "use-application-dns.net")
             {
                 // yea it is, let's turn off DoH because god is dead.
-                msg.add_nx_reply();
+                msg.set_nx_reply();
                 // press F to pay respects and send it back where it came from
                 ptr->send_udp(from, to, msg.encode());
                 return true;
