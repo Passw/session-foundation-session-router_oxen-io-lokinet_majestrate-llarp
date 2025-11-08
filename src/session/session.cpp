@@ -4,8 +4,6 @@
 #include "handlers/session.hpp"
 #include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/path.hpp"
 #include "net/policy.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
@@ -347,9 +345,11 @@ namespace srouter::session
             log::warning(logcat, "Dropping session control message: session has no current path");
             return false;
         }
-        auto inner_body = PATH::CONTROL::serialize(method, body);
 
-        send_session_data_message(std::move(inner_body), 0, true);
+        oxenc::bt_dict_producer btdp;
+        btdp.append("e", method);
+        btdp.append("p", body);
+        send_session_data_message(std::move(btdp).span<std::byte>(), 0, true);
 
         return true;
     }
@@ -416,12 +416,7 @@ namespace srouter::session
 
     void InboundClientSession::handle_path_switch(HopID pivot, std::shared_ptr<path::Path> path)
     {
-        log::debug(
-            logcat,
-            "Session with {} switching to path {} with pivot hopid {}",
-            _remote.router_id(),
-            *path,
-            pivot.to_view());
+        log::debug(logcat, "Session with {} switching to path {} with pivot hopid {}", _remote, *path, pivot.to_view());
         _current_path = std::move(path);
         _dead_path = !_current_path;
         _remote_pivot_txid = std::move(pivot);
@@ -429,7 +424,7 @@ namespace srouter::session
 
     void InboundRelaySession::handle_path_switch(HopID pivot, std::shared_ptr<path::TransitHop> thop)
     {
-        log::debug(logcat, "Session with {} switching to transit hop with pivot hopid {}", _remote.router_id(), pivot);
+        log::debug(logcat, "Session with {} switching to transit hop with pivot hopid {}", _remote, pivot);
         _current_thop = std::move(thop);
         _dead_path = !_current_thop;
         _remote_pivot_txid = std::move(pivot);
@@ -673,17 +668,36 @@ namespace srouter::session
         // packet to handle via the tun endpoint, and the same for UDP packets from embedded
         // remotes (which also send raw UDP packets):
         if (dgram_type == traffic_type::TUNNELED_QUIC)
+        {
             tcp_tunnel->quic_ep->manually_receive_packet(
                 oxen::quic::Packet{tcp_tunnel->FAKE_QUIC_PATH, std::move(data)});
-        else
-            _r.tun_endpoint()->handle_inbound_packet(IPPacket{std::move(data)}, dgram_type, _remote);
+            return;
+        }
+
+        auto pkt = IPPacket{std::move(data)};
+
+        // If the packet is ipv4 and we are a relay or inbound client session with a tun interface,
+        // check if we've mapped ipv4 for the remote and do so if not.
+        //
+        // NOTE: At this time, tun clients always support ipv4, but ipv4 is only activated on use
+        // (unlike IPv6 which is activated all the time).  If this changes, a check for that should
+        // short-circuit the call to map_session below.
+        if (!_r.embedded() && pkt.is_ipv4() && !ipv4_mapped)
+        {
+            if (!_parent.map_session_v4(*this))
+            {
+                log::warning(logcat, "Failed to map ipv4 for session, dropping inbound packet.");
+                return;
+            }
+            ipv4_mapped = true;
+        }
+
+        _r.tun_endpoint()->handle_inbound_packet(std::move(pkt), dgram_type, _remote);
     }
 
-    void Session::publish_client_contact(const EncryptedClientContact& ecc)
+    void Session::publish_client_contact(std::string_view encrypted_cc)
     {
-        auto payload_sv = ecc.bt_payload();
-        auto payload{oxen::quic::reinterpret_span<const std::byte>(payload_sv)};
-        send_session_control_message("publish_cc", payload);
+        send_session_control_message("publish_cc", as_bspan(encrypted_cc));
     }
 
     void Session::handle_client_contact(std::span<const std::byte>)
@@ -693,15 +707,17 @@ namespace srouter::session
 
     void OutboundClientSession::handle_client_contact(std::span<const std::byte> payload)
     {
-        auto ecc = EncryptedClientContact{payload};
-        if (auto cc = ecc.decrypt(_remote.router_id()); cc)
+        try
         {
-            log::debug(logcat, "Session with {} received valid new client contact, updating.", _remote.router_id());
+            auto& cc = _parent.update_cc(_remote.pubkey, ClientContact::decrypt(payload, _remote.pubkey));
+            log::debug(logcat, "Session with {} received valid new client contact, updating.", _remote);
             _intro_update_processed = false;
             update_intros(*cc);
         }
-        else
-            log::warning(logcat, "Session with {} received invalid new client contact!", _remote.router_id());
+        catch (const std::exception& e)
+        {
+            log::warning(logcat, "Session with {} received invalid new client contact: {}", _remote, e.what());
+        }
     }
 
     static constexpr quic::ipv6 ipv6_localhost{0, 0, 0, 0, 0, 0, 0, 1};
@@ -788,7 +804,8 @@ namespace srouter::session
     void OutboundClientSession::recv_close()
     {
         invalidate_paths();
-        cc_ok = false;
+        _cc_ok = false;
+        _next_cc_update = time_now_ms();
     }
 
     bool Session::is_expired(sys_ms now) const { return now - last_activity > SESSION_TIMEOUT; }
@@ -833,15 +850,16 @@ namespace srouter::session
     {
         if (on_est)
             on_established(std::move(on_est), est_timeout);
-        std::tie(_shared_secret, dh_pk, dh_nonce) = crypto::dh_client_gen(_remote.router_id());
+        std::tie(_shared_secret, dh_pk, dh_nonce) = crypto::dh_client_gen(_remote.pubkey);
         // TODO: kick off path builds immediately
     }
 
-    void OutboundSession::fire_waiting(sys_ms now)
+    void OutboundSession::fire_waiting()
     {
         // If we're established then we can immediately fire everything in the queue, otherwise we
         // fire callbacks that have reached their timer (to signal a non-established timeout).
         const bool est = is_established();
+        const auto now = steady_now_ms();
         while (!_on_established.empty() && (est || _on_established.top().first <= now))
         {
             try
@@ -860,7 +878,7 @@ namespace srouter::session
         std::function<void(OutboundSession&)> callback, std::optional<std::chrono::milliseconds> timeout)
     {
         _on_established.emplace(
-            srouter::time_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
+            steady_now_ms() + timeout.value_or(_r.config().paths.build_timeout), std::move(callback));
     }
 
     void Session::tick(sys_ms now)
@@ -880,7 +898,7 @@ namespace srouter::session
 
         close_old_paths(now);
         path::PathHandler::tick(now);
-        fire_waiting(now);
+        fire_waiting();
     }
 
     void OutboundClientSession::tick(sys_ms now)
@@ -889,13 +907,13 @@ namespace srouter::session
         if (_is_closed)
             return;
 
-        if ((now - last_cc_update > 10min) || (now - last_inbound_activity > 30s))
+        if (!_updating_intros && (now >= _next_cc_update || now - last_inbound_activity > 30s))
         {
             log::info(
                 logcat,
-                "It has been > 10min since last cc update, or > 30s since last inbound activity; attempting to fetch a "
-                "new intro set for session to {}",
-                _remote);
+                "Fetching updating client contact for {}: {}",
+                _remote,
+                now >= _next_cc_update ? "current CC is missing or old" : "no inbound activity for >30s");
             refresh_intros();
         }
     }
@@ -1045,7 +1063,7 @@ namespace srouter::session
         : OutboundSession{
               remote, parent, parent.router.config().paths.relay_hops(), inbound_tag, std::move(on_est), on_est_timeout}
     {
-        _parent.lookup_relay_contact(_remote.router_id(), [this](std::optional<srouter::RelayContact> rc) mutable {
+        _parent.lookup_relay_contact(_remote.pubkey, [this](std::optional<srouter::RelayContact> rc) mutable {
             if (rc)
             {
                 log::debug(logcat, "Relay contact for {} found: {}", _remote, *rc);
@@ -1122,7 +1140,7 @@ namespace srouter::session
             _target_paths);
 
         int count = 0;
-        while (count < needed && build_path_to_remote(_remote.router_id()))
+        while (count < needed && build_path_to_remote(_remote.pubkey))
             count++;
 
         if (count == needed)
@@ -1149,12 +1167,13 @@ namespace srouter::session
 
     void OutboundClientSession::refresh_intros()
     {
-        if (updating_intros)
+        if (_updating_intros)
             return;
-        updating_intros = true;
+        _updating_intros = true;
         log::debug(logcat, "Initiating intro lookup for {}", _remote);
         _parent.lookup_client_intro(
-            _remote.router_id(), [this, alive = canary()](std::optional<ClientContact> cc) mutable {
+            _remote.pubkey,
+            [this, alive = canary()](std::optional<ClientContact> cc) mutable {
                 if (!alive.lock())
                 {
                     log::debug(
@@ -1163,24 +1182,43 @@ namespace srouter::session
                         "session-alive canary is dead");
                     return;
                 }
-                updating_intros = false;
+                _updating_intros = false;
                 if (cc)
                 {
                     log::debug(logcat, "Session initiation returned client contact: {}", *cc);
-                    cc_ok = true;
-                    _intro_update_processed = false;
-                    update_intros(*cc);
+                    if (!_cc_ok && cc->signed_at() <= _cc_last_signed)
+                        log::debug(logcat, "Ignoring CC: we need a newer one to reestablish paths");
+                    else
+                    {
+                        _cc_ok = true;
+                        _intro_update_processed = false;
+                        update_intros(*cc);
+                    }
                 }
                 else
-                    log::warning(logcat, "Failed to lookup intros for {}", _remote);
-            });
+                {
+                    _cc_fetch_fail_count++;
+                    auto try_again_in = std::min(_cc_fetch_fail_count * CC_FETCH_BACKOFF, CC_FETCH_BACKOFF_MAX);
+                    _next_cc_update = time_now_ms() + try_again_in;
+                    log::warning(
+                        logcat,
+                        "Failed to lookup intros for {} ({} consecutive failures); will try again in {}",
+                        _remote,
+                        _cc_fetch_fail_count,
+                        std::chrono::round<std::chrono::seconds>(try_again_in));
+                }
+            },
+            /*allow_cache=*/false);
     }
 
     void OutboundClientSession::update_intros(const ClientContact& cc)
     {
         log::debug(logcat, "Update session {} intros from client contact: {}", *this, cc);
-        last_cc_update = srouter::time_now_ms();
-        last_inbound_activity = last_cc_update;  // so we don't just fetch again right away
+        auto now = time_now_ms();
+        _cc_fetch_fail_count = 0;
+        _next_cc_update = now + CC_FETCH_STALE;
+        _cc_last_signed = cc.signed_at();
+        last_inbound_activity = now;  // so we don't just fetch for inactivity again right away
         auto intros = cc.intros();
         _intros.assign(intros.begin(), intros.end());
         log::trace(logcat, "New client intros: {}", fmt::join(_intros, ", "));
@@ -1188,7 +1226,7 @@ namespace srouter::session
         for (auto& i : _intros)
             _pivots.insert(i.relay);
 
-        update_paths(last_cc_update);
+        update_paths(now);
     }
 
     void OutboundClientSession::update_paths(sys_ms now)
@@ -1198,7 +1236,7 @@ namespace srouter::session
         // - If we killed our currently active path then switch to another.
         // - If we end up with too few paths then start some builds.
 
-        if (!cc_ok)
+        if (!_cc_ok)
         {
             log::debug(logcat, "{} returning early, client contact empty or no longer usable", __PRETTY_FUNCTION__);
             return;
@@ -1363,8 +1401,11 @@ namespace srouter::session
             auto switch_nonce = dh_nonce ^ switch_xor_factor;
             oxenc::bt_dict_producer btdp;
             btdp.append("p"sv, path.terminal_hopid().span());
-            auto maybe_path_switch_msg = make_session_data_message(
-                PATH::CONTROL::serialize("path_switch"sv, btdp.span<std::byte>()), 0, true, false, switch_nonce);
+            oxenc::bt_dict_producer btdp_path_switch;
+            btdp_path_switch.append("e", "path_switch"sv);
+            btdp_path_switch.append("p", btdp.span<std::byte>());
+            auto maybe_path_switch_msg =
+                make_session_data_message(btdp_path_switch.span<std::byte>(), 0, true, false, switch_nonce);
             if (!maybe_path_switch_msg)
             {
                 log::warning(logcat, "Failed to create path switch message");
@@ -1431,16 +1472,6 @@ namespace srouter::session
         }
 
         select_new_current_impl(std::move(good), std::move(fallback));
-    }
-
-    nlohmann::json OutboundClientSession::ExtractStatus() const
-    {
-        auto obj = path::PathHandler::ExtractStatus();
-        // obj["lastExitUse"] = to_json(_last_use);
-        //  auto pub = _auth->session_key().to_pubkey();
-        //  obj["exitIdentity"] = pub.to_string();
-        obj["endpoint"] = _remote.to_string();
-        return obj;
     }
 
     std::optional<std::pair<RouterID, std::pair<std::chrono::seconds, HopID>>> OutboundClientSession::select_pivot()
@@ -1564,7 +1595,7 @@ namespace srouter::session
             pre_establish_data_queue.reset();
         }
 
-        fire_waiting(srouter::time_now_ms());
+        fire_waiting();
     }
 
     InboundClientSession::InboundClientSession(
@@ -1618,7 +1649,7 @@ namespace srouter::session
     }
 
     void InboundRelaySession::send_path_control_message(
-        std::vector<std::byte>&& data, SymmNonce&& nonce, bool path_switch)
+        std::vector<std::byte>&& data, SymmNonce&& nonce, bool /*path_switch*/)
     {
         update_active();
         if (check_dead(_current_thop, *this))

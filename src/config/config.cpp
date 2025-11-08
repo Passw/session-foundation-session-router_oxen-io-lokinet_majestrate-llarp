@@ -171,24 +171,6 @@ namespace srouter
                 throw std::invalid_argument{"[router]:public-ip is required when specifying [router]:public-port"};
         });
 
-        // FIXME: this option isn't currently used!
-        conf.define_option<int>(
-            "router",
-            "worker-threads",
-            Default{0},
-            Comment{
-                "The number of threads available for performing cryptographic functions.",
-                "The minimum is one thread, but network performance may increase with more.",
-                "threads. Should not exceed the number of logical CPU cores.",
-                "0 means use the number of logical CPU cores detected at startup.",
-            },
-            [this](int arg) {
-                if (arg < 0)
-                    throw std::invalid_argument("worker-threads must be >= 0");
-
-                worker_threads = arg;
-            });
-
         // Hidden option because this isn't something that should ever be turned off occasionally
         // when doing dev/testing work.
         conf.define_option<bool>("router", "block-bogons", Default{true}, Hidden, assignment_acceptor(block_bogons));
@@ -224,9 +206,10 @@ namespace srouter
             Comment{
                 "Specify an optional authentication token required to use a non-public exit node.",
                 "For example:",
-                "    auth=myfavouriteexit.loki:abc",
-                "uses the authentication code `abc` whenever myfavouriteexit.loki is accessed.",
-                "Can be specified multiple times to store codes for different exit nodes.",
+                "    auth=myfavouriteexit.{}:abc"_format(CLIENT_TLD),
+                "uses the authentication code `abc` whenever myfavouriteexit.{} is accessed."_format(CLIENT_TLD),
+                "Can be specified multiple times to store codes for different exit nodes.  The",
+                ".{} name may also be replaced with a .loki ONS name."_format(CLIENT_TLD),
             },
             [this](std::string arg) {
                 if (arg.empty())
@@ -236,8 +219,8 @@ namespace srouter
 
                 if (pos == std::string::npos)
                 {
-                    throw std::invalid_argument(
-                        "[exit]:auth invalid format, expects exit-address.loki:auth-token-goes-here");
+                    throw std::invalid_argument{
+                        "[exit]:auth invalid format, expects exit-address.{}:auth-token-goes-here"_format(CLIENT_TLD)};
                 }
 
                 const auto addr = arg.substr(0, pos);
@@ -252,7 +235,8 @@ namespace srouter
                 {
                     NetworkAddress exit{addr};
                     if (!exit.client())
-                        throw std::invalid_argument{"only .loki addresses can be used for exits"};
+                        throw std::invalid_argument{
+                            "only .{}/.loki addresses can be used for exits"_format(CLIENT_TLD)};
                     auth_tokens.emplace(std::move(exit), std::move(auth));
                 }
                 catch (const std::exception& e)
@@ -300,13 +284,13 @@ namespace srouter
             FullClientOnly,
             MultiValue,
             Comment{
-                "Reserve an ip range to use as an exit broker for a `.loki` address",
-                "Specify a `.loki` address and a reserved ip range to use as an exit broker.",
+                "Reserve an ip range to use as an exit broker for a `.{}` address"_format(CLIENT_TLD),
+                "Specify a `.{}` address and a reserved ip range to use as an exit broker."_format(CLIENT_TLD),
                 "Examples:",
-                "    reserved-range=whatever.loki",
-                "would route all exit traffic through whatever.loki; and",
-                "    reserved-range=stuff.loki:100.0.0.0/24",
-                "would route the IP range 100.0.0.0/24 through stuff.loki.",
+                "    reserved-range=whatever.{}"_format(CLIENT_TLD),
+                "would route all exit traffic through whatever.{}; and"_format(CLIENT_TLD),
+                "    reserved-range=stuff.{}:100.0.0.0/24"_format(CLIENT_TLD),
+                "would route the IP range 100.0.0.0/24 through stuff.{}."_format(CLIENT_TLD),
                 "This option can be specified multiple times (to map different IP ranges).",
             },
             [this](std::string arg) {
@@ -482,7 +466,7 @@ namespace srouter
             FullClientOnly,
             MultiValue,
             Comment{
-                "manually add a remote endpoint by .loki address to the access whitelist",
+                "Manually add a remote endpoint by PUBKEY.{} address to the access whitelist."_format(CLIENT_TLD),
             },
             [this](std::string arg) {
                 try
@@ -492,7 +476,7 @@ namespace srouter
                 catch (const std::exception& e)
                 {
                     throw std::invalid_argument{
-                        "[network]:auth-whitelist: invalid .loki address '{}': {}"_format(arg, e.what())};
+                        "[network]:auth-whitelist: invalid .{} address '{}': {}"_format(CLIENT_TLD, arg, e.what())};
                 }
             });
 
@@ -632,10 +616,10 @@ namespace srouter
                 "",
                 "For example, 172.16.0.1/16 will use 172.16.0.1 for this Session Router",
                 "instance's IPv4 address and 172.16.x.y will be used to map connections to remote",
-                "peer addresses.  For IPv6, fd2e:6c6f:6b69::1/64 will use fd2e:6c6f:6b69::1 for",
-                "this Session Router instance, and will map other lokinet instances to addresses",
-                "in fd2e:6c6f:6b69:0:w:x:y:z.  (These two ranges are the defaults if not",
-                "specified *and* they are not already in use on the system).",
+                "peer addresses.  For IPv6, fd2e:7365:7368::1/64 will use fd2e:7365:7368::1 for",
+                "this Session Router instance, and will map other remotes to addresses in",
+                "fd2e:7365:7368:0:w:x:y:z.  (These two ranges are the defaults if not specified",
+                "*and* they are not already in use on the system).",
                 "",
                 "This option can be given twice: once to set an IPv4 address and range, and once",
                 "to set an IPv6 address and range.  If one or the other is omitted then an unused",
@@ -707,14 +691,17 @@ namespace srouter
             FullClientOnly,
             MultiValue,
             Comment{
-                "Map a remote `.loki` or `.snode` address to always use a fixed local IPv4, IPv6, or both",
+                "Map a remote `.{}` or `.{}` address to always use a fixed local IPv4, IPv6, or both"_format(
+                    CLIENT_TLD, RELAY_TLD),
                 "(separated by a comma). For example:",
-                "    mapaddr=kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.loki:172.16.0.42,fd2e:6c6f:6b69::42",
-                "    mapaddr=55fxrybf3jtausbnmxpgwcsz9t8qkf5pr8t5f4xyto4omjrkorpy.snode:fd2e:6c6f:6b69::deca:f20",
+                "    mapaddr=kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.{}:172.16.0.42,fd2e:7365:7368::42"_format(
+                    RELAY_TLD),
+                "    mapaddr=55fxrybf3jtausbnmxpgwcsz9t8qkf5pr8t5f4xyto4omjrkorpy.{}:fd2e:7365:7368::deca:f20"_format(
+                    RELAY_TLD),
                 "reserves the given IPv4/IPv6 address for the indicated pubkeys.",
                 "",
-                "Session Router addresses that are *not* explicitly mapped will use the next available IP",
-                "(excluding any reserved by other mapaddr config lines).",
+                "Session Router addresses that are *not* explicitly mapped will use the next available unused IP",
+                "(for IPv4), or a pubkey-derived address with fallback to next available address for IPv6.",
                 "",
                 "The given IP address(es) must be inside the ranges configured by ifaddr=, and ONS addresses",
                 "cannot be used."},
@@ -780,8 +767,10 @@ namespace srouter
             Comment{
                 "Specify SRV Records for services hosted on the SNApp for protocols that use SRV",
                 "records for service discovery. Each line specifies a single SRV record as:",
-                "    srv=_service._protocol priority weight port target.loki",
-                "and can be specified multiple times as needed.",
+                "    srv=_service._protocol priority weight port target.{}"_format(CLIENT_TLD),
+                "and can be specified multiple times as needed.  If `target.sesh` is set to",
+                "`localhost.sesh` it will be replaced with this Session Router's address.",
+                "",
                 "For more info see",
                 "https://docs.oxen.io/products-built-on-oxen/session-router/snapps/hosting-snapps",
                 "and general description of DNS SRV record configuration.",
@@ -792,7 +781,7 @@ namespace srouter
                 if (not maybe_srv)
                     throw std::invalid_argument{"Invalid SRV Record string: {}"_format(arg)};
 
-                srv_records.emplace(std::move(*maybe_srv));
+                srv_records.push_back(std::move(*maybe_srv));
             });
 
         conf.define_option<int>("network", "path-alignment-timeout", Deprecated);
@@ -993,7 +982,7 @@ namespace srouter
             FullClientOnly,
             MultiValue,
             Comment{
-                "Upstream resolver(s) to use as fallback for non-loki addresses.",
+                "Upstream resolver(s) to use as fallback for non-Session Router addresses.",
                 "Multiple values accepted.",
             },
             [this, parse_addr_for_dns](std::string arg) {
@@ -1091,7 +1080,7 @@ namespace srouter
             "dns", [this](auto, std::string_view key, std::string_view val) { extra_opts.emplace(key, val); });
     }
 
-    void LinksConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void LinksConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
     {
         conf.add_section_comments(
             "bind",
@@ -1133,23 +1122,33 @@ namespace srouter
         conf.define_option<std::string>(
             "bind",
             "listen",
-            Comment{
+            params.type == config::Type::Relay
+              ? Comment{
                 "IP and/or port for Session Router to bind to for inbound/outbound connections.",
                 "",
                 "If IP is omitted then Session Router will search for a local network interface with a",
                 "public IP address and use that IP (and will exit with an error if no such IP is found",
-                "on the system).  If port is omitted then Session Router defaults to 1190 (routers) or",
-                "1191 (clients).",
+                "on the system).  If port is omitted then Session Router defaults to 1190.",
                 "",
                 "Examples:",
-                "    listen=15.5.29.5:443",
+                "    listen=15.5.29.5:1099",
                 "    listen=10.0.2.2",
                 "    listen=:1234",
                 "",
-                "Note that, when running as a relay, a private range IP address (like the second example",
-                "above) requires also using [router]:public-ip/-port to specify the public IP address at",
-                "which this router can be reached, and requires that traffic on that port is redirected to",
-                "the listening internal address.",
+                "Note that a private range IP address (as in the second example above) requires also using",
+                "[router]:public-ip/-port to specify the public IP address at which this router can be",
+                "reached, and requires that traffic on that port is redirected to the listening internal",
+                "address.",
+                }
+              : Comment{
+                "IP and/or port for Session Router to use for connections to relays.",
+                "",
+                "Defaults to ':1091', which means to use port 1091 on any available address.",
+                "",
+                "Examples:",
+                "    listen=15.5.29.5:1099 -- uses a specific IP and port",
+                "    listen=10.0.2.2 -- uses a specific IP, default port (1191)",
+                "    listen=:1234 -- uses any IP, port 1234",
             },
             [this, parse_addr_for_link](const std::string& arg) {
                 if (listen_addr)
@@ -1476,7 +1475,7 @@ namespace srouter
                 "If not set, this default to one greater than the value of [paths]:client-hops.",
                 "",
                 "Setting this value to 1 puts Session Router into single-hop mode for the connection from this",
-                "client to service node (i.e. `.snode` addresses) which potentially weakens connection",
+                "client to service node (i.e. `.{}` addresses) which potentially weakens connection"_format(RELAY_TLD),
                 "privacy as any service nodes you connect to will be able to observe your public IP."},
             bounded_assignment_acceptor(relay_hops_, 1, path::BUILD_LENGTH, "[paths]:relay-hops"));
 
@@ -1630,11 +1629,11 @@ namespace srouter
                 if (value.size() == 64 && oxenc::is_hex(value))
                     oxenc::from_hex(value.begin(), value.end(), router.begin());
                 else if (not router.from_relay_address(value))
-                    throw std::invalid_argument{"[paths]:strict-edge: Invalid .snode pubkey: {}"_format(value)};
+                    throw std::invalid_argument{"[paths]:strict-edge: Invalid .{} pubkey: {}"_format(RELAY_TLD, value)};
 
                 if (not strict_edges.insert(router).second)
                     throw std::invalid_argument{
-                        "[paths]:strict-edge: Duplicate strict connect .snode value: {}"_format(value)};
+                        "[paths]:strict-edge: Duplicate strict connect .{} value: {}"_format(RELAY_TLD, value)};
             },
             Comment{
                 R"(List of service node public keys of "edge" nodes (also known as "first hops") that)",
@@ -1642,7 +1641,8 @@ namespace srouter
                 "this to always use closer (i.e. lower latency) first hops, or to limit which network",
                 "nodes see connections from your IP address.",
                 "",
-                "Public keys can be provided either in native Session Router address format (ADDR.snode), or using",
+                "Public keys can be provided either in native Session Router address format (ADDR.{}), or using"_format(
+                    RELAY_TLD),
                 "the 64-character hexademical pubkey notation common used for Session service nodes.",
                 "Specify this option multiple times to specify multiple allowed edge nodes.",
                 "",
@@ -1673,7 +1673,7 @@ namespace srouter
             ClientOnly,
             MultiValue,
             Comment{
-                "Adds a Session Router relay `.snode` address to the list of relays to avoid when",
+                "Adds a Session Router relay `.{}` address to the list of relays to avoid when"_format(RELAY_TLD),
                 "connecting to edges or building paths. Can be specified multiple times.",
             },
             [this](std::string arg) {

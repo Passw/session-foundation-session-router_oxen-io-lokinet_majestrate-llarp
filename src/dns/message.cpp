@@ -1,10 +1,10 @@
 #include "message.hpp"
 
 #include "dns.hpp"
-#include "name.hpp"
+#include "encode.hpp"
 #include "net/ip_packet.hpp"
 #include "srv_data.hpp"
-#include "util/buffer.hpp"
+#include "util/logging.hpp"
 
 #include <nlohmann/json.hpp>
 #include <oxenc/endian.h>
@@ -15,141 +15,88 @@ namespace srouter::dns
 {
     static auto logcat = log::Cat("dns");
 
-    bool MessageHeader::Encode(buffer_t* buf) const
+    Message::Message(const Question& question) : hdr_id{0}, hdr_fields{} { questions.push_back(question); }
+
+    size_t Message::encode(std::span<std::byte> buf) const
     {
-        if (!buf->put_uint16(_id))
-            return false;
-        if (!buf->put_uint16(_fields))
-            return false;
-        if (!buf->put_uint16(_qd_count))
-            return false;
-        if (!buf->put_uint16(_an_count))
-            return false;
-        if (!buf->put_uint16(_ns_count))
-            return false;
-        return buf->put_uint16(_ar_count);
-    }
-
-    bool MessageHeader::Decode(buffer_t* buf)
-    {
-        if (!buf->read_uint16(_id))
-            return false;
-        if (!buf->read_uint16(_fields))
-            return false;
-        if (!buf->read_uint16(_qd_count))
-            return false;
-        if (!buf->read_uint16(_an_count))
-            return false;
-        if (!buf->read_uint16(_ns_count))
-            return false;
-        if (!buf->read_uint16(_ar_count))
-            return false;
-        return true;
-    }
-
-    nlohmann::json MessageHeader::ToJSON() const { return nlohmann::json{}; }
-
-    Message::Message(Message&& other)
-        : hdr_id(std::move(other.hdr_id)),
-          hdr_fields(std::move(other.hdr_fields)),
-          questions(std::move(other.questions)),
-          answers(std::move(other.answers)),
-          authorities(std::move(other.authorities)),
-          additional(std::move(other.additional))
-    {}
-
-    Message::Message(const Message& other)
-        : hdr_id(other.hdr_id),
-          hdr_fields(other.hdr_fields),
-          questions(other.questions),
-          answers(other.answers),
-          authorities(other.authorities),
-          additional(other.additional)
-    {}
-
-    Message::Message(const MessageHeader& hdr) : hdr_id(hdr._id), hdr_fields(hdr._fields)
-    {
-        questions.resize(size_t(hdr._qd_count));
-        answers.resize(size_t(hdr._an_count));
-        authorities.resize(size_t(hdr._ns_count));
-        additional.resize(size_t(hdr._ar_count));
-    }
-
-    Message::Message(const Question& question) : hdr_id{0}, hdr_fields{} { questions.emplace_back(question); }
-
-    bool Message::Encode(buffer_t* buf) const
-    {
-        MessageHeader hdr;
-        hdr._id = hdr_id;
-        hdr._fields = hdr_fields;
-        hdr._qd_count = questions.size();
-        hdr._an_count = answers.size();
-        hdr._ns_count = 0;
-        hdr._ar_count = 0;
-
-        if (!hdr.Encode(buf))
-            return false;
+        auto orig = buf.size();
+        if (!write_ints_into(
+                buf,
+                hdr_id,
+                hdr_fields,
+                static_cast<uint16_t>(questions.size()),
+                static_cast<uint16_t>(answers.size()),
+                static_cast<uint16_t>(authorities.size()),
+                static_cast<uint16_t>(additional.size())))
+            return 0;
 
         for (const auto& question : questions)
-            if (!question.Encode(buf))
-                return false;
+            if (!encode_into(buf, question))
+                return 0;
 
-        for (const auto& answer : answers)
-            if (!answer.Encode(buf))
-                return false;
+        for (auto& a : answers)
+            if (!encode_into(buf, a))
+                return 0;
 
-        return true;
+        return orig - buf.size();
     }
 
-    bool Message::Decode(buffer_t* buf)
+    std::optional<Message> Message::extract(std::span<const std::byte>& buf)
     {
-        for (auto& qd : questions)
+        auto maybe = std::make_optional<Message>();
+        auto& m = *maybe;
+        uint16_t qd_count, an_count, ns_count, ar_count;
+        if (!extract_ints(buf, m.hdr_id, m.hdr_fields, qd_count, an_count, ns_count, ar_count))
         {
-            if (!qd.Decode(buf))
-            {
-                log::error(logcat, "failed to decode question");
-                return false;
-            }
-            log::debug(logcat, "question: {}", qd);
+            maybe.reset();
+            return maybe;
         }
-        for (auto& an : answers)
+        m.questions.resize(qd_count);
+        m.answers.resize(an_count);
+        // Ignore these:
+        // m.authorities.resize(ns_count);
+        // m.additional.resize(ar_count);
+
+        for (auto& q : m.questions)
         {
-            if (not an.Decode(buf))
+            if (!q.extract(buf))
             {
-                log::debug(logcat, "failed to decode answer");
-                return false;
+                log::debug(logcat, "failed to decode question");
+                maybe.reset();
+                return maybe;
             }
         }
-        return true;
+        for (auto* as : {&m.answers, &m.authorities, &m.additional})
+            if (!as->empty())
+                log::debug(logcat, "Ignoring answer/authorities/additional sections in dns Message");
+
+        return maybe;
     }
 
     nlohmann::json Message::ToJSON() const
     {
-        std::vector<nlohmann::json> ques;
-        std::vector<nlohmann::json> ans;
+        auto result = nlohmann::json{{"id", hdr_id}, {"fields", hdr_fields}};
+        auto& ques = (result["questions"] = nlohmann::json::array());
+        auto& ans = (result["answers"] = nlohmann::json::array());
         for (const auto& q : questions)
-        {
             ques.push_back(q.ToJSON());
-        }
         for (const auto& a : answers)
-        {
             ans.push_back(a.ToJSON());
-        }
-        return nlohmann::json{{"questions", ques}, {"answers", ans}};
+        return result;
     }
 
-    std::vector<std::byte> Message::to_buffer() const
+    std::vector<std::byte> Message::encode() const
     {
         std::vector<std::byte> tmp;
         tmp.resize(1500);
-        buffer_t buf{tmp};
-        if (not Encode(&buf))
+        auto size = encode(tmp);
+        if (size == 0)
             throw std::runtime_error("cannot encode dns message");
-        tmp.resize(buf.cur - buf.base);
+        tmp.resize(size);
         return tmp;
     }
 
-    void Message::add_serv_fail(RR_TTL_t)
+    void Message::add_serv_fail()
     {
         if (questions.size())
         {
@@ -161,224 +108,105 @@ namespace srouter::dns
         }
     }
 
-    static constexpr uint16_t reply_flags(uint16_t setbits) { return setbits | flags_QR | flags_AA | flags_RA; }
+    static constexpr uint16_t reply_flags = flags_QR | flags_AA | flags_RA;
 
-    void Message::add_IN_reply(ipv4 addr, RR_TTL_t ttl)
+    void Message::add_reply(ipv4 addr, std::chrono::seconds ttl)
     {
-        if (questions.size())
-        {
-            hdr_fields = reply_flags(hdr_fields);
-            auto& rec = answers.emplace_back();
-            rec.rr_name = questions[0].qname;
-            rec.rr_class = qClassIN;
-            rec.ttl = ttl;
-            rec.rr_type = qTypeA;
-            rec.rData.resize(4);
-            oxenc::write_host_as_big(addr.addr, rec.rData.data());
-        }
+        std::vector<std::byte> a;
+        a.resize(4);
+        oxenc::write_host_as_big(addr.addr, a.data());
+        add_reply(RRClass::IN, RRType::A, std::move(a), ttl);
     }
 
-    void Message::add_IN_reply(ipv6 addr, RR_TTL_t ttl)
+    void Message::add_reply(ipv6 addr, std::chrono::seconds ttl)
     {
-        if (questions.size())
-        {
-            hdr_fields = reply_flags(hdr_fields);
-            auto& rec = answers.emplace_back();
-            rec.rr_name = questions[0].qname;
-            rec.rr_class = qClassIN;
-            rec.ttl = ttl;
-            rec.rr_type = qTypeAAAA;
-            rec.rData.resize(16);
-            oxenc::write_host_as_big(addr.hi, rec.rData.data());
-            oxenc::write_host_as_big(addr.lo, rec.rData.data() + 8);
-        }
+        std::vector<std::byte> aaaa;
+        aaaa.resize(16);
+        oxenc::write_host_as_big(addr.hi, aaaa.data());
+        oxenc::write_host_as_big(addr.lo, aaaa.data() + 8);
+        return add_reply(RRClass::IN, RRType::AAAA, std::move(aaaa), ttl);
     }
 
-    void Message::set_IN_reply_rr_name(std::string_view name) { answers.back().rr_name = name; }
+    void Message::set_rr_name(std::optional<std::string> name) { rr_name_override = std::move(name); }
 
-    void Message::add_reply(std::string name, RR_TTL_t ttl)
+    void Message::add_reply(RRClass cls, RRType type, std::vector<std::byte> data, std::chrono::seconds ttl)
     {
-        if (questions.size())
-        {
-            hdr_fields = reply_flags(hdr_fields);
+        if (questions.empty())
+            return;
 
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
-            rec.rr_type = question.qtype;
-            rec.rr_class = qClassIN;
-            rec.ttl = ttl;
-            std::array<uint8_t, 512> tmp = {{0}};
-            buffer_t buf(tmp);
-            if (EncodeNameTo(&buf, name))
-            {
-                buf.sz = buf.cur - buf.base;
-                rec.rData.resize(buf.sz);
-                memcpy(rec.rData.data(), buf.base, buf.sz);
-            }
-        }
+        hdr_fields |= reply_flags;
+
+        auto& ans = answers.emplace_back();
+        ans.rr_name = get_rr_name();
+        ans.rr_type = type;
+        ans.rr_class = cls;
+        ans.ttl = ttl;
+        ans.rData = std::move(data);
     }
 
-    void Message::add_NODATA_reply()
+    void Message::add_nodata_reply()
     {
         if (not questions.empty())
-            hdr_fields = reply_flags(hdr_fields);
+            hdr_fields |= reply_flags;
     }
 
-    void Message::add_ns_reply(std::string name, RR_TTL_t ttl)
+    void Message::add_cname_reply(std::string_view name, std::chrono::seconds ttl)
     {
-        if (not questions.empty())
-        {
-            hdr_fields = reply_flags(hdr_fields);
-
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
-            rec.rr_type = qTypeNS;
-            rec.rr_class = qClassIN;
-            rec.ttl = ttl;
-            std::array<uint8_t, 512> tmp = {{0}};
-            buffer_t buf(tmp);
-            if (EncodeNameTo(&buf, name))
-            {
-                buf.sz = buf.cur - buf.base;
-                rec.rData.resize(buf.sz);
-                memcpy(rec.rData.data(), buf.base, buf.sz);
-            }
-        }
+        std::array<std::byte, 512> tmp;
+        if (auto len = encode_name(tmp, name))
+            add_reply(RRClass::IN, RRType::CNAME, std::vector<std::byte>{tmp.data(), tmp.data() + len}, ttl);
+        else
+            log::error(logcat, "Failed to encode CNAME value {}", name);
     }
 
-    void Message::add_CNAME_reply(std::string name, RR_TTL_t ttl)
+    void Message::add_ptr_reply(std::string_view name, std::chrono::seconds ttl)
     {
-        if (questions.size())
-        {
-            hdr_fields = reply_flags(hdr_fields);
-
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
-            rec.rr_type = qTypeCNAME;
-            rec.rr_class = qClassIN;
-            rec.ttl = ttl;
-            std::array<uint8_t, 512> tmp = {{0}};
-            buffer_t buf(tmp);
-            if (EncodeNameTo(&buf, name))
-            {
-                buf.sz = buf.cur - buf.base;
-                rec.rData.resize(buf.sz);
-                memcpy(rec.rData.data(), buf.base, buf.sz);
-            }
-        }
+        std::array<std::byte, 512> tmp;
+        if (auto len = encode_name(tmp, name))
+            add_reply(RRClass::IN, RRType::PTR, std::vector<std::byte>{tmp.data(), tmp.data() + len}, ttl);
+        else
+            log::error(logcat, "Failed to encode PTR value {}", name);
     }
 
-    void Message::add_mx_reply(std::string name, uint16_t priority, RR_TTL_t ttl)
+    void Message::add_reply(const SRVData& srv, std::chrono::seconds ttl)
     {
-        if (questions.size())
-        {
-            hdr_fields = reply_flags(hdr_fields);
+        std::array<std::byte, 512> tmp;
+        std::span<std::byte> remaining{tmp};
+        if (!write_ints_into(remaining, srv.priority, srv.weight, srv.port))
+            return;
+        if (!write_name_into(remaining, srv.target))
+            return;
 
-            const auto& question = questions[0];
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
-            rec.rr_type = qTypeMX;
-            rec.rr_class = qClassIN;
-            rec.ttl = ttl;
-            std::array<uint8_t, 512> tmp = {{0}};
-            buffer_t buf(tmp);
-            buf.put_uint16(priority);
-            if (EncodeNameTo(&buf, name))
-            {
-                buf.sz = buf.cur - buf.base;
-                rec.rData.resize(buf.sz);
-                memcpy(rec.rData.data(), buf.base, buf.sz);
-            }
-        }
+        add_reply(
+            RRClass::IN,
+            RRType::SRV,
+            std::vector<std::byte>{tmp.data(), tmp.data() + tmp.size() - remaining.size()},
+            ttl);
     }
 
-    void Message::add_srv_reply(std::vector<SRVData> records, RR_TTL_t ttl)
+    void Message::add_txt_reply(std::string_view txt, std::chrono::seconds ttl)
     {
-        hdr_fields = reply_flags(hdr_fields);
-
-        const auto& question = questions[0];
-
-        for (const auto& srv : records)
+        std::array<std::byte, 1024> tmp;
+        std::span<std::byte> remaining{tmp};
+        while (!txt.empty())
         {
-            if (not srv.is_valid())
-            {
-                add_nx_reply();
-                return;
-            }
-
-            answers.emplace_back();
-            auto& rec = answers.back();
-            rec.rr_name = question.qname;
-            rec.rr_type = qTypeSRV;
-            rec.rr_class = qClassIN;
-            rec.ttl = ttl;
-
-            std::array<uint8_t, 512> tmp = {{0}};
-            buffer_t buf(tmp);
-
-            buf.put_uint16(srv.priority);
-            buf.put_uint16(srv.weight);
-            buf.put_uint16(srv.port);
-
-            std::string target;
-            if (srv.target == "")
-            {
-                // get location of second dot (after service.proto) in qname
-                size_t pos = question.qname.find(".");
-                pos = question.qname.find(".", pos + 1);
-
-                target = question.qname.substr(pos + 1);
-            }
-            else
-            {
-                target = srv.target;
-            }
-
-            if (not EncodeNameTo(&buf, target))
-            {
-                add_nx_reply();
-                return;
-            }
-
-            buf.sz = buf.cur - buf.base;
-            rec.rData.resize(buf.sz);
-            memcpy(rec.rData.data(), buf.base, buf.sz);
+            auto piecelen = std::min(txt.size(), size_t{255});
+            if (remaining.size() <= piecelen)
+                throw std::length_error{"TXT record too big"};
+            remaining.front() = static_cast<std::byte>(piecelen);
+            std::memcpy(remaining.data() + 1, txt.data(), piecelen);
+            txt.remove_prefix(piecelen);
+            remaining = remaining.subspan(1 + piecelen);
         }
+
+        add_reply(
+            RRClass::IN,
+            RRType::SRV,
+            std::vector<std::byte>{tmp.data(), tmp.data() + tmp.size() - remaining.size()},
+            ttl);
     }
 
-    void Message::add_txt_reply(std::string str, RR_TTL_t ttl)
-    {
-        auto& rec = answers.emplace_back();
-        rec.rr_name = questions[0].qname;
-        rec.rr_class = qClassIN;
-        rec.rr_type = qTypeTXT;
-        rec.ttl = ttl;
-        std::array<uint8_t, 1024> tmp{};
-        buffer_t buf(tmp);
-        while (not str.empty())
-        {
-            const auto left = std::min(str.size(), size_t{256});
-            const auto sub = str.substr(0, left);
-            uint8_t byte = left;
-            *buf.cur = byte;
-            buf.cur++;
-            if (not buf.write(sub.begin(), sub.end()))
-                throw std::length_error("text record too big");
-            str = str.substr(left);
-        }
-        buf.sz = buf.cur - buf.base;
-        rec.rData.resize(buf.sz);
-        std::copy_n(buf.base, buf.sz, rec.rData.data());
-    }
-
-    void Message::add_nx_reply(RR_TTL_t)
+    void Message::add_nx_reply()
     {
         if (questions.size())
         {
@@ -387,10 +215,10 @@ namespace srouter::dns
             additional.clear();
 
             // authorative response with recursion available
-            hdr_fields = reply_flags(hdr_fields);
+            hdr_fields |= reply_flags;
             // don't allow recursion on this request
             hdr_fields &= ~flags_RD;
-            hdr_fields |= flags_RCODENameError;
+            hdr_fields |= flags_RCODENxDomain;
         }
     }
 
@@ -407,18 +235,4 @@ namespace srouter::dns
             fmt::join(additional, ","));
     }
 
-    std::optional<Message> maybe_parse_dns_msg(std::span<const std::byte> b)
-    {
-        MessageHeader hdr{};
-        buffer_t buf{b};
-
-        if (not hdr.Decode(&buf))
-            return std::nullopt;
-
-        auto msg = std::make_optional<Message>(hdr);
-        if (not msg->Decode(&buf))
-            msg.reset();
-
-        return msg;
-    }
 }  // namespace srouter::dns

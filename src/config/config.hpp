@@ -61,7 +61,6 @@ namespace srouter
 
         bool block_bogons = false;
 
-        int worker_threads = -1;
         int net_threads = -1;
 
         size_t job_que_size = 0;
@@ -187,7 +186,7 @@ namespace srouter
 
         std::vector<std::filesystem::path> auth_files;
 
-        std::unordered_set<srouter::dns::SRVData> srv_records;
+        std::vector<srouter::dns::SRVData> srv_records;
 
         // Contents of this file are read directly into ::_reserved_local_addrs
         // TODO.  Perhaps this should be in a sqlite db, though?
@@ -208,14 +207,12 @@ namespace srouter
         std::unordered_map<NetworkAddress, ipv4> _reserved_local_ipv4;
         std::unordered_map<NetworkAddress, ipv6> _reserved_local_ipv6;
 
-        // TESTNET: moved into ExitConfig!
-        bool allow_exit{false};
         // Used by RemoteHandler to provide auth tokens for remote exits
         std::unordered_map<NetworkAddress, std::string> exit_auths;
         std::unordered_map<std::string, std::string> sns_exit_auths;
         std::optional<net::ExitPolicy> traffic_policy;
 
-        // TESTNET: move into ExitConfig!
+        // FIXME: move into ExitConfig!
         bool enable_route_poker{false};
         bool blackhole_routes{false};
 
@@ -228,17 +225,10 @@ namespace srouter
 
         std::vector<std::filesystem::path> hostfiles;
 
-        /* TESTNET: Under modification */
         std::vector<quic::Address> _upstream_dns;
         quic::Address _default_dns{"9.9.9.10", DEFAULT_DNS_PORT};
         std::optional<quic::Address> _query_bind;
         std::vector<quic::Address> _bind_addrs;
-
-        // Deprecated
-        // std::vector<SockAddr_deprecated> upstream_dns;
-        // std::optional<SockAddr_deprecated> query_bind;
-        // std::vector<SockAddr_deprecated> bind_addr;
-        /*************************************/
 
         std::unordered_multimap<std::string, std::string> extra_opts;
 

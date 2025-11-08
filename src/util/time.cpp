@@ -26,13 +26,16 @@ namespace srouter
     uint64_t to_milliseconds(std::chrono::milliseconds ms) { return ms.count(); }
 
     /// get our uptime in ms
-    std::chrono::milliseconds uptime()
+    std::chrono::milliseconds uptime(steady_ms now)
     {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - started_at_steady);
+        return std::chrono::duration_cast<std::chrono::milliseconds>(now - started_at_steady);
     }
 
     sys_ms time_now_ms() { return std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now()); }
+    steady_ms steady_now_ms()
+    {
+        return std::chrono::floor<std::chrono::milliseconds>(std::chrono::steady_clock::now());
+    }
 
     nlohmann::json to_json(const std::chrono::milliseconds& t) { return to_milliseconds(t); }
 

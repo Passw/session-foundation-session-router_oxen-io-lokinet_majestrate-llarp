@@ -6,21 +6,23 @@
 #include "crypto/crypto.hpp"
 #include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
-#include "messages/session.hpp"
+#include "messages/common.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "session/session.hpp"
 #include "util/bspan.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
+#include "util/try_calling.hpp"
 
+#include <oxen/log/internal.hpp>
 #include <oxenc/base32z.h>
 
+#include <chrono>
+#include <concepts>
 #include <memory>
 #include <random>
 
@@ -48,8 +50,8 @@ namespace srouter::handlers
                 protocols |= protocol_flag::EXIT;
         }
 
-        client_contact =
-            ClientContact{router.key_manager.router_id(), netconf.srv_records, protocols, netconf.traffic_policy};
+        client_contact = ClientContact{
+            router.key_manager.router_id(), netconf.srv_records, protocols, sys_ms{}, netconf.traffic_policy};
     }
 
     std::array<int, 5> SessionEndpoint::session_stats() const
@@ -527,20 +529,23 @@ namespace srouter::handlers
 
             for (const auto& [name, ip_range] : sns_ranges)
             {
-                resolve_sns(name, [this, ip_range](std::optional<NetworkAddress> maybe_addr) {
-                    if (maybe_addr)
-                    {
-                        log::critical(
-                            logcat,
-                            "UNIMPLEMENTED: Successfully resolved SNS lookup for {} mapped to IPRange:{}",
-                            *maybe_addr,
-                            ip_range);
-                        // TODO FIXME: we need to sort out how these addresses get actually
-                        // mapped.
-                        //_range_map.insert_or_assign(std::move(ip_range), std::move(*maybe_addr));
-                    }
-                    // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
-                });
+                resolve_sns(
+                    name,
+                    [this, ip_range](
+                        std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
+                        if (maybe_addr)
+                        {
+                            log::critical(
+                                logcat,
+                                "UNIMPLEMENTED: Successfully resolved SNS lookup for {} mapped to IPRange:{}",
+                                *maybe_addr,
+                                ip_range);
+                            // TODO FIXME: we need to sort out how these addresses get actually
+                            // mapped.
+                            //_range_map.insert_or_assign(std::move(ip_range), std::move(*maybe_addr));
+                        }
+                        // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
+                    });
             }
         }
 
@@ -552,89 +557,220 @@ namespace srouter::handlers
 
             for (const auto& [name, auth_token] : sns_auths)
             {
-                resolve_sns(name, [this, auth_token](std::optional<NetworkAddress> maybe_addr) {
-                    if (maybe_addr)
-                    {
-                        log::debug(
-                            logcat, "Successfully resolved SNS lookup for {} mapped to static auth token", *maybe_addr);
-                        _auth_tokens.emplace(std::move(*maybe_addr), std::move(auth_token));
-                    }
-                    // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
-                });
+                resolve_sns(
+                    name,
+                    [this, auth_token](
+                        std::optional<NetworkAddress> maybe_addr, bool assertive, std::chrono::milliseconds /*ttl*/) {
+                        if (maybe_addr)
+                        {
+                            log::debug(
+                                logcat,
+                                "Successfully resolved SNS lookup for {} mapped to static auth token",
+                                *maybe_addr);
+                            _auth_tokens.emplace(std::move(*maybe_addr), std::move(auth_token));
+                        }
+                        // we don't need to print a fail message, as it is logged prior to invoking with std::nullopt
+                    });
             }
         }
     }
 
-    void SessionEndpoint::resolve_sns(std::string sns, std::function<void(std::optional<NetworkAddress>)> func)
+    void SessionEndpoint::resolve_sns(
+        std::string sns,
+        std::function<void(std::optional<NetworkAddress>, bool assertive, std::chrono::milliseconds ttl)> func)
     {
         Lock_t l{paths_mutex};
         if (not is_valid_sns(sns))
         {
-            log::debug(logcat, "Invalid SNS name ({}) queried for lookup", sns);
-            return func(std::nullopt);
+            log::warning(logcat, "Invalid SNS name ({}) queried for lookup", sns);
+            try_calling(logcat, func, std::nullopt, true, 0ms);
+            return;
         }
 
         log::debug(logcat, "Looking up SNS name {}", sns);
 
-        auto remaining = std::make_shared<int>(0);
-        auto response_handler = [sns, remaining, func = std::move(func)](auto resp) {
-            int rem = --*remaining;
-            if (rem < 0)
-                return;  // Some other request beat us to it
+        if (auto it = _sns_cache.find(sns); it != _sns_cache.end())
+        {
+            auto& [addr, expiry] = it->second;
+            auto now = time_now_ms();
+            if (expiry > now)
+            {
+                if (addr)
+                    log::debug(logcat, "Found SNS entry in cache: {} -> {}", sns, *addr);
+                else
+                    log::debug(logcat, "Found SNS does-not-exist entry in cache for {}", sns);
+                try_calling(logcat, func, addr, true, expiry - now);
+                return;
+            }
 
-            std::optional<NetworkAddress> client_addr;
+            // Else it's expired, so erase it.  (We don't worry about cleaning it periodically; a
+            // few stale entries sitting around until the next time we try to look them up won't
+            // hurt anything).
+            _sns_cache.erase(it);
+        }
 
+        struct sns_results_t
+        {
+            // We send the request to multiple nodes, and then confirm responses:
+            // - if we get at least half of the responses that agree (same address, or all say not
+            //   found) then we return that result.
+            // - otherwise (i.e. if we reach the end of responses without getting a 50%+ winning
+            //   result) then we return the most popular: In the case of ties, if "not found" is one
+            //   of the tied values, we return not found; otherwise we randomize among any with the
+            //   same number of confirmations.
+            std::unordered_map<NetworkAddress, int> result_count;
+            int not_found_count = 0;
+            int remaining = 0;
+            int threshold = 0;
+            std::string name;
+        };
+        auto sns_results = std::make_shared<sns_results_t>();
+        sns_results->name = sns;
+
+        auto response_handler = [this, sns_results, func = std::move(func)](path::path_control_response resp) {
+            if (--sns_results->remaining < 0)
+                return;  // Already processed and sent the response
+
+            const auto& name = sns_results->name;
             if (resp.ok())
             {
                 try
                 {
                     log::debug(logcat, "Call to ResolveSNS succeeded!");
 
-                    auto enc = ResolveSNS::deserialize_response(oxenc::bt_dict_consumer{resp.body});
-
-                    client_addr = enc.decrypt(sns);
-                    if (client_addr)
+                    oxenc::bt_dict_consumer sns{resp.body};
+                    if (auto err = sns.maybe<std::string_view>(messages::STATUS_KEY);
+                        err && *err != messages::STATUS_OK)
                     {
-                        log::debug(
-                            logcat, "Successfully decrypted SNS record (name: {}, address: {})", sns, *client_addr);
+                        if (*err == messages::STATUS_NOT_FOUND)
+                        {
+                            log::debug(logcat, "Relay returned CC not found");
+                            sns_results->not_found_count++;
+                        }
+                        else
+                        {
+                            throw std::runtime_error{"Relay returned unknown status {}"_format(*err)};
+                        }
                     }
                     else
-                        log::warning(logcat, "Failed to decrypt SNS record (name: {})", sns);
+                    {
+                        auto ciphertext = sns.require<std::string_view>("c");
+                        SymmNonce nonce{sns.require_span<std::byte, SymmNonce::SIZE>("n")};
+                        sns.finish();
+
+                        if (auto addr = crypto::maybe_decrypt_name(ciphertext, nonce, name))
+                        {
+                            log::debug(logcat, "Successfully decrypted SNS response {} -> {}", name, *addr);
+
+                            ++sns_results->result_count[*addr];
+                        }
+                        else
+                            log::warning(logcat, "Failed to decrypt SNS record (name: {})", name);
+                    }
+
+                    // See if we have a two-response confirmation with no dissent, and if so return
+                    // early:
+                    if (sns_results->not_found_count >= sns_results->threshold)
+                    {
+                        log::debug(logcat, "SNS result: {} not found ({} confs)", name, sns_results->not_found_count);
+                        _sns_cache[name] = {std::nullopt, time_now_ms() + SNS_CACHE_TIME};
+                        try_calling(logcat, func, std::nullopt, true, SNS_CACHE_TIME);
+                        sns_results->remaining = 0;
+                        return;
+                    }
+                    for (const auto& [addr, count] : sns_results->result_count)
+                    {
+                        if (count >= sns_results->threshold)
+                        {
+                            log::debug(logcat, "SNS result: {} -> {} ({} confs)", name, addr, count);
+                            _sns_cache[name] = {addr, time_now_ms() + SNS_CACHE_TIME};
+                            try_calling(logcat, func, addr, true, SNS_CACHE_TIME);
+                            sns_results->remaining = 0;
+                            return;
+                        }
+                    }
                 }
                 catch (const std::exception& e)
                 {
-                    log::warning(logcat, "Exception during SNS response handling: {}", e.what());
+                    log::warning(logcat, "Exception during SNS response handling for {}: {}", name, e.what());
                 }
             }
 
-            if (client_addr)
+            if (sns_results->remaining == 0)
             {
-                *remaining = 0;
-                func(std::move(client_addr));
-            }
-            else if (rem == 0)
-            {
-                // If this is the last outstanding response, and still didn't succeed, then signal
-                // the lookup failure to the callback:
-                func(std::nullopt);
+                // We are the last response handler, and we didn't exit via the above threshold
+                // confirmation offramps, so we need to pick a winner based on whatever results we
+                // got:
+                if (sns_results->result_count.empty())
+                {
+                    // No resolved results; return DNE, authoritatively if we saw at least one not found response:
+                    bool assertive = sns_results->not_found_count > 0;
+                    if (assertive)
+                        _sns_cache[name] = {std::nullopt, time_now_ms() + SNS_CACHE_TIME};
+                    try_calling(logcat, func, std::nullopt, assertive, assertive ? SNS_CACHE_TIME : 0ms);
+                }
+                else
+                {
+                    std::vector<NetworkAddress> best;
+                    int best_count = 0;
+                    for (auto& [addr, count] : sns_results->result_count)
+                    {
+                        if (count >= best_count)
+                        {
+                            if (count > best_count)
+                            {
+                                best_count = count;
+                                best.clear();
+                            }
+                            best.push_back(addr);
+                        }
+                    }
+                    if (sns_results->not_found_count >= best_count)
+                    {
+                        // If "does not exist" has at least as many results as the best "found"
+                        // result, return DNE:
+                        _sns_cache[name] = {std::nullopt, time_now_ms() + SNS_CACHE_TIME};
+                        try_calling(logcat, func, std::nullopt, true, SNS_CACHE_TIME);
+                    }
+                    else
+                    {
+                        // If we have one single best, send it; if tied, randomize:
+                        size_t i = 0;
+                        if (best.size() > 1)
+                            i = std::uniform_int_distribution<size_t>{0, best.size() - 1}(csrng);
+                        _sns_cache[name] = {best[i], time_now_ms() + SNS_CACHE_TIME};
+                        try_calling(logcat, func, best[i], true, SNS_CACHE_TIME);
+                    }
+                }
             }
         };
 
         auto name_hash = crypto::shorthash(as_bspan(sns));
 
-        // TODO FIXME: this should not be fired down *every* path.
-        for (auto& path : paths())
+        // We fire this request down at most 5 utility paths so that if you've configured lots of
+        // paths, we don't spam them all for every ONS lookup.
+        for (auto& path : active_paths())
         {
-            ++*remaining;
+            ++sns_results->remaining;
             log::debug(
                 logcat, "Querying pivot:{} for name lookup (target: {})", path.terminal_rid().short_string(), sns);
             path.resolve_sns(name_hash, response_handler);
-        }
 
-        if (*remaining == 0)
+            if (sns_results->remaining >= 5)
+                break;
+        }
+        sns_results->threshold = (sns_results->remaining + 1) / 2;
+
+        if (sns_results->remaining == 0)
         {
-            log::warning(logcat, "Unable to resolve Session Router SNS {}: we have no active paths", sns);
-            func(std::nullopt);
+            log::warning(logcat, "Unable to resolve SNS name {}: we have no active paths", sns);
+            // Since we didn't make any actual requests, construct a fake response so that we can go
+            // through the lambda above (which we moved `func` into!) for response processing as if
+            // we got a single error response
+            sns_results->remaining = 1;
+            path::path_control_response fake_resp{};
+            fake_resp.error = true;
+            response_handler(std::move(fake_resp));
         }
     }
 
@@ -643,7 +779,8 @@ namespace srouter::handlers
         if (auto* maybe_rc = router.node_db().get_rc(remote))
         {
             log::debug(logcat, "RelayContact for remote (rid: {}) found locally!", remote);
-            return func(*maybe_rc);
+            try_calling(logcat, func, *maybe_rc);
+            return;
         }
 
         log::debug(logcat, "Looking up RelayContact for remote (rid:{})", remote.to_network_address(true));
@@ -664,7 +801,11 @@ namespace srouter::handlers
                 if (resp.ok())
                 {
                     log::info(logcat, "Call to FetchRC succeeded!");
-                    auto rcs = FetchRC::deserialize_response(router.netid(), oxenc::bt_dict_consumer{resp.body});
+
+                    std::vector<RelayContact> rcs;
+                    oxenc::bt_dict_consumer btdc{resp.body};
+                    for (auto sublist = btdc.require<oxenc::bt_list_consumer>("r"); not sublist.is_finished();)
+                        rcs.emplace_back(sublist.consume_dict_data(), router.netid());
 
                     if (rcs.empty())
                         log::warning(logcat, "Received empty response from `fetch_rc` request!");
@@ -697,12 +838,12 @@ namespace srouter::handlers
             if (rc)
             {
                 *remaining = 0;
-                func(std::move(rc));
+                try_calling(logcat, func, std::move(rc));
             }
             else if (rem == 0)
             {
                 // We are the last path response and there have been no successes, so signal failure
-                func(std::nullopt);
+                try_calling(logcat, func, std::nullopt);
             }
         };
 
@@ -726,39 +867,99 @@ namespace srouter::handlers
         if (*remaining == 0)
         {
             log::warning(logcat, "RC lookup failed: no usable paths!");
-            func(std::nullopt);
+            try_calling(logcat, func, std::nullopt);
         }
     }
 
-    void SessionEndpoint::lookup_client_intro(RouterID remote, std::function<void(std::optional<ClientContact>)> func)
+    const std::optional<ClientContact>& SessionEndpoint::update_cc(
+        const RouterID& remote, std::optional<ClientContact>&& cc)
     {
+        auto new_exp = cc ? cc->expiry() : time_now_ms() + NO_CC_CACHE_TIME;
+        auto [it, new_entry] = _cc_cache.try_emplace(remote, std::move(cc), new_exp);
+        if (new_entry)
+        {
+            log::debug(logcat, "New CC stored for {}.{}", remote, CLIENT_TLD);
+            return it->second.first;
+        }
+
+        // Otherwise the cache already had an entry, so we need to figure out whether the new value
+        // is better than the old one:
+        // - if the old entry is expired, use the new one.
+        // - if the existing cache entry is nullopt, then prefer the new one.
+        // - if the existing cache entry is set but new is nullopt, leave the existing one.
+        // - if both are set then prefer the one with the later signed-at timestamp.
+
+        auto& [entry, exp] = it->second;
+        auto now = time_now_ms();
+        if (!entry || exp < now || (cc && cc->signed_at() > entry->signed_at()))
+        {
+            bool was_null = !entry;
+            entry = std::move(cc);
+            exp = new_exp;
+            log::debug(logcat, "{} for {}.{}", was_null ? "New CC stored" : "Updated CC", remote, CLIENT_TLD);
+        }
+        else
+        {
+            log::debug(
+                logcat,
+                "Ignoring CC received for {}.{}: current cached value is the same or newer",
+                remote,
+                CLIENT_TLD);
+        }
+        return entry;
+    }
+
+    void SessionEndpoint::lookup_client_intro(
+        RouterID remote, std::function<void(const std::optional<ClientContact>&)> func, bool allow_cache)
+    {
+        if (remote == router.id())
+        {
+            log::debug(logcat, "lookup intro for ourself: returning stored CC");
+            try_calling(logcat, func, client_contact);
+            return;
+        }
+
+        if (allow_cache)
+        {
+            if (auto it = _cc_cache.find(remote); it != _cc_cache.end())
+            {
+                const auto& [cc, exp] = it->second;
+                auto now = time_now_ms();
+                if (exp <= now)
+                    _cc_cache.erase(it);
+                else
+                {
+                    log::debug(logcat, "Found cached CC for remote {}", remote.to_network_address(false));
+                    try_calling(logcat, func, cc);
+                    return;
+                }
+            }
+        }
+
         PubKey remote_key;
         if (!crypto::blind(remote_key, remote, crypto::blinding::CLIENT_CONTACT))
         {
-            log::error(
+            log::warning(
                 logcat,
                 "Failed to blind remote address {}: this is most likely not a valid address",
                 remote.to_network_address(false));
-            func(std::nullopt);
+            try_calling(logcat, func, update_cc(remote, std::nullopt));
             return;
         }
 
         log::debug(
             logcat,
-            "Looking up ClientContact (key: {}) for remote (rid:{})",
+            "Initiate network ClientContact lookup (blinded key: {}) for {}",
             remote_key,
             remote.to_network_address(false));
 
+        // Will be set to 0 once we have seen an successful response, and so later responses will
+        // set a negative (after decrementing).  If a response callback sees 0 that means that it is
+        // responsible for sending an error (i.e. this implies all requests failed).
         auto remaining = std::make_shared<int>(0);
 
-        auto response_handler = [remote, func, remaining](auto resp) {
+        auto response_handler = [remote, func, remaining, this](auto resp) {
             int rem = --*remaining;
-            if (rem < 0)
-            {
-                // Another path response already returned it
-                log::trace(logcat, "Dropping duplicate `find_cc` response (success: {})", resp.ok());
-                return;
-            }
 
             std::optional<ClientContact> cc;
             try
@@ -782,24 +983,14 @@ namespace srouter::handlers
                     }
                     if (!failed)
                     {
-                        log::info(logcat, "Call to FindClientContact succeeded!");
-                        auto enc = FindClientContact::deserialize_response(std::move(cc_dict));
-                        if (auto intro = enc.decrypt(remote))
-                        {
-                            log::debug(logcat, "Storing ClientContact for remote rid:{}", remote);
-                            cc = std::move(intro);
-                        }
-                        else
-                            log::warning(logcat, "Failed to decrypt returned EncryptedClientContact!");
+                        log::debug(logcat, "Call to FindClientContact succeeded!");
+                        cc = ClientContact::decrypt(cc_dict.require_span<std::byte>("x"), remote);
                     }
                 }
                 else
                 {
-                    std::optional<std::string> status = std::nullopt;
                     oxenc::bt_dict_consumer btdc{resp.body};
-
-                    if (auto s = btdc.maybe<std::string>(messages::STATUS_KEY))
-                        status = s;
+                    auto status = btdc.maybe<std::string>(messages::STATUS_KEY);
 
                     log::warning(
                         logcat, "Call to FindClientContact FAILED; reason: {}", status.value_or("<none given>"));
@@ -807,42 +998,69 @@ namespace srouter::handlers
             }
             catch (const std::exception& e)
             {
-                log::warning(logcat, "Exception: {}", e.what());
+                log::warning(logcat, "Failed to load client contact: {}", e.what());
             }
 
             if (cc)
             {
-                *remaining = 0;
-                func(std::move(cc));
+                // Offer it to the cache whether or not e need to call the callback so that if one
+                // of the later callbacks return a better value, we keep that better value on hand.
+                auto& ccc = update_cc(remote, std::move(cc));
+
+                if (rem > 0)
+                    *remaining = 0;
+                if (rem >= 0)
+                    try_calling(logcat, func, ccc);
             }
             else if (rem == 0)
             {
                 // Last chance and all failed, so trigger failure
-                func(std::nullopt);
+                try_calling(logcat, func, update_cc(remote, std::nullopt));
             }
         };
 
         Lock_t l{paths_mutex};
 
-        for (const auto& [_, p] : _paths)
+        // We submit 4 CC fetches down 4 paths (reusing paths if we have less than 4), each
+        // requesting a specific network storage index.  When the first response comes back, we use
+        // it; but if we get others after that that are better (i.e. newer) then we update when they
+        // arrive as well.
+        //
+        // Doing this provides some redundancy on lookup: even if the requested CC storage "missed"
+        // some nodes (and perhaps left stale ones behind), we should still have a reasonable chance
+        // to get the latest one even if a server with a stale one happens to respond faster to all
+        // the relay endpoints of our utility path.
+        std::vector<path::Path*> paths;
+        paths.reserve(4);
+        for (auto& p : active_paths())
         {
-            if (not p or not p->is_active())
-                continue;
-
-            ++*remaining;
-            log::debug(
-                logcat,
-                "Querying pivot (rid:{}) for ClientContact lookup target (rid:{})",
-                p->terminal_rid().short_string(),
-                remote);
-
-            p->find_client_contact(remote_key, response_handler);
+            paths.push_back(&p);
+            if (paths.size() >= 4)
+                break;
         }
+        if (!paths.empty())
+        {
+            for (int lookup_idx = 0; lookup_idx < 4; lookup_idx++)
+            {
+                auto& path = *paths[lookup_idx % paths.size()];
+                ++*remaining;
 
-        if (*remaining == 0)
+                log::debug(
+                    logcat,
+                    "Querying pivot (rid:{}) for ClientContact lookup target (rid:{})",
+                    path.terminal_rid().short_string(),
+                    remote);
+
+                path.find_client_contact(remote_key, lookup_idx, response_handler);
+            }
+        }
+        else
         {
             log::warning(logcat, "CC lookup failed: no usable paths!");
-            func(std::nullopt);
+            // Don't cache this nullopt: we didn't even attempt a lookup, and an immediate
+            // subsequent call to this function will either end up right back here (with nothing
+            // sent), or will send it.
+            try_calling(logcat, func, std::nullopt);
         }
     }
 
@@ -866,11 +1084,12 @@ namespace srouter::handlers
 
         log::debug(logcat, "New ClientContact: {}", client_contact);
 #ifndef NDEBUG
-        log::trace(logcat, "ClientContact details:");
-        log::trace(logcat, "Pubkey: {}", client_contact.pubkey());
-        log::trace(logcat, "Intros ({}):", client_contact.intros().size());
+        log::debug(logcat, "ClientContact details:");
+        log::debug(logcat, "Pubkey: {}", client_contact.pubkey());
+        log::debug(logcat, "{} SRV records", client_contact.SRVs().size());
+        log::debug(logcat, "Intros ({}):", client_contact.intros().size());
         for (const auto& ci : client_contact.intros())
-            log::trace(
+            log::debug(
                 logcat,
                 "    • {}, hopid: {}, expiry: {}",
                 ci.relay.to_network_address(),
@@ -905,7 +1124,21 @@ namespace srouter::handlers
         return false;
     }
 
-    std::optional<ipv6> SessionEndpoint::map_session(const session::Session& s)
+    std::optional<ipv4> SessionEndpoint::map_session_v4(const session::Session& s)
+    {
+        log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
+        assert(router.tun_endpoint());
+
+        log::debug(logcat, "Mapping ipv4 for inbound session frmo {}", s.remote());
+        auto addr = router.tun_endpoint()->map4(s.remote());
+        if (addr)
+            log::debug(logcat, "Mapping successful, address: {}", *addr);
+        else
+            log::warning(logcat, "Mapping unsuccessful; out of available addresses?");
+        return addr;
+    }
+
+    std::optional<ipv6> SessionEndpoint::map_session_v6(const session::Session& s)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
@@ -961,7 +1194,7 @@ namespace srouter::handlers
     {
         // FIXME: for now only tun clients can have inbound sessions, but eventually that will
         //        not be the case and we'll need to "if tun" this.
-        if (!map_session(*new_session))
+        if (!map_session_v6(*new_session))
         {
             log::warning(
                 logcat,
@@ -984,7 +1217,7 @@ namespace srouter::handlers
         sptr->session_init_accept();
     }
 
-    void SessionEndpoint::publish_client_contact(const EncryptedClientContact& ecc)
+    void SessionEndpoint::publish_client_contact(std::string_view encrypted_cc)
     {
         auto now = std::chrono::steady_clock::now();
         ++cc_count;
@@ -994,14 +1227,14 @@ namespace srouter::handlers
         {
             // don't publish client contact to other end of outbound session
             if (session->is_outbound)
-                return;
+                continue;
             log::debug(
                 logcat,
                 "Publishing ClientContact#{} to remote on inbound session (remote:{})",
                 cc_count,
                 session->remote());
 
-            session->publish_client_contact(ecc);
+            session->publish_client_contact(encrypted_cc);
         }
 
         // Pick four random inbound paths to publish on, and then on each one we send along a 0-3
@@ -1036,7 +1269,7 @@ namespace srouter::handlers
             auto& p = *paths[location % paths.size()];
             log::debug(logcat, "Publishing ClientContact to location {} via {}", location, p);
             p.publish_client_contact(
-                ecc,
+                encrypted_cc,
                 location,
                 [started = now, remaining_success, via = p.terminal_rid(), location, cc_num = cc_count](auto resp) {
                     auto elapsed =
@@ -1128,7 +1361,7 @@ namespace srouter::handlers
                 }
                 catch (const std::exception& e)
                 {
-                    log::warning(logcat, "Error creating session to remote {}: {}", remote, e.what());
+                    throw std::runtime_error{"Error creating session to remote {}: {}"_format(remote, e.what())};
                 }
             }
 
@@ -1164,7 +1397,7 @@ namespace srouter::handlers
 
             std::pair<uint16_t, std::shared_ptr<session::Session>> result;
             auto& [local_port, session] = result;
-            session = initiate_remote_session(remote);
+            session = initiate_remote_session(remote);  // throws on immediate error
 
             mapped_remote target{.remote = remote, .port = port};
             auto& [udp_handle, cports] = _udp_handles[target];
@@ -1177,14 +1410,21 @@ namespace srouter::handlers
                     /*gso=*/false,
                     [this, target](quic::Packet&& pkt) {
                         // FIXME: cache most recently used mapping/session/etc.?
+                        //        i.e. if this packet is for the same remote as the last packet
+                        //        we can skip the map lookup.
 
-                        auto session = initiate_remote_session(target.remote);
-                        if (!session)
+                        std::shared_ptr<session::Session> session;
+                        try
+                        {
+                            session = initiate_remote_session(target.remote);
+                        }
+                        catch (const std::exception& e)
                         {
                             log::warning(
                                 logcat,
-                                "Received local mapped UDP packet, but unable to initiate a session with {}",
-                                target.remote);
+                                "Received local mapped UDP packet, but unable to obtain/initiate a session with {}: {}",
+                                target.remote,
+                                e.what());
                             return;
                         }
 

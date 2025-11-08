@@ -8,6 +8,7 @@
 
 #include <oxen/log.hpp>
 #include <oxen/quic/udp.hpp>
+#include <oxenc/endian.h>
 #include <unbound.h>
 
 #include <memory>
@@ -23,7 +24,7 @@ namespace srouter::dns
     {
         Message reply{_query};
         reply.add_serv_fail();
-        send_reply(reply.to_buffer());
+        send_reply(reply.encode());
     }
 
     /// sucks up udp packets from a bound socket and feeds it to a server
@@ -46,10 +47,9 @@ namespace srouter::dns
                     }
 
                     if (not _dns.maybe_handle_payload(shared_from_this(), _local_addr, src, pkt.data()))
-                    {
                         log::warning(logcat, "did not handle dns packet from {} to {}", src, _local_addr);
-                    }
-                    log::trace(logcat, "Handled DNS packet from {} to {}", src, _local_addr);
+                    else
+                        log::trace(logcat, "Handled DNS packet from {} to {}", src, _local_addr);
                 });
 
             if (auto maybe_addr = bound_on())
@@ -152,15 +152,11 @@ namespace srouter::dns
 
                 log::trace(logcat, "queueing dns response from libunbound to userland");
 
-                std::vector<std::byte> payload;
-                payload.resize(result->answer_len);
-                std::memcpy(payload.data(), result->answer_packet, result->answer_len);
-                buffer_t buf{payload};
-                MessageHeader hdr;
-                hdr.Decode(&buf);
-                hdr._id = query->underlying().hdr_id;
-                buf.cur = buf.base;
-                hdr.Encode(&buf);
+                auto* ans = reinterpret_cast<const std::byte*>(result->answer_packet);
+                std::vector<std::byte> payload{ans, ans + result->answer_len};
+                // Replace the `id` value in the unbound response (which is the first 2 bytes of the
+                // message) with the one we were queried with:
+                oxenc::write_host_as_big(query->underlying().hdr_id, payload.data());
 
                 // send reply
                 query->send_reply(std::move(payload));
@@ -431,16 +427,17 @@ namespace srouter::dns
 
                 for (const auto& q : query.questions)
                 {
-                    // dont process .loki or .snode
-                    if (q.HasTLD(".loki") or q.HasTLD(".snode"))
+                    // dont process .sesh/.loki/.snode
+                    if (q.has_tld(CLIENT_TLD) or q.has_tld(RELAY_TLD) or q.has_tld("loki"))
                     {
                         log::warning(
                             logcat,
-                            "dns from {} to {} is for .loki or .snode but got to the unbound "
-                            "resolver, sending "
-                            "failure reply",
+                            "dns from {} to {} is for .{}/{}/loki but got to the unbound "
+                            "resolver; sending failure reply",
                             from,
-                            to);
+                            to,
+                            CLIENT_TLD,
+                            RELAY_TLD);
                         tmp->cancel();
                         return true;
                     }
@@ -451,8 +448,7 @@ namespace srouter::dns
                     log::debug(
                         logcat,
                         "dns from {} to {} got to the unbound resolver, but the resolver isn't set "
-                        "up, "
-                        "sending failure reply",
+                        "up, sending failure reply",
                         from,
                         to);
                     tmp->cancel();
@@ -466,8 +462,7 @@ namespace srouter::dns
                     log::debug(
                         logcat,
                         "dns from {} to {} got to the unbound resolver, but the resolver isn't "
-                        "running, "
-                        "sending failure reply",
+                        "running, sending failure reply",
                         from,
                         to);
                     tmp->Cancel();
@@ -476,7 +471,13 @@ namespace srouter::dns
 #endif
                 const auto& q = query.questions[0];
                 if (auto err = ub_resolve_async(
-                        m_ctx, q.Name().c_str(), q.qtype, q.qclass, tmp.get(), &Resolver::callback, nullptr))
+                        m_ctx,
+                        std::string{q.name()}.c_str(),
+                        static_cast<uint16_t>(q.qtype),
+                        static_cast<uint16_t>(q.qclass),
+                        tmp.get(),
+                        &Resolver::callback,
+                        nullptr))
                 {
                     log::warning(logcat, "failed to send upstream query with libunbound: {}", ub_strerror(err));
                     tmp->cancel();
@@ -542,7 +543,7 @@ namespace srouter::dns
             add_resolver(ptr);
 
         // FIXME: this should be handled by RoutePoker once it is resurrected, handling whether
-        // we eat all DNS traffic or just .loki/.snode.  For now, we only handle those.
+        // we eat all DNS traffic or just .sesh/.loki/.snode.  For now, we only handle those.
         set_dns_mode(false);
     }
 
@@ -569,8 +570,9 @@ namespace srouter::dns
             log::debug(
                 logcat,
                 "explicitly no upstream dns providers specified, we will not resolve anything but "
-                ".loki "
-                "and .snode");
+                ".{}/{}/loki",
+                CLIENT_TLD,
+                RELAY_TLD);
             return nullptr;
         }
 
@@ -654,7 +656,7 @@ namespace srouter::dns
             return false;
         }
 
-        auto maybe = maybe_parse_dns_msg(payload);
+        auto maybe = Message::extract(payload);
         if (not maybe)
         {
             log::warning(logcat, "invalid dns message format from {} to dns listener on {}", from, to);
@@ -670,12 +672,12 @@ namespace srouter::dns
         for (const auto& q : msg.questions)
         {
             // is this firefox looking for their backdoor record?
-            if (q.IsName("use-application-dns.net"))
+            if (q.name() == "use-application-dns.net")
             {
                 // yea it is, let's turn off DoH because god is dead.
                 msg.add_nx_reply();
                 // press F to pay respects and send it back where it came from
-                ptr->send_udp(from, to, msg.to_buffer());
+                ptr->send_udp(from, to, msg.encode());
                 return true;
             }
         }

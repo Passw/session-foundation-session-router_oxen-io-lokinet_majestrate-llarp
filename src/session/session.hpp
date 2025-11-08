@@ -35,13 +35,6 @@ namespace srouter
         class SessionEndpoint;
     }  // namespace handlers
 
-    /** Snode vs Client Session
-        - client to client: shared secret (symmetric key) is negotiated
-        - client to relay:
-          - the traffic to the pivot is encrypted
-          - the pivot is the terminus, so data doesn't need to be encrypted
-    */
-
     namespace session
     {
         using session_tag = uint32_t;
@@ -107,6 +100,12 @@ namespace srouter
             sys_ms last_inbound_activity = srouter::time_now_ms();
 
             void update_active();
+
+            // We always map ipv6 address for remotes, but ipv4 address are only mapped on demand
+            // (i.e. by requesting a "ipv4.pubkey.sesh" address on the initiator, or by receiving an
+            // IPv4 packet from the remote).  This variable caches/tracks whether we've already done
+            // that assignment to avoid needing an address map lookup on every IPv4 packet.
+            bool ipv4_mapped{false};
 
             // We capture a weak_ptr to this shared_ptr to avoid needing to use shared_from_this
             // when we need to assure we are still alive in lambdas given to external objects.  I.e.
@@ -184,7 +183,7 @@ namespace srouter
 
             void recv_session_data_message(std::vector<std::byte> data, const SymmNonce& nonce);
 
-            void publish_client_contact(const EncryptedClientContact& ecc);
+            void publish_client_contact(std::string_view encrypted_cc);
 
             void handle_udp_from_remote(IPPacket&& pkt);
 
@@ -265,9 +264,9 @@ namespace srouter
 
             std::string make_session_init(path::Path& path);
 
-            void fire_waiting(sys_ms now);
+            void fire_waiting();
 
-            using active_item = std::pair<sys_ms, std::function<void(OutboundSession& session)>>;
+            using active_item = std::pair<steady_ms, std::function<void(OutboundSession& session)>>;
             struct on_established_sorter
             {
                 bool operator()(const active_item& a, const active_item& b) const { return a.first > b.first; }
@@ -336,14 +335,31 @@ namespace srouter
                 std::function<void(OutboundSession& session)> on_established,
                 std::optional<std::chrono::milliseconds> establish_timeout = std::nullopt);
 
+            // Constants controlling when we re-fetch a CC:
+
+            // Re-fetch if our current CC gets this old:
+            static constexpr auto CC_FETCH_STALE = 10min;
+
+            // Linear backoff parameters: each time a CC fetch fails, we schedule a refetch in
+            // CC_FETCH_BACKOFF times the number of sequential failures, up to a max of
+            // CC_FETCH_BACKOFF_MAX.
+            static constexpr std::chrono::milliseconds CC_FETCH_BACKOFF = 990ms;
+            static constexpr std::chrono::milliseconds CC_FETCH_BACKOFF_MAX = 10s;
+
           private:
             std::vector<ClientIntro> _intros;
             std::unordered_set<RouterID> _pivots;
             bool _intro_update_processed = false;
-            bool updating_intros = false;
+            bool _updating_intros = false;
 
-            sys_ms last_cc_update = sys_ms::min();
-            bool cc_ok = false;
+            sys_ms _next_cc_update{};
+            int _cc_fetch_fail_count = 0;
+            bool _cc_ok = false;
+
+            // Tracks the signed-at value whenever we update CC values: if we receive a session
+            // close message then that tells us we need to wait for a CC newer than this before we
+            // can rebuild paths to reestablish the session.
+            sys_ms _cc_last_signed{};
 
             // Chooses the next router id to pivot to, based on introset and current paths.  Returns
             // nullopt if no pivot is available right now, otherwise the router id and the lifetime
@@ -373,9 +389,7 @@ namespace srouter
 
             void recv_close() override;
 
-            nlohmann::json ExtractStatus() const;
-
-            const RouterID& remote_endpoint() const { return _remote.router_id(); }
+            const RouterID& remote_endpoint() const { return _remote.pubkey; }
         };
 
         class InboundSession : public Session

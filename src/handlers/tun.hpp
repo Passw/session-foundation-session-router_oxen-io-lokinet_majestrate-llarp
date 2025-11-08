@@ -94,11 +94,12 @@ namespace srouter::handlers
         const ipv4_net& get_ipv4_network() const;
         const ipv6_net& get_ipv6_network() const;
 
-        nlohmann::json ExtractStatus() const;
-
         bool should_hook_dns_message(const dns::Message& msg) const;
 
-        bool handle_hooked_dns_message(dns::Message query, std::function<void(dns::Message)> sendreply);
+        bool handle_hooked_dns_message(
+            dns::Message query,
+            std::function<void(dns::Message)> sendreply,
+            std::optional<std::string> qname_override = std::nullopt);
 
         void tick_tun(sys_ms now);
 
@@ -117,7 +118,6 @@ namespace srouter::handlers
         void rewrite_and_send_packet(IPPacket&& pkt, const ipv4& src, const ipv4& dest);
         void rewrite_and_send_packet(IPPacket&& pkt, const ipv6& src, const ipv6& dest);
 
-        // TESTNET: TODO: new inbound packet handling logic
         void handle_inbound_packet(IPPacket pkt, uint8_t type, NetworkAddress remote) override;
 
         // Handles an inbound packet coming IN from the network
@@ -167,6 +167,18 @@ namespace srouter::handlers
         //  - Persisting address map is directly pre-loaded from config
         address_map<ipv4> _local_ipv4_mapping;
         address_map<ipv6> _local_ipv6_mapping;
+
+        template <typename IP>
+        auto _lookup_mapped_ip(const IP& ip)
+        {
+            if constexpr (std::same_as<IP, ipv4>)
+                return _local_ipv4_mapping[ip];
+            else
+            {
+                static_assert(std::same_as<IP, ipv6>);
+                return _local_ipv6_mapping[ip];
+            }
+        }
 
         // We keep a list of expired network addresses ordered by least-recently-used first.  When
         // pruning the expired list, we pop off the front of the list.

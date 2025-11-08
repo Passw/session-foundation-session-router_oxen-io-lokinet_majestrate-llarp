@@ -22,48 +22,20 @@ namespace srouter
 {
     class Router;
 
-    inline constexpr auto FETCH_INTERVAL{10min};
+    inline constexpr auto FETCH_INTERVAL{5min};
     inline constexpr auto PURGE_INTERVAL{5min};
 
-    /*  RC Fetch Constants  */
     // fallback to bootstrap if we have less than this many RCs
     inline constexpr int MIN_ACTIVE_RCS{6};
-    // max number of attempts we make in non-bootstrap fetch requests
-    inline constexpr int MAX_FETCH_ATTEMPTS{10};
 
-    // when pro-actively fetching RCs, ask for this many for which we have RouterID but no RC
-    inline constexpr int RC_FETCH_COUNT{5};
-
-    // the total number of accepted returned rids should be above this number
-    inline constexpr size_t MIN_GOOD_RID_FETCH_TOTAL{};
-    // the ratio of accepted:rejected rids must be above this ratio
-    inline constexpr double GOOD_RID_FETCH_THRESHOLD{};
-
-    /*  RID Fetch Constants  */
     // the number of rid sources that we make rid fetch requests to
     inline constexpr size_t RID_SOURCE_COUNT{5};
-    // upper limit on how many rid fetch requests to rid sources can fail
-    inline constexpr int MAX_RID_ERRORS{1};
-    // each returned rid must appear this number of times across all responses
-    inline constexpr int MIN_RID_FETCH_FREQ{6};  //  TESTNET:
-
-    /*  Bootstrap Constants  */
-    // the number of rc's we query the bootstrap for; service nodes pass 0, which means
-    // gimme all dat RCs
-    inline constexpr size_t SERVICE_NODE_BOOTSTRAP_SOURCE_COUNT{0};
-    inline constexpr size_t CLIENT_BOOTSTRAP_SOURCE_COUNT{10};
 
     // After a bootstrap (success or failure) that results in not enough RCs, this is how long we
     // wait before bootstrapping again.  In the case of repeated failures, we apply an linear
     // backoff in incrments of this value up to BOOTSTRAP_COOLDOWN_MAX.
     inline constexpr auto BOOTSTRAP_COOLDOWN = 3s;
     inline constexpr auto BOOTSTRAP_COOLDOWN_MAX = 60s;
-
-    /*  Other Constants  */
-    // threshold net number of verifications needed to promote an RID to known (positive) or drop
-    // (negative) an unconfirmed rid.  Each observation or omission contributes +1 or -1 vote until
-    // we have ± this threshold.
-    inline constexpr int CONFIRMATION_THRESHOLD{3};
 
     // Maximum number of 0rtt tickets we will store, per relay.  The server generally sends new ones
     // shortly after reconnecting so there is no much benefit in storing lots of these.
@@ -72,6 +44,7 @@ namespace srouter
     inline const std::filesystem::path RC_FILE_EXT{".signed"};
     inline const std::filesystem::path ZRTT_FILE_EXT{".zrtt"};
 
+    using RCHash = std::array<std::byte, 8>;
     class NodeDB
     {
         friend class Router;
@@ -79,27 +52,18 @@ namespace srouter
         Router& _router;
         const std::filesystem::path _root;
 
-        /******** RouterID/RelayContacts ********/
-
-        /** RouterID mappings
-            Both the following are populated in NodeDB startup with RouterID's stored on disk.
-            - known_rids: meant to persist between Session Router sessions, and is only
-              populated during startup and RouterID fetching. This is meant to represent the
-              client instance's most recent perspective of the network, and record which RouterID's
-              were recently "active" and connected to
-            - unconfirmed_rids: holds new rids returned in fetch requests to be verified by
-           subsequent fetch requests
-            - known_rcs: populated during startup and when RC's are updated both during gossip
-              and periodic RC fetching
-            - bootstrap_seeds: if we are the seed node, we insert the rc's of bootstrap fetch
-           requests senders into this container to "introduce" them to each other
-            - _bootstraps: the standard container for bootstrap RelayContacts
-        */
         std::unordered_set<RouterID> known_rids;
-        std::unordered_map<RouterID, int> unconfirmed_rids;  // Value is the number of votes: seeing
-                                                             // the rid is +1, missing it is -1.
-
         std::unordered_map<RouterID, RelayContact> known_rcs;
+
+        std::array<std::unordered_map<RouterID, RCHash>, 128> rc_hashes;
+        std::array<RCHash, 128> rc_bucket_hashes{};
+
+      public:
+        const auto& get_rc_hashes() const { return rc_hashes; }
+        const auto& get_rc_buckets() const { return rc_bucket_hashes; }
+
+      private:
+        void update_rc_buckets(const RelayContact& rc, bool added);
 
         static const std::vector<std::pair<NetID, std::string_view>> bootstrap_fallbacks;
         std::vector<RelayContact> _bootstraps;
@@ -133,7 +97,6 @@ namespace srouter
             const RouterID& pk, const std::filesystem::path& extension = RC_FILE_EXT) const;
 
         std::shared_ptr<quic::Ticker> _rid_fetch_ticker;
-        std::shared_ptr<quic::Ticker> _rc_fetch_ticker;
 
         std::shared_ptr<quic::Ticker> _purge_ticker;
 

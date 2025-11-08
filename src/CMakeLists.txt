@@ -32,9 +32,6 @@ session_router_add_library(session-router-core-utils
   handlers/session.cpp
 
   messages/common.cpp
-  messages/dht.cpp
-  messages/fetch.cpp
-  messages/path.cpp
 )
 
 if (SROUTER_FULL)
@@ -74,10 +71,8 @@ endif()
 # config, crypto, timeplace, nodedb, net, router
 session_router_add_library(session-router-utils
   ${CMAKE_CURRENT_BINARY_DIR}/constants/version.cpp
-  util/buffer.cpp
   util/file.cpp
   util/logging.cpp
-  util/mem.cpp
   util/str.cpp
   util/thread/queue_manager.cpp  
   util/thread/threading.cpp
@@ -107,7 +102,6 @@ session_router_add_library(session-router-ip
 session_router_add_library(session-router-addressing
   address/address.cpp
   address/ip_range.cpp
-  address/utils.cpp
 
   ev/fd_poller.cpp
   ev/tcp.cpp
@@ -161,12 +155,11 @@ if (SROUTER_FULL)
   # session-router-dns is the dns parsing and hooking library that we use to
   # parse modify and reconstitute dns wire proto, dns queries and RR
   target_sources(session-router-dns PRIVATE
-    dns/message.cpp   # dns/server
-    dns/name.cpp      # srv_data, question, rr
+    dns/encode.cpp
+    dns/message.cpp
     dns/platform.cpp
-    dns/question.cpp  # message
+    dns/question.cpp
     dns/rr.cpp
-    dns/serialize.cpp
     dns/server.cpp
   )
 

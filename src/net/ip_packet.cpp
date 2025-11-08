@@ -1,7 +1,6 @@
 #include "ip_packet.hpp"
 
 #include "net/policy.hpp"
-#include "util/buffer.hpp"
 #include "util/logging.hpp"
 #include "util/logging/buffer.hpp"
 #include "util/time.hpp"

@@ -70,15 +70,13 @@ namespace srouter::path
         // Constructs a ClientInfo from this path, i.e. for including in a client contact.
         ClientIntro make_intro() const;
 
-        nlohmann::json ExtractStatus() const;
-
         path_hop_stringifier hop_string() const;
 
         std::vector<std::pair<std::string, std::string>> get_hops_strings_and_ips() const;
 
         sys_ms LastRemoteActivityAt() const { return last_recv_msg; }
 
-        void do_ping(sys_ms start_time);
+        void do_ping(steady_ms start_time);
 
         size_t num_hops() const { return hops.size(); }
 
@@ -93,12 +91,13 @@ namespace srouter::path
 
         void fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func);
 
-        void fetch_relay_contacts(std::span<const RouterID> needed, std::function<void(path_control_response)> func);
+        void fetch_relay_contacts(std::span<const std::byte> body, std::function<void(path_control_response)> func);
 
-        void find_client_contact(const PubKey& blinded_pk, std::function<void(path_control_response)> func);
+        void find_client_contact(
+            const PubKey& blinded_pk, int lookup_index, std::function<void(path_control_response)> func);
 
         void publish_client_contact(
-            const EncryptedClientContact& ecc, int location, std::function<void(path_control_response)> func);
+            std::string_view enc_cc, int location, std::function<void(path_control_response)> func);
 
         // The constant "type" values that we put on the end of control (stream) and data
         // (datagram) messages.  Data message can overlap since it comes on a different channel
@@ -217,7 +216,7 @@ namespace srouter::path
         static size_t next_path_log_id;
         const size_t path_log_id;  // Only used for log output
 
-        sys_ms next_ping{sys_ms::min()};
+        steady_ms next_ping{};
         int ping_responses{0}, ping_timeouts{0};
         int ping_recent_timeouts{0};
         // Cumulative time of all `ping_responses` pings (divide by ping_responses for an average).

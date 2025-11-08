@@ -8,7 +8,6 @@
 #include "contact/contactdb.hpp"
 #include "crypto/crypto.hpp"
 #include "link/link_manager.hpp"
-#include "messages/dht.hpp"
 #include "nodedb.hpp"
 #include "util/formattable.hpp"
 #include "util/logging.hpp"
@@ -53,7 +52,7 @@ namespace srouter
           _vpn{std::move(vpnPlatform)},
           _close_promise{std::move(p)},
           _contact_db{std::make_unique<ContactDB>(*this)},
-          _last_tick{srouter::time_now_ms()}
+          _last_tick{}
     {
 #ifndef SROUTER_EMBEDDED_ONLY
         // Not actually shared, but unique_ptr would require destructor visibility which
@@ -62,8 +61,6 @@ namespace srouter
         // for oxend, so we don't close the connection when syncing the registered relay (which can
         // exceed the defaut 1MB limit).
         _omq->MAX_MSG_SIZE = -1;
-        if (_config.router.worker_threads > 0)
-            _omq->set_general_threads(_config.router.worker_threads);
 
         _router_testing = std::make_shared<consensus::reachability_testing>(*this);
 #endif
@@ -80,146 +77,6 @@ namespace srouter
     // Default, but we define it here because some of the unique_ptrs are for forward-declared types
     // in router.hpp which aren't available for destruction, but are available here.
     Router::~Router() = default;
-
-    nlohmann::json Router::ExtractStatus() const
-    {
-        if (not _is_running)
-            nlohmann::json{{"running", false}};
-
-        nlohmann::json links;
-        if (is_service_node)
-        {
-            auto [relays, out, in, pending, clients] = _link_endpoint->relay_connection_counts();
-            links = {
-                {"relays", relays},
-                {"relays_in", in},
-                {"relays_out", out},
-                {"pending_out", pending},
-                {"clients_in", clients}};
-        }
-        else
-        {
-            auto [nconns, pending] = _link_endpoint->client_connection_counts();
-            links = {{"relays", nconns}, {"relays_out", nconns}, {"pending_out", pending}};
-        }
-        auto [rcs, rids, bootstraps] = node_db().db_stats();
-        auto [npaths, nhops] = path_context.path_ctx_stats();
-        auto [s_in, s_out_r, s_out_c, s_out_r_pending, s_out_c_pending] = _session_endpoint->session_stats();
-        auto ccs = contact_db().num_ccs();
-
-        return {
-            {"instance",
-             {{"id", id().to_network_address(is_service_node).to_string()},
-              {"running", true},
-              {"relay", is_service_node}}},
-            {"links", std::move(links)},
-            {"sessions",
-             {{"in", s_in},
-              {"relay_out", s_out_r},
-              {"client_out", s_out_c},
-              {"relay_pending", s_out_r_pending},
-              {"client_pending", s_out_c_pending}}},
-            {"nodedb", {{"rcs", rcs}, {"rids", rids}}},
-            {"contactdb", {{"ccs", ccs}}},
-            {"path_ctx", {{"paths", npaths}, {"hops", nhops}}}};
-    }
-
-    nlohmann::json Router::ExtractSummaryStatus() const
-    {
-        // if (!is_running)
-        //   return nlohmann::json{{"running", false}};
-
-        // auto services = _hidden_service_context.ExtractStatus();
-
-        // auto link_types = _link_manager->extract_status();
-
-        // uint64_t tx_rate = 0;
-        // uint64_t rx_rate = 0;
-        // uint64_t peers = 0;
-        // for (const auto& links : link_types)
-        // {
-        //   for (const auto& link : links)
-        //   {
-        //     if (link.empty())
-        //       continue;
-        //     for (const auto& peer : link["sessions"]["established"])
-        //     {
-        //       tx_rate += peer["tx"].get<uint64_t>();
-        //       rx_rate += peer["rx"].get<uint64_t>();
-        //       peers++;
-        //     }
-        //   }
-        // }
-
-        // // Compute all stats on all path builders on the default endpoint
-        // // Merge snodeSessions, remoteSessions and default into a single array
-        // std::vector<nlohmann::json> builders;
-
-        // if (services.is_object())
-        // {
-        //   const auto& serviceDefault = services.at("default");
-        //   builders.push_back(serviceDefault);
-
-        //   auto snode_sessions = serviceDefault.at("snodeSessions");
-        //   for (const auto& session : snode_sessions)
-        //     builders.push_back(session);
-
-        //   auto remote_sessions = serviceDefault.at("remoteSessions");
-        //   for (const auto& session : remote_sessions)
-        //     builders.push_back(session);
-        // }
-
-        // // Iterate over all items on this array to build the global pathStats
-        // uint64_t pathsCount = 0;
-        // uint64_t success = 0;
-        // uint64_t attempts = 0;
-        // for (const auto& builder : builders)
-        // {
-        //   if (builder.is_null())
-        //     continue;
-
-        //   const auto& paths = builder.at("paths");
-        //   if (paths.is_array())
-        //   {
-        //     for (const auto& [key, value] : paths.items())
-        //     {
-        //       if (value.is_object() && value.at("status").is_string()
-        //           && value.at("status") == "established")
-        //         pathsCount++;
-        //     }
-        //   }
-
-        //   const auto& buildStats = builder.at("buildStats");
-        //   if (buildStats.is_null())
-        //     continue;
-
-        //   success += buildStats.at("success").get<uint64_t>();
-        //   attempts += buildStats.at("attempts").get<uint64_t>();
-        // }
-        // double ratio = static_cast<double>(success) / (attempts + 1);
-
-        nlohmann::json stats{
-            {"running", true},
-            {"version", srouter::VERSION},
-            {"version_full", srouter::VERSION_FULL},
-            {"uptime", to_json(Uptime())},
-            // {"numPathsBuilt", pathsCount},
-            // {"numPeersConnected", peers},
-            {"numRoutersKnown", _node_db->num_rcs()},
-            // {"ratio", ratio},
-            // {"txRate", tx_rate},
-            // {"rxRate", rx_rate},
-        };
-
-        // if (services.is_object())
-        // {
-        //   stats["authCodes"] = services["default"]["authCodes"];
-        //   stats["exitMap"] = services["default"]["exitMap"];
-        //   stats["networkReady"] = services["default"]["networkReady"];
-        //   stats["lokiAddress"] = services["default"]["identity"];
-        // }
-        return stats;
-    }
 
     void Router::start_tickers()
     {
@@ -581,6 +438,14 @@ namespace srouter
                     logcat,
                     "Local client configured to maintain {} random router edge connections",
                     config().paths.edge_connections);
+
+            // If any SRV records are pointing at localhost.loki, replace that with our actual
+            // address
+            for (auto& srv : netconf.srv_records)
+            {
+                if (srv.target == "localhost.{}"_format(CLIENT_TLD) || srv.target == "localhost.loki")
+                    srv.target = "{}.{}"_format(id(), CLIENT_TLD);
+            }
         }
     }
 
@@ -592,7 +457,7 @@ namespace srouter
             sys::service_manager->starting();
 #endif
 
-        if (_is_exit_node and is_service_node)
+        if (_config.exit.exit_enabled and is_service_node)
             throw std::runtime_error{
                 "Session Router cannot simultaneously operate as a service node and client-operated exit node "
                 "service!"};
@@ -706,7 +571,7 @@ namespace srouter
             log::debug(logcat, "Not initializing TUN device; running as an embedded client");
     }
 
-    bool Router::is_exit_node() const { return _is_exit_node; }
+    bool Router::is_exit_node() const { return _config.exit.exit_enabled; }
 
     bool Router::insufficient_peers() const
     {
@@ -754,9 +619,9 @@ namespace srouter
         }
     }
 
-    bool Router::should_report_stats(sys_ms now) const
+    bool Router::should_report_stats(steady_ms now) const
     {
-        return now >= _started_at + 10s
+        return uptime() >= 10s
             and now >= _last_stats_report
                 + (log::get_level(logcat) <= log::Level::debug ? REPORT_STATS_INTERVAL_DEBUG : REPORT_STATS_INTERVAL);
     }
@@ -810,7 +675,7 @@ namespace srouter
 
         log::info(log_global, "Local {}: {}", is_service_node ? "Relay" : "Client", _stats_line(now));
 
-        _last_stats_report = now;
+        _last_stats_report = steady_now_ms();
 
         oxen::log::flush();
     }
@@ -828,24 +693,25 @@ namespace srouter
 #ifndef SROUTER_EMBEDDED_ONLY
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-        if (should_report_stats(now))
+        auto steady_now = steady_now_ms();
+        if (should_report_stats(steady_now))
             report_stats();
 
         bool registered = appears_registered();
 
-        if (now >= _next_dereg_warning)
+        if (steady_now >= _next_dereg_warning)
         {
             if (not registered)
             {
                 // complain about being deregistered/decommed
                 log::error(logcat, "We are running as a relay but are not a registered service node");
-                _next_dereg_warning = now + DECOMM_WARNING_INTERVAL;
+                _next_dereg_warning = steady_now + DECOMM_WARNING_INTERVAL;
             }
             else if (insufficient_peers())
             {
                 log::error(
                     logcat, "We are an active service node, but have too few ({}) known peers!", node_db().num_rcs());
-                _next_dereg_warning = now + DECOMM_WARNING_INTERVAL;
+                _next_dereg_warning = steady_now + DECOMM_WARNING_INTERVAL;
             }
         }
 
@@ -871,7 +737,8 @@ namespace srouter
 
         _router_profiling.tick();
 
-        if (should_report_stats(now))
+        auto steady_now = steady_now_ms();
+        if (should_report_stats(steady_now))
             report_stats();
 
         // if we need more sessions to routers we shall connect out to others
@@ -902,10 +769,11 @@ namespace srouter
             return;
         }
 
-        const auto now = srouter::time_now_ms();
+        const auto now = time_now_ms();
+        const auto steady_now = steady_now_ms();
 
-        if (const auto delta = now - _last_tick; _last_tick != sys_ms::min()
-            and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
+        if (const auto delta = steady_now - _last_tick;
+            _last_tick != steady_ms{} and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
         {
             // TODO: this, if needed?
             // we detected a time skip into the futre, thaw the network
@@ -918,7 +786,7 @@ namespace srouter
             _client_tick(now);
 
         // update tick timestamp
-        _last_tick = srouter::time_now_ms();
+        _last_tick = steady_now_ms();
     }
 
     void Router::start()
@@ -964,8 +832,6 @@ namespace srouter
         log::debug(logcat, "Starting Router main tick interval");
         _loop_ticker = _loop->call_every(ROUTER_TICK_INTERVAL, [this] { tick(); });
 
-        _started_at = srouter::time_now_ms();
-
         start_tickers();
         _is_running = true;
 
@@ -984,8 +850,6 @@ namespace srouter
         // the first tick):
         tick();
     }
-
-    std::chrono::milliseconds Router::Uptime() const { return time_now_ms() - _started_at; }
 
     bool Router::is_connected() const
     {

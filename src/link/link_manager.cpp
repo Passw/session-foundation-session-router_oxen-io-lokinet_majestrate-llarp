@@ -5,16 +5,13 @@
 #include "contact/router_id.hpp"
 #include "crypto/crypto.hpp"
 #include "messages/common.hpp"
-#include "messages/dht.hpp"
-#include "messages/fetch.hpp"
-#include "messages/path.hpp"
-#include "messages/session.hpp"
 #include "nodedb.hpp"
 #include "path/path.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "session/session.hpp"
 #include "util/bspan.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 #include "util/zstd.hpp"
@@ -133,22 +130,6 @@ namespace srouter::link
 
     Manager::Manager(Router& r) : router{r}, endpoint{*this} {}
 
-    // void Manager::close_connection(RouterID rid) { return ep->close_connection(rid); }
-
-#if 0
-    /*
-     * TODO FIXME - fix reachability logic (see router.cpp)
-     */
-    void Manager::test_reachability(
-        const RouterID& rid, connection_established_callback on_open, connection_closed_callback on_close)
-    {
-        if (auto rc = router.node_db().get_rc(rid))
-            connect_to(*rc, std::move(on_open), std::move(on_close));
-        else
-            log::warning(logcat, "Could not find RelayContact for connection to rid:{}", rid);
-    }
-#endif
-
     void Manager::stop()
     {
         if (is_stopping.exchange(true))
@@ -158,9 +139,6 @@ namespace srouter::link
     }
 
     Manager::~Manager() { stop(); }
-
-    // TODO: this
-    nlohmann::json Manager::extract_status() const { return {}; }
 
     void Manager::connect_to_keep_alive(int num_conns)
     {
@@ -301,38 +279,43 @@ namespace srouter::link
         // this handler should not be registered for clients
         assert(router.is_service_node);
 
-        std::unordered_set<RouterID> explicit_ids;
+        const auto& rc_hashes = router.node_db().get_rc_hashes();
+        const auto& rc_buckets = router.node_db().get_rc_buckets();
 
         try
         {
-            auto btdc = oxenc::bt_dict_consumer{body};
-            for (auto sublist = btdc.require<oxenc::bt_list_consumer>("x"); !sublist.is_finished();)
-                explicit_ids.emplace(sublist.consume_span<uint8_t, 32>());
+            oxenc::bt_dict_producer btdp;
+            {
+                auto btlp = btdp.append_list("r"sv);
+
+                auto btdc = oxenc::bt_dict_consumer{body};
+                auto arg_buckets = btdc.require<oxenc::bt_list_consumer>("b"sv);
+                RCHash h;
+                for (uint8_t i = 0; i < 128; i++)
+                {
+                    auto h_span = arg_buckets.consume_span<std::byte, 8>();
+                    std::memcpy(h.data(), h_span.data(), 8);
+                    if (rc_buckets[i] != h)
+                    {
+                        for (const auto& [rid, _] : rc_hashes[i])
+                        {
+                            if (auto* maybe_rc = router.node_db().get_rc(rid))
+                                btlp.append(maybe_rc->view());
+                            else
+                                log::critical(logcat, "Somehow we have a bucket hash for {} but no RC!", rid);
+                        }
+                    }
+                }
+                arg_buckets.finish();
+            }
+
+            respond(std::move(btdp).str());
         }
         catch (const std::exception& e)
         {
             log::warning(logcat, "Exception handling RC Fetch request: {}", e.what());
             respond(messages::ERROR_RESPONSE);
-            return;
         }
-
-        oxenc::bt_dict_producer btdp;
-        {
-            auto sublist = btdp.append_list("r");
-
-            int count = 0;
-            for (const auto& rid : explicit_ids)
-            {
-                if (auto* maybe_rc = router.node_db().get_rc(rid))
-                {
-                    sublist.append_encoded(maybe_rc->view());
-                    ++count;
-                }
-            }
-            log::info(logcat, "Returning {} RCs for FetchRC request...", count);
-        }
-
-        respond(std::move(btdp).str());
     }
 
     void Manager::handle_path_fetch_rcs(std::span<const std::byte> body, std::function<void(std::string)> respond)
@@ -368,11 +351,11 @@ namespace srouter::link
 #else
         log::trace(logcat, "Received request to publish client contact!");
 
-        std::string name_hash;
-
+        std::string_view name_hash;
         try
         {
-            name_hash = ResolveSNS::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer req{body};
+            name_hash = req.require<std::string_view>("s");
         }
         catch (const std::exception& e)
         {
@@ -382,18 +365,19 @@ namespace srouter::link
 
         assert(router.oxend());
         router.oxend()->lookup_sns_hash(
-            name_hash, [respond = std::move(respond)](std::optional<EncryptedSNSRecord> maybe_enc) mutable {
+            name_hash, [respond = std::move(respond)](std::optional<std::pair<std::string, SymmNonce>> maybe_enc) {
                 if (maybe_enc)
                 {
-                    log::info(logcat, "RPC lookup successfully returned encrypted SNS record!");
-                    auto resp = ResolveSNS::serialize_response(*maybe_enc);
-                    // FIXME: eventually respond func should take a byte span or something, but
-                    //        string was easier for now
-                    respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
+                    log::debug(logcat, "RPC lookup successfully returned encrypted SNS record!");
+                    auto& [ciphertext, nonce] = *maybe_enc;
+                    oxenc::bt_dict_producer resp;
+                    resp.append("c", std::move(ciphertext));
+                    resp.append("n", nonce.span());
+                    respond(std::move(resp).str());
                 }
                 else
                 {
-                    log::warning(logcat, "RPC lookup could not find SNS registry!");
+                    log::debug(logcat, "SNS registration not found");
                     respond(messages::NOT_FOUND_RESPONSE);
                 }
             });
@@ -405,23 +389,41 @@ namespace srouter::link
     {
         log::trace(logcat, "Received request to publish client contact!");
 
-        EncryptedClientContact enc;
-        std::optional<int> location;
+        PubKey blinded_pk;
+        int location;
+        std::string_view enc_cc;
+        sys_ms signed_at;
 
         try
         {
-            std::tie(enc, location) = PublishClientContact::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer btdc{body};
+
+            enc_cc = btdc.require<std::string_view>("e"sv);
+            location = btdc.require<int>("n"sv);
+
+            // We only partially parse this for the pubkey and signed at values to do some basic
+            // checks, and to help us figure out if we should store or forward it.
+            oxenc::bt_dict_consumer enc_cc_parser{enc_cc};
+            blinded_pk.assign(enc_cc_parser.require_span<std::byte, PubKey::SIZE>("i"));
+            signed_at = sys_ms{std::chrono::milliseconds{enc_cc_parser.require<int64_t>("t")}};
         }
         catch (const std::exception& e)
         {
-            log::warning(logcat, "Exception: {}: payload: {}", e.what(), buffer_printer{body});
+            log::warning(logcat, "Invalid publish CC request: {}", e.what());
+            log::debug(logcat, "Invalid encrypted CC body: {}", buffer_printer{body});
             return respond(messages::ERROR_RESPONSE);
         }
 
-        if (enc.is_expired())
+        auto now = time_now_ms();
+        if (signed_at < now - path::MAX_LIFETIME_ACCEPTED)
         {
-            log::warning(logcat, "Received expired EncryptedClientContact!");
-            return respond(PublishClientContact::EXPIRED);
+            log::debug(logcat, "Refusing expired (signed {} ago) encrypted CC", now - signed_at);
+            return respond(messages::EXPIRED_RESPONSE);
+        }
+        if (signed_at > now + 10min)
+        {
+            log::debug(logcat, "Refusing too far in future ({}) encrypted CC", signed_at - now);
+            return respond(messages::FUTURE_RESPONSE);
         }
 
         if (not router.is_service_node)
@@ -429,8 +431,6 @@ namespace srouter::link
             log::warning(logcat, "Clients should not even be able to reach this codepath...harmless, but weird.");
             return;
         }
-
-        auto cc_blind_pk = enc.key();
 
         // These messages have two steps: the client sends each message down a path with a 0-3
         // location value indicating which of the 4 closest locations it should be published to.
@@ -445,48 +445,57 @@ namespace srouter::link
         // This two-step process helps ensure that publishes work even if the client has an
         // incomplete or outdated set of RCs, and doesn't require the client to build extra paths to
         // the 4 publish locations.
-        auto closest_rids = router.node_db().find_many_closest_to(cc_blind_pk, path::CC_PUBLISH_LOCATIONS + 1);
+        auto closest_rids = router.node_db().find_many_closest_to(blinded_pk, path::CC_PUBLISH_LOCATIONS + 1);
         if (closest_rids.size() < path::CC_PUBLISH_LOCATIONS)
         {
             respond(messages::serialize_status_response("No RCs available!"));
             return;
         }
 
+        auto store_it = [&] {
+            try
+            {
+                router.contact_db().put_cc(std::string{enc_cc});
+                respond(messages::OK_RESPONSE);
+            }
+            catch (const std::exception& e)
+            {
+                log::warning(logcat, "ECC publish to {} provided an invalid CC: {}", blinded_pk, e.what());
+                respond(messages::ERROR_RESPONSE);
+            }
+        };
+
         if (!source_is_relay)
         {
-            if (!location || *location < 0 || *location >= path::CC_PUBLISH_LOCATIONS)
+            if (location < 0 || location >= path::CC_PUBLISH_LOCATIONS)
             {
                 log::warning(
                     logcat,
                     "Ignoring ECC publish from a client with {} publish index",
-                    location ? "invalid ({})"_format(*location) : "missing");
+                    location ? "invalid ({})"_format(location) : "missing");
                 respond(messages::serialize_status_response(
                     location ? "INVALID PUBLISH LOCATION" : "MISSING PUBLISH LOCATION"));
                 return;
             }
 
-            const auto& rid = closest_rids[*location];
+            const auto& rid = closest_rids[location];
 
             if (rid == router.id())
-            {
                 // Special case: we *are* the intended location
-                router.contact_db().put_cc(std::move(enc));
-                respond(messages::OK_RESPONSE);
-                return;
-            }
+                return store_it();
 
             log::debug(
                 logcat,
                 "Received PublishClientContact (key: {}, index: {}); forwarding to {}",
-                enc.key(),
-                *location,
+                blinded_pk,
+                location,
                 rid);
 
             endpoint.send_command(
                 rid,
                 "publish_cc",
-                PublishClientContact::serialize(std::move(enc)),
-                [respond = std::move(respond)](quic::message msg) mutable {
+                std::vector<std::byte>{body.begin(), body.end()},
+                [respond = std::move(respond)](quic::message msg) {
                     log::info(
                         logcat,
                         "Relayed PublishClientContact {}! Relaying response...",
@@ -508,11 +517,7 @@ namespace srouter::link
         // indices, and we still want to store it even if we shifted (e.g. from 3nd to 2nd).
         for (auto& rid : closest_rids)
             if (rid == router.id())
-            {
-                router.contact_db().put_cc(std::move(enc));
-                respond(messages::OK_RESPONSE);
-                return;
-            }
+                return store_it();
 
         log::warning(
             logcat, "Ignoring forwarded CC publish: we are not in the top {} publish locations", closest_rids.size());
@@ -531,9 +536,13 @@ namespace srouter::link
         log::trace(logcat, "Received request to find client contact!");
 
         PubKey blinded_pubkey;
+        int lookup_index;
         try
         {
-            blinded_pubkey = FindClientContact::deserialize(oxenc::bt_dict_consumer{body});
+            oxenc::bt_dict_consumer btdc{body};
+            blinded_pubkey.assign(btdc.require_span<std::byte, PubKey::SIZE>("k"));
+            // Optional: not included in a relay-forwarded request:
+            lookup_index = btdc.maybe<int>("n"sv).value_or(-1);
         }
         catch (const std::exception& e)
         {
@@ -541,83 +550,114 @@ namespace srouter::link
             return respond(messages::ERROR_RESPONSE);
         }
 
+        auto respond_if_local_cc = [&]() -> bool {
+            if (auto maybe_cc = router.contact_db().get_encrypted_cc(blinded_pubkey))
+            {
+                log::debug(logcat, "find_cc request (key: {}): found and returning local encrypted CC", blinded_pubkey);
+                oxenc::bt_dict_producer btdp;
+                btdp.append("!"sv, messages::STATUS_OK);
+                btdp.append("x"sv, *maybe_cc);
+                // FIXME: eventually respond func should take a byte span or something, but
+                //        string was easier for now
+                respond(std::move(btdp).str());
+                return true;
+            }
+            return false;
+        };
+        auto respond_local_cc_or_fail = [&] {
+            if (!respond_if_local_cc())
+            {
+                log::debug(logcat, "find_cc request (key: {}): record not found; returning error", blinded_pubkey);
+                respond(messages::NOT_FOUND_RESPONSE);
+            }
+        };
+
+        if (source_is_relay)
+        {
+            // If this was forwarded from another relay, then just look for it locally: it already
+            // resolved the nth-location index and sent to us, so don't worry about the index and
+            // just go look for it.  (We don't want to hit race conditions by worrying about the
+            // index matching exactly for cases such as where we were in 3rd place a second ago but
+            // a new block just switched us to 2nd place).
+            respond_local_cc_or_fail();
+            return;
+        }
+
         auto closest_rids = router.node_db().find_many_closest_to(blinded_pubkey, path::CC_PUBLISH_LOCATIONS);
         if (closest_rids.size() < path::CC_PUBLISH_LOCATIONS)
             return respond(messages::ERROR_RESPONSE);
 
-        // We don't provide the answer ourselves unless we are in the closest-4 set because it's
-        // possible we *were* in the closest 4 but then dropped out, but still have a stale record
-        // hanging around.
-        auto authoritative = std::ranges::count(closest_rids, router.id());
-        assert(authoritative <= 1);
-
-        if (authoritative)
+        std::vector<std::byte> relay_find_cc;
         {
-            // TODO FIXME: Do we want to send the requests off to other relays *even if* we have it,
-            // to double-check against other relays in case ours is stale?
-
-            if (auto maybe_cc = router.contact_db().get_encrypted_cc(blinded_pubkey))
-            {
-                log::info(
-                    logcat,
-                    "Received FindClientContact request (key: {}); returning local EncryptedClientContact...",
-                    blinded_pubkey);
-                auto resp = FindClientContact::serialize_response(*maybe_cc);
-                // FIXME: eventually respond func should take a byte span or something, but
-                //        string was easier for now
-                return respond(std::string{reinterpret_cast<const char*>(resp.data()), resp.size()});
-            }
-
-            log::debug(
-                logcat,
-                "Received FindClientContact and we are authoritative, but don't have a matching CC for {}",
-                blinded_pubkey);
-            // Don't return an error because we can still possibly forward it to other authoritative
-            // nodes, below, and it's perfectly possible for us not to have it if we missed it for
-            // various reasons.
+            oxenc::bt_dict_producer find_cc;
+            find_cc.append("k", blinded_pubkey.to_view());
+            // Don't set "n" as it isn't used for a relay-forwarded request (see above)
+            auto sp = find_cc.span<std::byte>();
+            relay_find_cc.assign(sp.begin(), sp.end());
         }
 
-        // If the optional was nullopt, then this was a relay <-> relay request. As a result, we should NOT
-        // allow it to continue propagating
-        if (source_is_relay)
+        if (lookup_index >= 0)
         {
-            log::critical(
-                logcat,
-                "Received relayed FindClientContact request (key: {}); could not find locally, relaying "
-                "error...",
-                blinded_pubkey);
-            return respond(messages::NOT_FOUND_RESPONSE);
-        }
-
-        auto remaining = std::make_shared<size_t>(closest_rids.size() - authoritative);
-        auto hook = [respond = std::move(respond), remaining](quic::message msg) mutable {
-            if (*remaining == 0)
-                return;  // Already answered by an earlier response
-
-            if (msg)
+            auto& lookup_rid = closest_rids[lookup_index];
+            if (lookup_rid == router.id())
             {
-                *remaining = 0;
-                log::info(logcat, "Relayed FindClientContact request SUCCEEDED! Relaying response");
-                log::trace(logcat, "Relayed FindClientContact response: {}", buffer_printer{msg.body()});
-                respond(std::string{msg.body()});
+                respond_local_cc_or_fail();
                 return;
             }
 
-            if (--*remaining == 0)
-                return;  // This was an error, but there are more responses to come back
-
-            log::warning(logcat, "All FindClientContact requests FAILED! Relaying failure");
-            respond(msg.timed_out ? messages::TIMEOUT_RESPONSE : std::string{msg.body()});
-        };
-
-        log::debug(logcat, "Relaying FindClientContactMessage (key: {}) to {} peers", blinded_pubkey, *remaining);
-
-        auto forwarded_find_cc = FindClientContact::serialize(blinded_pubkey);
-        for (const auto& rid : closest_rids)
+            endpoint.send_command(lookup_rid, "find_cc", std::move(relay_find_cc), [respond](quic::message msg) {
+                if (msg.timed_out)
+                    respond(messages::TIMEOUT_RESPONSE);
+                else
+                    respond(std::string{msg.body()});
+            });
+        }
+        else
         {
-            if (rid == router.id())
-                continue;
-            endpoint.send_command(rid, "find_cc", forwarded_find_cc, hook);
+            // TODO FIXME: this entire else branch can be dropped once all relays and clients are on
+            // 1.0.2+ (where a >= 0 index is always included by clients, and we can just error if it
+            // isn't).
+
+            auto authoritative = std::ranges::count(closest_rids, router.id());
+            if (authoritative)
+            {
+                if (respond_if_local_cc())
+                    return;
+
+                // Don't return an error because we can still possibly forward it to other authoritative
+                // nodes, below, and it's perfectly possible for us not to have it if we missed it for
+                // various reasons.
+            }
+
+            auto remaining = std::make_shared<size_t>(closest_rids.size() - authoritative);
+            auto hook = [respond = std::move(respond), remaining](quic::message msg) mutable {
+                if (*remaining == 0)
+                    return;  // Already answered by an earlier response
+
+                if (msg)
+                {
+                    *remaining = 0;
+                    log::info(logcat, "Relayed find_cc request SUCCEEDED! Relaying response");
+                    log::trace(logcat, "Relayed find_cc response: {}", buffer_printer{msg.body()});
+                    respond(std::string{msg.body()});
+                    return;
+                }
+
+                if (--*remaining == 0)
+                    return;  // This was an error, but there are more responses to come back
+
+                log::warning(logcat, "All find_cc requests FAILED! Relaying failure");
+                respond(msg.timed_out ? messages::TIMEOUT_RESPONSE : std::string{msg.body()});
+            };
+
+            log::debug(logcat, "Relaying find_ccMessage (key: {}) to {} peers", blinded_pubkey, *remaining);
+
+            for (const auto& rid : closest_rids)
+            {
+                if (rid == router.id())
+                    continue;
+                endpoint.send_command(rid, "find_cc", relay_find_cc, hook);
+            }
         }
     }
 
@@ -628,10 +668,10 @@ namespace srouter::link
 
     void Manager::handle_path_build(quic::message m, const std::variant<RouterID, quic::ConnectionID>& from)
     {
-        if (!router.path_context.is_transit_allowed())
+        if (not router.is_service_node)
         {
-            log::warning(logcat, "got path build request when not permitting transit");
-            return m.respond(PATH::BUILD::NO_TRANSIT, true);
+            log::warning(logcat, "got path build request when not relay node!");
+            return m.respond(messages::ERROR_RESPONSE, true);
         }
 
         try
@@ -646,7 +686,7 @@ namespace srouter::link
                     frames_in.size(),
                     path::BUILD_LENGTH,
                     path::BUILD_FRAME_SIZE);
-                m.respond(PATH::BUILD::BAD_FRAMES, true);
+                m.respond(messages::serialize_status_response("BAD FRAMES"sv), true);
                 return;
             }
 
@@ -905,7 +945,6 @@ namespace srouter::link
         handle_session_message(std::move(payload), true);
     }
 
-    // FIXME: overhead for session MAC?
     static constexpr size_t MIN_PATH_DATA_MESSAGE_SIZE = 0 /*payload*/ + 1 /*packet type*/ + sizeof(HopID) /*pivot*/
         + path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD /*nonce, hop, type*/;
 
@@ -1249,7 +1288,9 @@ namespace srouter::link
         try
         {
             // FIXME: unnecessary copy
-            std::tie(endpoint, body) = PATH::CONTROL::deserialize(oxenc::bt_dict_consumer{payload});
+            oxenc::bt_dict_consumer btdc{payload};
+            endpoint = btdc.require<std::string>("e");
+            body = btdc.require<std::string>("p");
         }
         catch (const std::exception& e)
         {

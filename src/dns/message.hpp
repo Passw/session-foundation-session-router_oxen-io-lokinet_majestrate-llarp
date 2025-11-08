@@ -3,7 +3,8 @@
 #include "address/types.hpp"
 #include "question.hpp"
 #include "rr.hpp"
-#include "serialize.hpp"
+
+#include <nlohmann/json_fwd.hpp>
 
 #include <optional>
 
@@ -15,71 +16,47 @@ namespace srouter
     {
         struct SRVData;
 
-        struct MessageHeader : public Serialize
+        struct Message
         {
-          public:
-            static constexpr size_t Size = 12;
-
-            MessageHeader() = default;
-
-            uint16_t _id;
-            uint16_t _fields;
-            uint16_t _qd_count;
-            uint16_t _an_count;
-            uint16_t _ns_count;
-            uint16_t _ar_count;
-
-            bool Encode(buffer_t* buf) const override;
-
-            bool Decode(buffer_t* buf) override;
-
-            nlohmann::json ToJSON() const override;
-
-            bool operator==(const MessageHeader& h) const
-            {
-                return std::tie(_id, _fields, _qd_count, _an_count, _ns_count, _ar_count)
-                    == std::tie(h._id, h._fields, h._qd_count, h._an_count, h._ns_count, h._ar_count);
-            }
-        };
-
-        struct Message : public Serialize
-        {
-            explicit Message(const MessageHeader& hdr);
+            Message() = default;
             explicit Message(const Question& question);
 
-            Message(Message&& other);
-            Message(const Message& other);
+            nlohmann::json ToJSON() const;
 
-            nlohmann::json ToJSON() const override;
+            static constexpr auto DEFAULT_ANSWER_TTL = 10s;
 
-            void add_nx_reply(RR_TTL_t ttl = 1);
+            void add_nx_reply();
 
-            void add_serv_fail(RR_TTL_t ttl = 30);
+            void add_serv_fail();
 
-            void add_NODATA_reply();
+            // Sets the RR name for future added entries, or resets it to default with nullopt.  The
+            // default (if not called or reset) is to use the question's name value.  Once set, the
+            // value persists for any added answers until this method is called again.
+            void set_rr_name(std::optional<std::string> name);
+            std::string_view get_rr_name() const
+            {
+                return rr_name_override ? *rr_name_override : questions.size() ? questions.front().qname : ""sv;
+            }
 
-            void add_mx_reply(std::string name, uint16_t priority, RR_TTL_t ttl = 1);
+            void add_nodata_reply();
 
-            void add_CNAME_reply(std::string name, RR_TTL_t ttl = 1);
+            void add_cname_reply(std::string_view name, std::chrono::seconds ttl = DEFAULT_ANSWER_TTL);
 
-            void add_IN_reply(ipv4 addr, RR_TTL_t ttl = 1);
-            void add_IN_reply(ipv6 addr, RR_TTL_t ttl = 1);
-            void set_IN_reply_rr_name(std::string_view name);
+            // Adds an 'IN A' reply containing the given ipv4 address
+            void add_reply(ipv4 addr, std::chrono::seconds ttl = DEFAULT_ANSWER_TTL);
+            // Adds an 'IN AAAA' reply containing the given ipv6 address
+            void add_reply(ipv6 addr, std::chrono::seconds ttl = DEFAULT_ANSWER_TTL);
 
-            void add_reply(std::string name, RR_TTL_t ttl = 1);
+            void add_reply(const SRVData& srv, std::chrono::seconds ttl = DEFAULT_ANSWER_TTL);
 
-            void add_srv_reply(std::vector<SRVData> records, RR_TTL_t ttl = 1);
+            void add_txt_reply(std::string_view value, std::chrono::seconds ttl = DEFAULT_ANSWER_TTL);
 
-            void add_ns_reply(std::string name, RR_TTL_t ttl = 1);
+            void add_ptr_reply(std::string_view name, std::chrono::seconds ttl = DEFAULT_ANSWER_TTL);
 
-            void add_txt_reply(std::string value, RR_TTL_t ttl = 1);
+            size_t encode(std::span<std::byte> buf) const;
+            std::vector<std::byte> encode() const;
 
-            bool Encode(buffer_t* buf) const override;
-
-            bool Decode(buffer_t* buf) override;
-
-            // Wrapper around Encode that encodes into a new buffer and returns it
-            std::vector<std::byte> to_buffer() const;
+            static std::optional<Message> extract(std::span<const std::byte>& buf);
 
             std::string to_string() const;
 
@@ -89,9 +66,12 @@ namespace srouter
             std::vector<ResourceRecord> answers;
             std::vector<ResourceRecord> authorities;
             std::vector<ResourceRecord> additional;
+            std::optional<std::string> rr_name_override;
+
+          private:
+            void add_reply(RRClass cls, RRType type, std::vector<std::byte> data, std::chrono::seconds ttl);
         };
 
-        std::optional<Message> maybe_parse_dns_msg(std::span<const std::byte> buf);
     }  // namespace dns
 
 }  // namespace srouter

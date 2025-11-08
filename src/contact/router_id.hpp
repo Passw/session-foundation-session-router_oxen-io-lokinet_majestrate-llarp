@@ -13,8 +13,6 @@ namespace srouter
     {
         using PubKey::PubKey;
 
-        nlohmann::json ExtractStatus() const;
-
         std::string to_string() const;
 
         // will throw on failure!

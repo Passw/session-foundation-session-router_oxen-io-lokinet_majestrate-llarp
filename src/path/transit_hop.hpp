@@ -93,8 +93,6 @@ namespace srouter::path
 
         bool is_expired(sys_ms now = srouter::time_now_ms()) const { return now >= expiry; };
 
-        nlohmann::json ExtractStatus() const;
-
         std::string to_string() const;
         static constexpr bool to_string_formattable = true;
     };

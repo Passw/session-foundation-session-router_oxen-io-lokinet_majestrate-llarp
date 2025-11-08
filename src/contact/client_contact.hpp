@@ -6,7 +6,6 @@
 #include "dns/srv_data.hpp"
 #include "net/policy.hpp"
 #include "util/aligned.hpp"
-#include "util/buffer.hpp"
 #include "util/file.hpp"
 #include "util/time.hpp"
 
@@ -18,9 +17,6 @@
 
 namespace srouter
 {
-    struct EncryptedClientContact;
-
-    // TESTNET:
     inline static constexpr auto CC_PUBLISH_INTERVAL{5min};
 
     /** ClientContact
@@ -34,6 +30,10 @@ namespace srouter
                     client is embedded and therefore requires a tunneled connection. Serialized as a bitwise flag of
                     protocol_flag enums (llarp/net/policy.hpp)
             - "s" : (optional) SRV records for Session Router DNS lookup
+
+        Note that we also store a signed_at value, but that is *not* carried inside the
+        ClientContact but rather lives in the serialized encrypted wrapper; it is stored in the
+        ClientContact via the outer wrapper value when decrypting (or when re-signing).
     */
     struct ClientContact
     {
@@ -43,23 +43,32 @@ namespace srouter
 
         /// Constructs a ClientContact by parsing a serialized client contact value.  Throws if
         /// invalid.
-        explicit ClientContact(std::span<const std::byte> buf);
+        ClientContact(std::span<const std::byte> buf, sys_ms signed_at);
 
         /** Parameters:
-            - `private_data` : derived private subkey data
-            - `pubkey` : master identity key pubkey
+            - `pk` : master identity key pubkey
             - `srvs` : SRV records (optional, can be empty)
-            - `proto_flags` : client-supported protocols
+            - `protocols` : client-supported protocols
+            - `signed_at` : timestamp when the encrypted wrapper around this CC was signed
             - `policy` : exit-related traffic policy (optional)
          */
         ClientContact(
             PubKey pk,
-            std::unordered_set<dns::SRVData> srvs,
+            std::vector<dns::SRVData> srvs,
             protocol_flag protocols,
+            sys_ms signed_at,
             std::optional<net::ExitPolicy> policy = std::nullopt);
 
-        // Encrypts and signs the client contact with the given blinded keypair
-        EncryptedClientContact encrypt_and_sign(const Ed25519BlindedKey& blinded) const;
+        /// Decrypts a serialized, signed, encrypted ClientContact created by the (unblinded) pubkey
+        /// `root` into a ClientContact.  Throws on failure.
+        static ClientContact decrypt(std::span<const std::byte> buf, const PubKey& root);
+
+        // TODO: there should be a limit on how large an encCC we will store on relays, and we should
+        // check that when we generate & sign as well to make sure we don't exceed it.
+        //
+        // Encrypts and signs the client contact with the given blinded keypair.  Returns the
+        // encrypted, signed, serialized value.
+        std::string encrypt_and_sign(const Ed25519BlindedKey& blinded);
 
         /// Replaces the client intros in the current introset with the given values.  It is not
         /// necessary for the given values to be pre-sorted (i.e. this functions sorts them as
@@ -71,21 +80,26 @@ namespace srouter
         // last entry is the first to expire).
         std::span<const ClientIntro> intros() const& { return _intros; }
 
-        const std::unordered_set<dns::SRVData>& SRVs() const { return _srv; }
+        std::span<const dns::SRVData> SRVs() const { return _srv; }
 
         protocol_flag protocols() const { return _protos; }
 
         const std::optional<net::ExitPolicy>& exit_policy() const { return _exit_policy; }
 
+        std::chrono::sys_seconds expiry() const;
         bool is_expired(sys_ms now = srouter::time_now_ms()) const;
 
+        const sys_ms& signed_at() const { return _signed_at; }
+
       private:
-        PubKey _pubkey;
+        PubKey _pubkey{};
 
         std::vector<ClientIntro> _intros;
-        std::unordered_set<dns::SRVData> _srv;
+        std::vector<dns::SRVData> _srv;
 
-        protocol_flag _protos;
+        protocol_flag _protos{};
+
+        sys_ms _signed_at{};
 
         // In exit mode, we advertise our policy for accepted traffic and the corresponding ranges
         std::optional<net::ExitPolicy> _exit_policy;
@@ -103,47 +117,4 @@ namespace srouter
         static constexpr bool to_string_formattable = true;
     };
 
-    // TODO: there should be a limit on how large an encCC we will store on relays, and we should
-    // check that when we generate & sign as well to make sure we don't exceed it.
-    //
-    /** EncryptedClientContact
-            "i" blinded local Ed25519 pubkey
-            "n" nonce
-            "t" signing time
-            "x" encrypted payload
-            "~" signature   (signed with blinded derived scalar `b`)
-    */
-    struct EncryptedClientContact
-    {
-        EncryptedClientContact() : nonce{SymmNonce::make_random()} {}
-
-        explicit EncryptedClientContact(std::span<const std::byte> buf);
-        explicit EncryptedClientContact(std::string buf);
-
-      private:
-        friend struct ClientContact;
-
-        PubKey blinded_pubkey;
-        SymmNonce nonce;
-        sys_ms signed_at{sys_ms::min()};
-        std::vector<std::byte> encrypted;
-
-        std::string _bt_payload;
-
-        // Returns a dict-in-progress containing everything except for the ~ signature.
-        [[nodiscard]] oxenc::bt_dict_producer bt_encode_for_signing() const;
-
-        void bt_decode(oxenc::bt_dict_consumer&& btdc);
-
-      public:
-        const PubKey& key() const { return blinded_pubkey; }
-
-        std::optional<ClientContact> decrypt(const PubKey& root) const;
-
-        std::string_view bt_payload() const { return _bt_payload; }
-
-        bool is_expired(sys_ms now = time_now_ms()) const;
-
-        bool newer_than(const EncryptedClientContact& that) const { return signed_at > that.signed_at; }
-    };
 }  //  namespace srouter

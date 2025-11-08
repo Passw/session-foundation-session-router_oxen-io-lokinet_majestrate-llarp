@@ -34,20 +34,27 @@ int main(int argc, char** argv)
     auto srouter = std::make_unique<session::router::SessionRouter>(std::filesystem::path{"jank.ini"});
 
     std::promise<void> prom;
+    std::promise<void> conn_prom;
 
     bool first_conn = true;
     srouter->on_connected([&] {
         if (!first_conn)
             return;
         first_conn = false;
-        std::cout << "\n\x1b[32;1mSession Router connected!\x1b[0m\n\n\x1b[33;1mINITIATING SESSION TO " << target
-                  << "\x1b[0m\n\n"
-                  << std::flush;
+        std::cout << "\n\x1b[32;1mSession Router connected!\x1b[0m\n\n";
+        conn_prom.set_value();
+    });
+    try
+    {
+        conn_prom.get_future().get();
+
+        //std::this_thread::sleep_for(500ms);
+        std::cout << "\x1b[33;1mINITIATING SESSION TO " << target << "\x1b[0m\n\n" << std::flush;
         srouter->establish_udp(
             target,
             12345,
             [&prom](auto udp_info) {
-                std::cout << "\n\x1b[32;1mUDP bound to port " << udp_info.local_port << "\x1b[0m\n\n" << std::flush;
+                std::cout << "\n\x1b[32;1mUDP bound to port [::1]:" << udp_info.local_port << "\x1b[0m\n\n" << std::flush;
                 prom.set_value();
             },
             [&prom]() {
@@ -60,9 +67,7 @@ int main(int argc, char** argv)
                     prom.set_exception(std::current_exception());
                 }
             });
-    });
-    try
-    {
+
         prom.get_future().get();
         const auto current_path = srouter->get_path_for_session(target);
         if (!current_path)
@@ -74,14 +79,13 @@ int main(int argc, char** argv)
         std::cout << "Path to snode:\n";
         for (const auto& [snode, ip] : *current_path)
         {
-            std::cout << "\tHop " << hop_count << ":\n\t\t";
-            std::cout << snode << " @ " << ip << "\n";
+            std::cout << "\tHop " << hop_count << ":\t" << snode << " @ " << ip << "\n";
             hop_count++;
         }
     }
     catch (const std::exception& e)
     {
-        std::cerr << "\n\n\x1b[31;1mError establishing session to " << target << ": " << e.what() << "\x1b[0m\n\n";
+        std::cerr << "\n\n\x1b[31;1m" << e.what() << "\x1b[0m\n\n";
         return 1;
     }
 

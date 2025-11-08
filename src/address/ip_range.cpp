@@ -191,7 +191,7 @@ namespace srouter
     std::optional<ipv6_net> find_private_ipv6_net(const std::vector<ipv6_range>& exclude, uint8_t mask)
     {
         // This /48 is registered for Session Router in the IPv6 ULA registry (https://ula.ungleich.ch/):
-        constexpr uint64_t start = 0xfd2e'6c6f'6b69'0000;  // 2e 6c 6f 6b 69 == . l o k i
+        constexpr uint64_t start = 0xfd2e'7365'7368'0000;  // 2e 73 65 73 68 == . s e s h
         constexpr uint64_t end = start + 0x1'0000;
 
         if (mask < 48)
