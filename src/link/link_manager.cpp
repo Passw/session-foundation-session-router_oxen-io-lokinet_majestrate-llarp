@@ -541,7 +541,8 @@ namespace srouter::link
         {
             oxenc::bt_dict_consumer btdc{body};
             blinded_pubkey.assign(btdc.require_span<std::byte, PubKey::SIZE>("k"));
-            lookup_index = btdc.require<int>("n"sv);
+            // Optional: not included in a relay-forwarded request:
+            lookup_index = btdc.maybe<int>("n"sv).value_or(-1);
         }
         catch (const std::exception& e)
         {
