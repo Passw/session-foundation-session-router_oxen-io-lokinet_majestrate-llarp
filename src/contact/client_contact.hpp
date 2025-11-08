@@ -17,8 +17,6 @@
 
 namespace srouter
 {
-    struct EncryptedClientContact;
-
     inline static constexpr auto CC_PUBLISH_INTERVAL{5min};
 
     /** ClientContact
@@ -34,7 +32,7 @@ namespace srouter
             - "s" : (optional) SRV records for Session Router DNS lookup
 
         Note that we also store a signed_at value, but that is *not* carried inside the
-        ClientContact but rather lives in the EncryptedClientContact and is stored in the
+        ClientContact but rather lives in the serialized encrypted wrapper; it is stored in the
         ClientContact via the outer wrapper value when decrypting (or when re-signing).
     */
     struct ClientContact
@@ -61,8 +59,16 @@ namespace srouter
             sys_ms signed_at,
             std::optional<net::ExitPolicy> policy = std::nullopt);
 
-        // Encrypts and signs the client contact with the given blinded keypair
-        EncryptedClientContact encrypt_and_sign(const Ed25519BlindedKey& blinded);
+        /// Decrypts a serialized, signed, encrypted ClientContact created by the (unblinded) pubkey
+        /// `root` into a ClientContact.  Throws on failure.
+        static ClientContact decrypt(std::span<const std::byte> buf, const PubKey& root);
+
+        // TODO: there should be a limit on how large an encCC we will store on relays, and we should
+        // check that when we generate & sign as well to make sure we don't exceed it.
+        //
+        // Encrypts and signs the client contact with the given blinded keypair.  Returns the
+        // encrypted, signed, serialized value.
+        std::string encrypt_and_sign(const Ed25519BlindedKey& blinded);
 
         /// Replaces the client intros in the current introset with the given values.  It is not
         /// necessary for the given values to be pre-sorted (i.e. this functions sorts them as
@@ -111,47 +117,4 @@ namespace srouter
         static constexpr bool to_string_formattable = true;
     };
 
-    // TODO: there should be a limit on how large an encCC we will store on relays, and we should
-    // check that when we generate & sign as well to make sure we don't exceed it.
-    //
-    /** EncryptedClientContact
-            "i" blinded local Ed25519 pubkey
-            "n" nonce
-            "t" signing time
-            "x" encrypted payload
-            "~" signature   (signed with blinded derived scalar `b`)
-    */
-    struct EncryptedClientContact
-    {
-        EncryptedClientContact() : nonce{SymmNonce::make_random()} {}
-
-        explicit EncryptedClientContact(std::span<const std::byte> buf);
-        explicit EncryptedClientContact(std::string buf);
-
-      private:
-        friend struct ClientContact;
-
-        PubKey blinded_pubkey;
-        SymmNonce nonce;
-        sys_ms signed_at{};
-        std::vector<std::byte> encrypted;
-
-        std::string _bt_payload;
-
-        // Returns a dict-in-progress containing everything except for the ~ signature.
-        [[nodiscard]] oxenc::bt_dict_producer bt_encode_for_signing() const;
-
-        void bt_decode(oxenc::bt_dict_consumer&& btdc);
-
-      public:
-        const PubKey& key() const { return blinded_pubkey; }
-
-        std::optional<ClientContact> decrypt(const PubKey& root) const;
-
-        std::string_view bt_payload() const { return _bt_payload; }
-
-        bool is_expired(sys_ms now = time_now_ms()) const;
-
-        bool newer_than(const EncryptedClientContact& that) const { return signed_at > that.signed_at; }
-    };
 }  //  namespace srouter

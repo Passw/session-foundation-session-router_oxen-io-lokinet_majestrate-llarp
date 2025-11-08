@@ -695,11 +695,9 @@ namespace srouter::session
         _r.tun_endpoint()->handle_inbound_packet(std::move(pkt), dgram_type, _remote);
     }
 
-    void Session::publish_client_contact(const EncryptedClientContact& ecc)
+    void Session::publish_client_contact(std::string_view encrypted_cc)
     {
-        auto payload_sv = ecc.bt_payload();
-        auto payload{oxen::quic::reinterpret_span<const std::byte>(payload_sv)};
-        send_session_control_message("publish_cc", payload);
+        send_session_control_message("publish_cc", as_bspan(encrypted_cc));
     }
 
     void Session::handle_client_contact(std::span<const std::byte>)
@@ -709,15 +707,17 @@ namespace srouter::session
 
     void OutboundClientSession::handle_client_contact(std::span<const std::byte> payload)
     {
-        auto ecc = EncryptedClientContact{payload};
-        if (auto cc = ecc.decrypt(_remote.pubkey); cc)
+        try
         {
+            auto& cc = _parent.update_cc(_remote.pubkey, ClientContact::decrypt(payload, _remote.pubkey));
             log::debug(logcat, "Session with {} received valid new client contact, updating.", _remote);
             _intro_update_processed = false;
             update_intros(*cc);
         }
-        else
-            log::warning(logcat, "Session with {} received invalid new client contact!", _remote);
+        catch (const std::exception& e)
+        {
+            log::warning(logcat, "Session with {} received invalid new client contact: {}", _remote, e.what());
+        }
     }
 
     static constexpr quic::ipv6 ipv6_localhost{0, 0, 0, 0, 0, 0, 0, 1};

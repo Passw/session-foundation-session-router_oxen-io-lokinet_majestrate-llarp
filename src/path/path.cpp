@@ -177,15 +177,15 @@ namespace srouter::path
     {
         oxenc::bt_dict_producer btdp;
         btdp.append("k"sv, blinded_pk.span());
-        btdp.append("l"sv, lookup_index);
+        btdp.append("n"sv, lookup_index);
         send_path_control_message("find_cc", btdp.span<std::byte>(), std::move(func));
     }
 
     void Path::publish_client_contact(
-        const EncryptedClientContact& ecc, int location, std::function<void(path_control_response)> func)
+        std::string_view encrypted_cc, int location, std::function<void(path_control_response)> func)
     {
         oxenc::bt_dict_producer btdp;
-        btdp.append("e"sv, ecc.bt_payload());
+        btdp.append("e"sv, encrypted_cc);
         btdp.append("n"sv, location);
         send_path_control_message("publish_cc", btdp.span<std::byte>(), std::move(func));
     }

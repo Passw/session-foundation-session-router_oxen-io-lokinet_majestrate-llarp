@@ -183,7 +183,7 @@ namespace srouter
 
             void recv_session_data_message(std::vector<std::byte> data, const SymmNonce& nonce);
 
-            void publish_client_contact(const EncryptedClientContact& ecc);
+            void publish_client_contact(std::string_view encrypted_cc);
 
             void handle_udp_from_remote(IPPacket&& pkt);
 

@@ -97,7 +97,7 @@ namespace srouter::path
             const PubKey& blinded_pk, int lookup_index, std::function<void(path_control_response)> func);
 
         void publish_client_contact(
-            const EncryptedClientContact& ecc, int location, std::function<void(path_control_response)> func);
+            std::string_view enc_cc, int location, std::function<void(path_control_response)> func);
 
         // The constant "type" values that we put on the end of control (stream) and data
         // (datagram) messages.  Data message can overlap since it comes on a different channel

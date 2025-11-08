@@ -155,12 +155,6 @@ namespace srouter
             lookup_cache<RouterID, ClientContact> _cc_cache;
             static constexpr auto NO_CC_CACHE_TIME = 15s;
 
-            // Updates a CC cache entry if the given value is better than the one already in the
-            // cache.  Returns a reference to the cache entry (which *could* be a copy of the input,
-            // but also could be a previous existing entry if the existing cache value is
-            // preferrable).
-            const std::optional<ClientContact>& update_cc(const RouterID& remote, std::optional<ClientContact>&& cc);
-
           public:
             SessionEndpoint(Router& r);
 
@@ -229,7 +223,13 @@ namespace srouter
             /// republish whenever inbound paths change.
             void update_and_publish_localcc();
 
-            void publish_client_contact(const EncryptedClientContact& ecc);
+            void publish_client_contact(std::string_view encrypted_cc);
+
+            // Updates a CC cache entry if the given value is better than the one already in the
+            // cache.  Returns a reference to the cache entry (which *could* be a copy of the input,
+            // but also could be a previous existing entry if the existing cache value is
+            // preferrable).
+            const std::optional<ClientContact>& update_cc(const RouterID& remote, std::optional<ClientContact>&& cc);
 
             // SessionEndpoint can use either a whitelist or a static auth token list to validate
             // incoming requests to initiate a session

@@ -984,22 +984,13 @@ namespace srouter::handlers
                     if (!failed)
                     {
                         log::debug(logcat, "Call to FindClientContact succeeded!");
-                        auto enc = FindClientContact::deserialize_response(std::move(cc_dict));
-                        if (auto intro = enc.decrypt(remote))
-                        {
-                            cc = std::move(intro);
-                        }
-                        else
-                            log::warning(logcat, "Failed to decrypt returned EncryptedClientContact!");
+                        cc = ClientContact::decrypt(cc_dict.require_span<std::byte>("x"), remote);
                     }
                 }
                 else
                 {
-                    std::optional<std::string> status = std::nullopt;
                     oxenc::bt_dict_consumer btdc{resp.body};
-
-                    if (auto s = btdc.maybe<std::string>(messages::STATUS_KEY))
-                        status = s;
+                    auto status = btdc.maybe<std::string>(messages::STATUS_KEY);
 
                     log::warning(
                         logcat, "Call to FindClientContact FAILED; reason: {}", status.value_or("<none given>"));
@@ -1007,7 +998,7 @@ namespace srouter::handlers
             }
             catch (const std::exception& e)
             {
-                log::warning(logcat, "Exception: {}", e.what());
+                log::warning(logcat, "Failed to load client contact: {}", e.what());
             }
 
             if (cc)
@@ -1226,7 +1217,7 @@ namespace srouter::handlers
         sptr->session_init_accept();
     }
 
-    void SessionEndpoint::publish_client_contact(const EncryptedClientContact& ecc)
+    void SessionEndpoint::publish_client_contact(std::string_view encrypted_cc)
     {
         auto now = std::chrono::steady_clock::now();
         ++cc_count;
@@ -1243,7 +1234,7 @@ namespace srouter::handlers
                 cc_count,
                 session->remote());
 
-            session->publish_client_contact(ecc);
+            session->publish_client_contact(encrypted_cc);
         }
 
         // Pick four random inbound paths to publish on, and then on each one we send along a 0-3
@@ -1278,7 +1269,7 @@ namespace srouter::handlers
             auto& p = *paths[location % paths.size()];
             log::debug(logcat, "Publishing ClientContact to location {} via {}", location, p);
             p.publish_client_contact(
-                ecc,
+                encrypted_cc,
                 location,
                 [started = now, remaining_success, via = p.terminal_rid(), location, cc_num = cc_count](auto resp) {
                     auto elapsed =
