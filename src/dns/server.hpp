@@ -182,6 +182,12 @@ namespace srouter::dns
 
       private:
         const unsigned int m_NetIfIndex;
+
+        // Secret value we use as a key in DNS server cookie hashing.  We generate a random once on
+        // each startup as we currently have no need for this to be deterministic, and that
+        // introduces rotation whenever we restart.
+        std::array<std::byte, 16> _cookie_secret;
+
         // TODO FIXME: this ownership model is cursed.
         std::set<std::shared_ptr<Resolver_Base>, ComparePtr<std::shared_ptr<Resolver_Base>>> _owned_resolvers;
         std::set<std::weak_ptr<Resolver_Base>, CompareWeakPtr<Resolver_Base>> _resolvers;

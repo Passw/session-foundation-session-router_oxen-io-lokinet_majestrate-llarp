@@ -23,8 +23,27 @@ namespace srouter::dns
         TXT = 16,
         AAAA = 28,
         SRV = 33,
+
+        OPT = 41,
     };
 
+    // Parsed RR data: this is intentionally very raw and is only for extracting the data, not
+    // interpreting it.  Note that the rdata value points into the input buf: the ParsedRR data
+    // should not be held longer than the input buffer!
+    struct ParsedRR
+    {
+        std::string name;
+        RRType rr_type;    // *Not* necessarily one of the values defined above
+        RRClass rr_class;  // *Not* necessarily one of the values defined above
+        std::chrono::seconds ttl;
+        std::span<const std::byte> rdata;
+
+        // Attempts to parse an RR from the beginning of `buf`.  `buf` will have the prefix removed
+        // containing the extracted record.  Returns nullopt on extraction error.
+        static std::optional<ParsedRR> extract(std::span<const std::byte>& buf);
+    };
+
+    // Abstract base class we use for building RR responses
     struct ResourceRecord
     {
         ResourceRecord(std::string rr_name, std::chrono::seconds ttl) : rr_name{std::move(rr_name)}, ttl{ttl} {}
@@ -119,4 +138,44 @@ namespace srouter::dns
         RRType rr_type() const override { return RRType::SRV; }
         void encode_data(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const override;
     };
+
+    // Psuedo-RR for EDNS; a client sends this in the additional section if it supports EDNS, and
+    // the server sends it back (if provided) to confirm that the server also supports EDNS.
+    struct PRR_EDNS : ResourceRecord
+    {
+        static constexpr uint16_t OPT_COOKIE = 10;
+        static constexpr uint16_t EXT_RCODE_BADCOOKIE = 23;
+
+        std::optional<std::array<std::byte, 24>> cookie;
+
+        // Will be true if the full cookie we were provided was invalid or expired, in which case we
+        // are supposed to immediately fail with an extended BADCOOKIE error code (which will be
+        // encoded if this object is encoded into the output with this bool set to true).
+        bool bad_cookie{false};
+
+        // Constructs an EDNS value.  This is rather hacky, to try to mash it into the fairly
+        // inflexible older DNS protocol:
+        // - NAME is always empty (i.e. ".", the root domain)
+        // - 32-bit TTL is nothing to do with ttl, but actually 3 packed fields:
+        //     - 8-bit "extended rcode"
+        //     - 8-bit version (currently 0)
+        //     - 16-bit flags of which there is one for DNSSEC and all others are reserved
+        //   We currently always use 0 as we don't use extended rcode or dnssec.
+        // - CLASS isn't a class at all but rather contains the supported UDP payload size.  We set
+        //   it to the recommended 1232 size, but if a client gave us a smaller value we should
+        //   reflect that instead.
+        //
+        //   Beyond that, we support an optional DNS server cookie value (see RFC 7873 and 9018),
+        //   which must be the 8-byte cookie sent by the client followed by a 16 byte server cookie.
+        PRR_EDNS(uint16_t max_payload, std::optional<std::array<std::byte, 24>> cookie = std::nullopt)
+            : ResourceRecord{"", 0s}, cookie{std::move(cookie)}
+        {
+            rr_class = static_cast<RRClass>(max_payload);
+        }
+
+        uint16_t max_payload() const { return static_cast<uint16_t>(rr_class); }
+        constexpr RRType rr_type() const override { return RRType::OPT; }
+        void encode_data(std::span<std::byte>& buf, prev_names_t&, uint16_t& buf_offset) const override;
+    };
+
 }  // namespace srouter::dns

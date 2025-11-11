@@ -2,6 +2,7 @@
 
 #include "constants/apple.hpp"
 #include "constants/platform.hpp"
+#include "dns.hpp"
 #include "message.hpp"
 #include "nm_platform.hpp"
 #include "sd_platform.hpp"
@@ -9,6 +10,7 @@
 #include <oxen/log.hpp>
 #include <oxen/quic/udp.hpp>
 #include <oxenc/endian.h>
+#include <sodium/randombytes.h>
 #include <unbound.h>
 
 #include <memory>
@@ -522,7 +524,9 @@ namespace srouter::dns
 
     Server::Server(quic::Loop& loop, srouter::DnsConfig conf, unsigned int netif)
         : _loop{loop}, _conf{std::move(conf)}, _platform{create_platform()}, m_NetIfIndex{std::move(netif)}
-    {}
+    {
+        randombytes_buf(_cookie_secret.data(), _cookie_secret.size());
+    }
 
     std::vector<std::weak_ptr<Resolver_Base>> Server::get_all_resolvers() const
     {
@@ -656,14 +660,38 @@ namespace srouter::dns
             return false;
         }
 
-        auto maybe = Message::extract(payload);
+        std::span<const std::byte> client_ip;
+        if (from.is_ipv4())
+            client_ip = {reinterpret_cast<const std::byte*>(&from.in4().sin_addr.s_addr), 4};
+        else
+            client_ip = {reinterpret_cast<const std::byte*>(from.in6().sin6_addr.s6_addr), 16};
+
+        auto maybe = Message::extract_question(payload, _cookie_secret, client_ip);
         if (not maybe)
         {
             log::warning(logcat, "invalid dns message format from {} to dns listener on {}", from, to);
             return false;
         }
-
         auto& msg = *maybe;
+
+        if (msg.additional_edns && msg.additional_edns->bad_cookie)
+        {
+            // Client gave a bad cookie; reply with a request failure, but one containing the new
+            // cookie so that the client can retry.
+
+            // The lower 4 bits of the BADCOOKIE code go here; the upper 8 bits are in the OPT EDNS
+            // value.
+            msg.hdr_fields |= PRR_EDNS::EXT_RCODE_BADCOOKIE & 0b1111;
+            // TODO FIXME: we currently always set the RA flag but that really should only be set
+            // when we have an upstream DNS server.  (This TODO is also in message.cpp)
+            msg.hdr_fields |= flags_QR | flags_RA;
+            // badcookie is not an authoritative answer:
+            msg.hdr_fields &= ~flags_AA;
+
+            ptr->send_udp(from, to, msg.encode());
+            return true;
+        }
+
         // we don't provide a DoH resolver because it requires verified TLS
         // TLS needs X509/ASN.1-DER and opting into the Root CA Cabal
         // thankfully mozilla added a backdoor that allows ISPs to turn it off

@@ -26,7 +26,7 @@ namespace srouter
 
             Message(Message&&) = default;
 
-            // Clones the message with question/flag, but with no answers
+            // Clones the message with question/flags/edns response data, but with no answers
             Message clone() const;
 
             nlohmann::json ToJSON() const;
@@ -38,6 +38,11 @@ namespace srouter
             // exist) or a ServFail (i.e. we don't know how to answer, maybe try someone else).
             void set_nx_reply();
             void set_serv_fail();
+
+            // This clears any answers and sets the appropriate header flags for a BADCOOKIE
+            // response.  Note that this is only valid when the message has `additional_edns` as
+            // part of this error code value is carried in that additional RR data.
+            void set_badcookie_flags();
 
             // Sets the RR name for future added entries, or resets it to default with nullopt.  The
             // default (if not called or reset) is to use the question's name value.  Once set, the
@@ -65,7 +70,15 @@ namespace srouter
 
             std::vector<std::byte> encode() const;
 
-            static std::optional<Message> extract(std::span<const std::byte>& buf);
+            // Parses a question Message from the given buf, removing the question from the prefix
+            // of buf.  `server_cookie_secret` and `client_addr` contains information needed for DNS
+            // cookie handling; `server_cookie_secret` is something derived from the SR private key
+            // seed + startup time, while client_addr is the raw bytes of the IP address (4 or 16
+            // bytes for IPv4/IPv6, respectively).
+            static std::optional<Message> extract_question(
+                std::span<const std::byte>& buf,
+                std::span<const std::byte, 16> server_cookie_secret,
+                std::span<const std::byte> client_addr);
 
             std::string to_string() const;
 
@@ -78,6 +91,11 @@ namespace srouter
             // Currently unused:
             // std::vector<ResourceRecord> authorities;
             // std::vector<ResourceRecord> additional;
+
+            // Currently the only additional record we do anything with is the OPT section for
+            // enabling EDNS (most significantly for allowing large DNS packets)
+            std::optional<PRR_EDNS> additional_edns;
+
             std::optional<std::string> rr_name_override;
 
           private:

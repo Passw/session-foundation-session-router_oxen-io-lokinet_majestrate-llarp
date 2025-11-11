@@ -28,6 +28,7 @@ namespace srouter::rpc
         log::info(logcat, "RPC Server received request for endpoint `{}`", req.name);
     }
 
+#if 0
     // Fake packet source that serializes repsonses back into dns
     class DummyPacketSource final : public dns::PacketSource
     {
@@ -47,6 +48,7 @@ namespace srouter::rpc
         /// returns the sockaddr we are bound on if applicable
         std::optional<quic::Address> bound_on() const override { return std::nullopt; }
     };
+#endif
 
     bool check_path(std::string path)
     {
