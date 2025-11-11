@@ -87,8 +87,7 @@ namespace srouter::dns
         // names (particularly for something like SRV records where a name can be repeated multiple
         // times), and the DNS response size limit of 512 bytes, we implement that here.
 
-        size_t pos = 0;
-        do
+        for (size_t pos = name.empty() ? std::string::npos : 0; pos != std::string_view::npos;)
         {
             std::string_view check = name.substr(pos);
             if (auto it = prev_names.find(check); it != prev_names.end())
@@ -116,7 +115,7 @@ namespace srouter::dns
             buf_offset += 1 + part.size();
 
             pos = next == std::string_view::npos ? next : next + 1;
-        } while (pos != std::string_view::npos);
+        }
 
         // If we get here we wrote all the pieces without pointing at anything, so we need to append
         // a null byte to terminate the name:
