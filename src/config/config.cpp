@@ -1035,6 +1035,8 @@ namespace srouter
             MultiValue,
             Comment{
                 "Address to bind to for handling DNS requests.",
+                "",
+                "Can be specified multiple times to bind to multiple addresses; can be set to empty to disable.",
             },
             [this, parse_addr_for_dns](std::string arg) {
                 if (not arg.empty())

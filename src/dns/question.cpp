@@ -1,7 +1,6 @@
 #include "question.hpp"
 
 #include "address/address.hpp"
-#include "dns.hpp"
 #include "encode.hpp"
 #include "util/logging.hpp"
 #include "util/logging/buffer.hpp"

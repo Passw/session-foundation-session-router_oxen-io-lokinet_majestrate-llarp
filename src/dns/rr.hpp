@@ -48,6 +48,8 @@ namespace srouter::dns
     {
         ResourceRecord(std::string rr_name, std::chrono::seconds ttl) : rr_name{std::move(rr_name)}, ttl{ttl} {}
 
+        virtual ~ResourceRecord() = default;
+
         // Writes this RR to the beginning of buf, eliminating the written section from buf.  Throws if buf is exceeded.
         //
         // This takes care of the basic stuff (name, type, class, ttl), then calls the virtual

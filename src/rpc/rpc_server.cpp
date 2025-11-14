@@ -4,8 +4,6 @@
 #include "config/ini.hpp"
 #include "constants/version.hpp"
 #include "contact/client_contact.hpp"
-#include "dns/dns.hpp"
-#include "dns/server.hpp"
 #include "router/router.hpp"
 #include "rpc/rpc_request_definitions.hpp"
 #include "rpc_request.hpp"

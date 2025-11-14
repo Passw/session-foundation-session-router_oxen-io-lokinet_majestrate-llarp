@@ -156,11 +156,12 @@ if (SROUTER_FULL)
   # parse modify and reconstitute dns wire proto, dns queries and RR
   target_sources(session-router-dns PRIVATE
     dns/encode.cpp
+    dns/handler.cpp
+    dns/listener.cpp
     dns/message.cpp
     dns/platform.cpp
     dns/question.cpp
     dns/rr.cpp
-    dns/server.cpp
   )
 
   # platform specific bits and bobs for setting dns

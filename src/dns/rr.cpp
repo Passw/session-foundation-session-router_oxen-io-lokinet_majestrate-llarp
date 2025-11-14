@@ -1,6 +1,5 @@
 #include "rr.hpp"
 
-#include "dns.hpp"
 #include "encode.hpp"
 
 #include <fmt/chrono.h>

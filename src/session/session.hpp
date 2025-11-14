@@ -3,7 +3,6 @@
 #include "address/address.hpp"
 #include "constants/path.hpp"
 #include "ev/tcp.hpp"
-#include "ev/udp.hpp"
 #include "net/ip_packet.hpp"
 #include "path/path.hpp"
 #include "path/path_handler.hpp"

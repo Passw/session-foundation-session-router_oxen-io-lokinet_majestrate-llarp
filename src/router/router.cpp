@@ -7,6 +7,7 @@
 #include "constants/version.hpp"
 #include "contact/contactdb.hpp"
 #include "crypto/crypto.hpp"
+#include "dns/listener.hpp"
 #include "link/link_manager.hpp"
 #include "nodedb.hpp"
 #include "util/formattable.hpp"
@@ -62,7 +63,8 @@ namespace srouter
         // exceed the defaut 1MB limit).
         _omq->MAX_MSG_SIZE = -1;
 
-        _router_testing = std::make_shared<consensus::reachability_testing>(*this);
+        if (is_service_node)
+            _router_testing = std::make_shared<consensus::reachability_testing>(*this);
 #endif
 
         init_logging();
@@ -552,19 +554,42 @@ namespace srouter
             throw std::runtime_error{"This Session Router build only supports embedded configurations!"};
 #else
             log::debug(logcat, "Initializing TUN device");
-            auto tun = _loop->make_shared<handlers::TunEndpoint>(*this);
+            _tun = _loop->make_shared<handlers::TunEndpoint>(*this);
 
             // only (full) clients should have DNS, relays have no need for it
             if (!is_service_node)
-                tun->setup_dns();
+            {
+                auto& dns_bind = config().dns._bind_addrs;
+                if (dns_bind.empty())
+                {
+                    // This configuration is allowed (a service-only client might use it), although a bit unusual
+                    log::warning(
+                        logcat, "[bind]:bind is empty: DNS disabled.  Making outbound paths will not be possible");
+                }
+                else
+                {
+                    for (const auto& addr : dns_bind)
+                    {
+                        try
+                        {
+                            if (!_dns)
+                                _dns = std::make_shared<dns::Listener>(*this, addr);
+                            else
+                                _dns->listen(loop, addr);
+                        }
+                        catch (const std::exception& e)
+                        {
+                            log::error(logcat, "Failed to initialize DNS listener on {}: {}", addr, e.what());
+                        }
+                    }
+                }
+            }
 
             log::info(
                 log_global,
                 "Session Router internal network: {} on device {}",
-                tun->get_ipv4_network(),
-                tun->get_if_name());
-
-            _tun = std::move(tun);
+                _tun->get_ipv4_network(),
+                _tun->get_if_name());
 #endif
         }
         else
@@ -951,7 +976,8 @@ namespace srouter
     void Router::on_test_ping()
     {
 #ifndef SROUTER_EMBEDDED_ONLY
-        _router_testing->incoming_ping();
+        if (_router_testing)
+            _router_testing->incoming_ping();
 #endif
     }
 
@@ -979,7 +1005,8 @@ namespace srouter
                 srouter::sys::service_manager->stopping();
             }
 
-            _router_testing->stop();
+            if (_router_testing)
+                _router_testing->stop();
 #endif
 
             _session_endpoint->stop(true);
@@ -989,6 +1016,14 @@ namespace srouter
 
             log::debug(logcat, "closing all connections");
             _link_manager->stop();
+
+#ifndef SROUTER_EMBEDDED_ONLY
+            if (_dns)
+                _dns.reset();
+
+            if (_tun)
+                _tun->stop();
+#endif
 
             auto rv = _loop_ticker->stop();
             log::debug(logcat, "router loop ticker stopped {}successfully!", rv ? "" : "un");
@@ -1020,6 +1055,9 @@ namespace srouter
             _link_endpoint = nullptr;
             _link_manager.reset();
 
+            if (_tun)
+                _tun.reset();
+
             if (_router_close_cb)
                 _router_close_cb();
 
@@ -1030,6 +1068,24 @@ namespace srouter
             _close_promise.set_value();
             log::info(log_global, "Session Router has stopped");
         });
+    }
+
+    std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv4& addr) const
+    {
+#ifndef SROUTER_EMBEDDED_ONLY
+        if (_tun)
+            return _tun->reverse_lookup(addr);
+#endif
+        return {std::nullopt, false};
+    }
+
+    std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv6& addr) const
+    {
+#ifndef SROUTER_EMBEDDED_ONLY
+        if (_tun)
+            return _tun->reverse_lookup(addr);
+#endif
+        return {std::nullopt, false};
     }
 
     const srouter::net::Platform* Router::net() const

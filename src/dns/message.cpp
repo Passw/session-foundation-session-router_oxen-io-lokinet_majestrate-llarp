@@ -1,43 +1,42 @@
 #include "message.hpp"
 
-#include "dns.hpp"
 #include "encode.hpp"
-#include "net/ip_packet.hpp"
+#include "flags.hpp"
 #include "srv_data.hpp"
 #include "util/logging.hpp"
 
-#include <nlohmann/json.hpp>
 #include <oxenc/endian.h>
 #include <sodium/crypto_shorthash_siphash24.h>
 
 #include <array>
 #include <chrono>
-#include <ranges>
+#include <limits>
 #include <stdexcept>
 
 namespace srouter::dns
 {
     static auto logcat = log::Cat("dns");
 
-    Message::Message(const Question& question) : hdr_id{0}, hdr_fields{} { questions.push_back(question); }
+    Message::Message(Question question) : hdr_id{0}, hdr_fields{}, question{std::move(question)} {}
 
     Message Message::clone() const
     {
         Message c;
         c.hdr_id = hdr_id;
         c.hdr_fields = hdr_fields;
-        c.questions = questions;
+        c.question = question;
         c.additional_edns = additional_edns;
         // Don't copy answers, or rr_name_override (which is just an intermediate answers helper)
         return c;
     }
 
-    std::vector<std::byte> Message::encode() const
+    std::vector<std::byte> Message::encode(bool max_size) const
     {
         std::vector<std::byte> tmp;
-        // If the client signalled EDNS support then we can use a larger payload, otherwise DNS is
-        // limited to 512 bytes.
-        tmp.resize(additional_edns ? additional_edns->max_payload() : 512);
+        tmp.resize(
+            max_size              ? std::numeric_limits<uint16_t>::max()
+                : additional_edns ? additional_edns->max_payload()
+                                  : 512);
 
         prev_names_t prev_names;
         std::span<std::byte> buf{tmp};
@@ -47,22 +46,59 @@ namespace srouter::dns
             buf,
             hdr_id,
             hdr_fields,
-            static_cast<uint16_t>(questions.size()),
+            question ? uint16_t{1} : uint16_t{0},
             static_cast<uint16_t>(answers.size()),
             static_cast<uint16_t>(0 /*authorities.size()*/),
             static_cast<uint16_t>(additional_edns ? 1 : 0 /*additional.size()*/));
 
-        for (const auto& question : questions)
-            question.encode(buf, prev_names, buf_offset);
+        if (question)
+            question->encode(buf, prev_names, buf_offset);
 
-        for (auto& a : answers)
-            a->encode(buf, prev_names, buf_offset);
+        // If we run out of space and have to truncate then we are still supposed to include the
+        // EDNS part of the additional response, but other answers don't have to be: so if we hit
+        // such a failure, we're back up to this point (throwing away all the answers) so that we
+        // can include the EDNS response info.
+        auto initial_len = buf_offset;
 
-        if (additional_edns)
-            additional_edns->encode(buf, prev_names, buf_offset);
+        try
+        {
+            for (auto& a : answers)
+                a->encode(buf, prev_names, buf_offset);
+
+            if (additional_edns)
+                additional_edns->encode(buf, prev_names, buf_offset);
+        }
+        catch (const std::out_of_range&)
+        {
+            log::debug(logcat, "Response too large!  Setting truncation bit");
+
+            oxenc::write_host_as_big(hdr_fields | flags_TC, tmp.data() + 2);
+
+            // Reset our buffer position back to just after the answers were added.  We do this even
+            // if we aren't going to add EDNS stuff below, because we are not supposed to include
+            // partial RR entries in a truncated reply.
+            buf = std::span{tmp.data() + initial_len, tmp.size() - initial_len};
+            buf_offset = initial_len;
+
+            if (additional_edns)
+            {
+                try
+                {
+                    additional_edns->encode(buf, prev_names, buf_offset);
+                }
+                catch (const std::out_of_range&)
+                {
+                    // If this failed to then we don't have enough space for the EDNS so we'll just have to omit it
+                    log::debug(logcat, "Unable to fit EDNS additional into DNS response!");
+                    buf = std::span{tmp.data() + initial_len, tmp.size() - initial_len};
+                    buf_offset = initial_len;
+                }
+            }
+        }
 
         // Trim the excess:
         tmp.resize(tmp.size() - buf.size());
+        tmp.shrink_to_fit();
 
         return tmp;
     }
@@ -116,15 +152,20 @@ namespace srouter::dns
     {
         if (client_ip.size() != 4 && client_ip.size() != 16)
             throw std::logic_error{"Invalid client IP for Message::extract_question"};
-        auto maybe = std::make_optional<Message>();
-        auto& m = *maybe;
+        auto result = std::make_optional<Message>();
+        auto& m = *result;
         uint16_t qd_count, an_count, ns_count, ar_count;
         if (!extract_ints(buf, m.hdr_id, m.hdr_fields, qd_count, an_count, ns_count, ar_count))
         {
-            maybe.reset();
-            return maybe;
+            result.reset();
+            return result;
         }
-        m.questions.resize(qd_count);
+        if (qd_count > 1)
+        {
+            log::warning(logcat, "Ignoring archaic DNS request with {} > 1 questions", qd_count);
+            m.bad_extract = true;
+            return result;
+        }
         // Ignore these:
         // m.answers.resize(an_count);
         // m.authorities.resize(ns_count);
@@ -132,9 +173,12 @@ namespace srouter::dns
 
         try
         {
-            for (auto& q : m.questions)
+            if (qd_count)
+            {
+                auto& q = m.question.emplace();
                 if (!q.extract(buf))
                     throw std::invalid_argument{"invalid question"};
+            }
 
             // Skip any answers or authority records:
             for (uint16_t i = 0; i < an_count; i++)
@@ -245,21 +289,9 @@ namespace srouter::dns
         catch (const std::exception& e)
         {
             log::debug(logcat, "failed to parse DNS message: {}", e.what());
-            maybe.reset();
+            m.bad_extract = true;
         }
 
-        return maybe;
-    }
-
-    nlohmann::json Message::ToJSON() const
-    {
-        auto result = nlohmann::json{{"id", hdr_id}, {"fields", hdr_fields}};
-        auto& ques = (result["questions"] = nlohmann::json::array());
-        auto& ans = (result["answers"] = nlohmann::json::array());
-        for (const auto& q : questions)
-            ques.push_back(q.ToJSON());
-        for (const auto& a : answers)
-            ans.push_back(a->ToJSON());
         return result;
     }
 
@@ -271,14 +303,14 @@ namespace srouter::dns
 
     void Message::add_nodata_reply()
     {
-        if (not questions.empty())
+        if (question)
             hdr_fields |= reply_flags;
     }
 
     template <std::derived_from<ResourceRecord> RR, typename... Args>
     void make_reply(Message& m, std::chrono::seconds ttl, Args&&... args)
     {
-        if (m.questions.empty())
+        if (!m.question)
             return;
 
         m.hdr_fields |= reply_flags;
@@ -304,32 +336,32 @@ namespace srouter::dns
 
     void Message::add_txt_reply(std::string_view txt, std::chrono::seconds ttl) { make_reply<RR_TXT>(*this, ttl, txt); }
 
-    void Message::set_nx_reply()
+    Message&& Message::apply_rcode(uint16_t rcode, bool authoritative)
     {
-        answers.clear();
-        // authorities.clear();
-        // additional.clear();
-
-        if (questions.size())
+        hdr_fields = set_rcode(hdr_fields, rcode);
+        if (question)
         {
-            hdr_fields |= flags_RCODENxDomain;
-            // authorative response with recursion available
             hdr_fields |= reply_flags;
+            if (authoritative)
+                hdr_fields |= flags_AA;
+            else
+                hdr_fields &= ~flags_AA;
         }
+        return std::move(*this);
     }
 
-    void Message::set_serv_fail()
+    Message&& Message::servfail()
     {
         answers.clear();
-
-        if (questions.size())
-        {
-            hdr_fields |= flags_RCODEServFail;
-            // authorative response with recursion available
-            hdr_fields |= reply_flags;
-            // A servfail is not an authoritative answer, so clear that bit:
-            hdr_fields &= ~flags_AA;
-        }
+        return apply_rcode(RCODE_ServFail);
     }
+
+    Message&& Message::formerr()
+    {
+        answers.clear();
+        return apply_rcode(RCODE_FormErr);
+    }
+
+    Message&& Message::nxdomain(bool authoritative) { return apply_rcode(RCODE_NxDomain, authoritative); }
 
 }  // namespace srouter::dns

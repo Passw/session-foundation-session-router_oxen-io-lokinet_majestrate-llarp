@@ -3,7 +3,7 @@
 #include "contact/relay_contact.hpp"
 #include "crypto/key_manager.hpp"
 #include "handlers/session.hpp"
-#include "handlers/tun_base.hpp"
+#include "handlers/tun.hpp"
 #include "path/build_stats.hpp"
 #include "path/path_context.hpp"
 #include "profiling.hpp"
@@ -17,6 +17,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <type_traits>
 
 namespace oxenmq
 {
@@ -26,6 +27,10 @@ namespace oxenmq
 namespace srouter
 {
 
+    namespace dns
+    {
+        class Listener;
+    }
     namespace link
     {
         struct Connection;
@@ -91,6 +96,12 @@ namespace srouter
 
         ~Router();
 
+        // Non-copyable/movable:
+        Router(const Router&) = delete;
+        Router(Router&&) = delete;
+        Router& operator=(const Router&) = delete;
+        Router& operator=(Router&&) = delete;
+
       private:
         // Internal functions called during construction:
         void configure();
@@ -126,7 +137,8 @@ namespace srouter
         link::Endpoint* _link_endpoint = nullptr;
 
         // These are only created in full platform mode (not embedded clients)
-        std::shared_ptr<handlers::TunEPBase> _tun;
+        std::shared_ptr<handlers::TunEndpoint> _tun;
+        std::shared_ptr<dns::Listener> _dns;
         std::shared_ptr<vpn::Platform> _vpn;
         std::shared_ptr<RoutePoker> _route_poker;
 
@@ -197,7 +209,16 @@ namespace srouter
 
         bool is_fully_meshed() const;
 
-        const std::shared_ptr<handlers::TunEPBase>& tun_endpoint() { return _tun; }
+        const std::shared_ptr<handlers::TunEndpoint>& tun_endpoint() { return _tun; }
+
+        // Looks up the given IP in our TUN mapping and, if it is a TUN address and maps to a remote, returns the
+        // network address of the mapped-to address.  The `.second` part of the result indicates
+        // whether the IP is on our TUN range, even if it is unmapped.  That is, it can return:
+        // {address, true} -- address in tun range, and mapped
+        // {nullopt, true} -- address in tun range, but not mapped to a remote
+        // {nullopt, false} -- address not in tun range (or no tun at all)
+        std::pair<std::optional<NetworkAddress>, bool> reverse_lookup(const ipv4& addr) const;
+        std::pair<std::optional<NetworkAddress>, bool> reverse_lookup(const ipv6& addr) const;
 
         // Returns the net Platform pointer, or nullptr if this is an embedded client.
         const srouter::net::Platform* net() const;

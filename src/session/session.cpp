@@ -664,6 +664,7 @@ namespace srouter::session
             return;
         }
 
+#ifndef SROUTER_EMBEDDED_ONLY
         // Otherwise we're not embedded; if the other side also isn't then this is just a raw IP
         // packet to handle via the tun endpoint, and the same for UDP packets from embedded
         // remotes (which also send raw UDP packets):
@@ -682,7 +683,7 @@ namespace srouter::session
         // NOTE: At this time, tun clients always support ipv4, but ipv4 is only activated on use
         // (unlike IPv6 which is activated all the time).  If this changes, a check for that should
         // short-circuit the call to map_session below.
-        if (!_r.embedded() && pkt.is_ipv4() && !ipv4_mapped)
+        if (pkt.is_ipv4() && !ipv4_mapped)
         {
             if (!_parent.map_session_v4(*this))
             {
@@ -692,7 +693,9 @@ namespace srouter::session
             ipv4_mapped = true;
         }
 
+        assert(_r.tun_endpoint());  // (We return above if embedded)
         _r.tun_endpoint()->handle_inbound_packet(std::move(pkt), dgram_type, _remote);
+#endif
     }
 
     void Session::publish_client_contact(std::string_view encrypted_cc)

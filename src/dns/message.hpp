@@ -4,8 +4,6 @@
 #include "question.hpp"
 #include "rr.hpp"
 
-#include <nlohmann/json_fwd.hpp>
-
 #include <optional>
 
 namespace srouter
@@ -19,9 +17,9 @@ namespace srouter
         struct Message
         {
             Message() = default;
-            explicit Message(const Question& question);
+            explicit Message(Question question);
 
-            // Non-copyable; see clone() if you want a copy with just the questions.
+            // Non-copyable; see clone() if you want a copy with just the question.
             Message(const Message&) = delete;
 
             Message(Message&&) = default;
@@ -29,15 +27,22 @@ namespace srouter
             // Clones the message with question/flags/edns response data, but with no answers
             Message clone() const;
 
-            nlohmann::json ToJSON() const;
-
             static constexpr auto DEFAULT_ANSWER_TTL = 10s;
 
-            // These two clear any answers that may have been added and then set the appropriate
-            // flags for a NXDomain (i.e. authoritative reply that the requested thing does not
-            // exist) or a ServFail (i.e. we don't know how to answer, maybe try someone else).
-            void set_nx_reply();
-            void set_serv_fail();
+            // These two methods mutates the message into a SERVFAIL or FORMERR response, clearing
+            // all answers.  These return an value reference to the object itself to allow the call
+            // to operator like an implicit `std::move()` call as this is typically a final
+            // operation; in particular this means: `f(msg.nxdomain());` is equivalent to
+            // `msg.nxdomain(); f(std::move(msg));`.
+            Message&& servfail();
+            Message&& formerr();
+
+            // Mutate message into a NXDOMAIN but without clearing existing answers.  Returns an
+            // rvalue reference to the current object to allow the result to be easily moved away.
+            //
+            // The message with include the authoritative flag (AA) if the argument is omitted (or
+            // true), and omit it if false.
+            Message&& nxdomain(bool authoritative = true);
 
             // This clears any answers and sets the appropriate header flags for a BADCOOKIE
             // response.  Note that this is only valid when the message has `additional_edns` as
@@ -50,7 +55,7 @@ namespace srouter
             void set_rr_name(std::optional<std::string> name);
             std::string_view get_rr_name() const
             {
-                return rr_name_override ? *rr_name_override : questions.size() ? questions.front().qname : ""sv;
+                return rr_name_override ? *rr_name_override : question ? question->qname : ""sv;
             }
 
             void add_nodata_reply();
@@ -68,24 +73,35 @@ namespace srouter
 
             void add_ptr_reply(std::string_view name, std::chrono::seconds ttl = DEFAULT_ANSWER_TTL);
 
-            std::vector<std::byte> encode() const;
+            // Encodes a response.  If max_size is true then we allow up to 65535 bytes for the
+            // response, otherwise we allow either the EDNS max payload (up to 1232), or 512
+            // (without EDNS in the query).
+            std::vector<std::byte> encode(bool max_size = false) const;
 
             // Parses a question Message from the given buf, removing the question from the prefix
             // of buf.  `server_cookie_secret` and `client_addr` contains information needed for DNS
             // cookie handling; `server_cookie_secret` is something derived from the SR private key
             // seed + startup time, while client_addr is the raw bytes of the IP address (4 or 16
             // bytes for IPv4/IPv6, respectively).
+            //
+            // Returns nullopt if the request cannot be parsed at all; returns a Message with
+            // `bad_extract` set to true if it was parseable but not valid and should be immediately
+            // replied to with an error (which will already be set up in the returned Message
+            // object).
             static std::optional<Message> extract_question(
                 std::span<const std::byte>& buf,
                 std::span<const std::byte, 16> server_cookie_secret,
                 std::span<const std::byte> client_addr);
+
+            // See extract_question, above.
+            bool bad_extract{false};
 
             std::string to_string() const;
 
             uint16_t hdr_id;
             uint16_t hdr_fields;
 
-            std::vector<Question> questions;
+            std::optional<Question> question;
             std::vector<std::unique_ptr<ResourceRecord>> answers;
 
             // Currently unused:
@@ -100,6 +116,8 @@ namespace srouter
 
           private:
             void add_reply(RRClass cls, RRType type, std::vector<std::byte> data, std::chrono::seconds ttl);
+
+            Message&& apply_rcode(uint16_t rcode, bool authoritative = false);
         };
 
     }  // namespace dns
