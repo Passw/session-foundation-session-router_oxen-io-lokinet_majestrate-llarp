@@ -83,10 +83,16 @@ namespace srouter::link
       public:
         explicit Endpoint(Manager& lm);
 
+        ~Endpoint();
+
         Manager& manager;
         Router& router;
 
       private:
+        // The network loop object.  This *must* be declared before most of the below as some of the
+        // things below have destructors that run in this loop.
+        std::unique_ptr<quic::Loop> loop;
+
         // Stores established relay-to-relay connections; only used by service nodes.
         std::unordered_map<RouterID, relay_conn> relay_conns;
 
@@ -114,11 +120,14 @@ namespace srouter::link
         // only.
         std::unordered_map<quic::ConnectionID, std::shared_ptr<link::Connection>> inbound_clients;
 
-        std::unique_ptr<quic::Loop> loop;
         std::shared_ptr<quic::Endpoint> endpoint;
         std::shared_ptr<quic::Ticker> redundancy_ticker;
         std::shared_ptr<quic::Ticker> dereg_conn_ticker;
         std::shared_ptr<quic::GNUTLSCreds> tls_creds;
+
+        // Canary object that gets set to false during destruction to help short-circuit lambda that
+        // could potentially outlive `this`:
+        std::shared_ptr<bool> canary = std::make_shared<bool>(true);
 
       public:
         void start_tickers();

@@ -797,6 +797,8 @@ namespace srouter::link
         });
     }
 
+    Endpoint::~Endpoint() { *canary = false; }
+
     void Endpoint::on_conn_closed(quic::Connection& conn, uint64_t ec)
     {
         auto alpn = conn.selected_alpn();
@@ -815,13 +817,26 @@ namespace srouter::link
             return;
         }
 
-        router.loop.call([this, connptr = conn.shared_from_this(), ec] {
-            auto& conn = *connptr;
-            auto alpn = conn.selected_alpn();
+        std::optional<RouterID> rid;
+        if (conn.remote_key().size() == RouterID::SIZE)
+            rid.emplace(conn.remote_key().first<RouterID::SIZE>());
 
-            std::optional<RouterID> rid;
-            if (conn.remote_key().size() == RouterID::SIZE)
-                rid.emplace(conn.remote_key().first<RouterID::SIZE>());
+        // NB: we must not capture a shared_ptr to conn here, because this lambda could outlive
+        // `this`; the canary lets us early-return if that happens, but the Connection destruction
+        // relies on `this.loop` to destroy: thus if we capture it we could delay that destruction
+        // attempt beyond the end of `this.loop`.  Thus we capture everything we need into the
+        // lambda here, while we are still in the network loop.
+
+        router.loop.call([this,
+                          alive = canary,
+                          conn_refid = conn.reference_id(),
+                          alpn,
+                          rid = std::move(rid),
+                          remote_addr = conn.remote(),
+                          ec,
+                          was_inbound = conn.is_inbound()] {
+            if (!*alive)
+                return;
 
             bool found = false;
 
@@ -833,14 +848,14 @@ namespace srouter::link
                 {
                     assert(router.is_service_node);
                     auto& relcon = it->second;
-                    if (relcon.inbound && connptr == relcon.inbound->conn)
+                    if (relcon.inbound && relcon.inbound->conn && relcon.inbound->conn->reference_id() == conn_refid)
                     {
                         relcon.close(true);
                         found = true;
                         log::debug(
                             logcat, "Inbound connection from {} closed (ec={})", rid->to_network_address(true), ec);
                     }
-                    if (relcon.outbound && connptr == relcon.outbound->conn)
+                    if (relcon.outbound && relcon.outbound->conn && relcon.outbound->conn->reference_id() == conn_refid)
                     {
                         relcon.close(false);
                         found = true;
@@ -875,10 +890,10 @@ namespace srouter::link
                     log::debug(
                         logcat,
                         "Closed redundant connection {} {} @ {} (cid={})",
-                        conn.is_inbound() ? "from" : "to",
+                        was_inbound ? "from" : "to",
                         rid->to_network_address(true),
-                        conn.remote(),
-                        conn.reference_id());
+                        remote_addr,
+                        conn_refid);
                     found = true;
                 }
             }
@@ -886,11 +901,11 @@ namespace srouter::link
             {
                 if (router.is_service_node)
                 {
-                    assert(conn.is_inbound());  // Relays do make outbound client conns for testing,
-                                                // but they do not use this close callback.
-                    if (auto it = inbound_clients.find(conn.reference_id()); it != inbound_clients.end())
+                    assert(was_inbound);  // Relays do make outbound client conns for testing,
+                                          // but they do not use this close callback.
+                    if (auto it = inbound_clients.find(conn_refid); it != inbound_clients.end())
                     {
-                        log::debug(logcat, "Client connection from {} closed (ec={})", conn.remote(), ec);
+                        log::debug(logcat, "Client connection from {} closed (ec={})", remote_addr, ec);
                         it->second->close();
                         inbound_clients.erase(it);
                         found = true;
@@ -898,9 +913,10 @@ namespace srouter::link
                 }
                 else
                 {
-                    assert(conn.is_outbound());
+                    assert(!was_inbound);
 
-                    if (auto it = client_conns.find(*rid); it != client_conns.end() and connptr == it->second->conn)
+                    if (auto it = client_conns.find(*rid); it != client_conns.end() && it->second && it->second->conn
+                        && it->second->conn->reference_id() == conn_refid)
                     {
                         log::debug(
                             logcat,
@@ -912,12 +928,13 @@ namespace srouter::link
                     }
                 }
             }
-            else if (conn.is_outbound())
+            else if (!was_inbound)
             {
                 // Unknown or empty ALPN -- this is an outbound conn that didn't establish (and thus
                 // didn't negotiate the ALPN):
                 assert(rid);  // Outbound conns start out with the target pubkey known
-                if (auto it = pending_outbound.find(*rid); it != pending_outbound.end() and connptr == it->second->conn)
+                if (auto it = pending_outbound.find(*rid); it != pending_outbound.end() && it->second
+                    && it->second->conn && it->second->conn->reference_id() == conn_refid)
                 {
                     pending_outbound.erase(it);
                     found = true;
@@ -931,10 +948,10 @@ namespace srouter::link
                 log::warning(
                     logcat,
                     "Closed connection {} {} @ {} (cid={}, ec={})",
-                    conn.is_inbound() ? "from" : "to",
+                    was_inbound ? "from" : "to",
                     rid ? rid->to_string() : "",
-                    conn.remote(),
-                    conn.reference_id(),
+                    remote_addr,
+                    conn_refid,
                     ec);
 
             if (not router.is_service_node)
