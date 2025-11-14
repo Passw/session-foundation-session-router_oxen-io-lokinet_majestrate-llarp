@@ -100,8 +100,21 @@ namespace srouter::dns
     RR_TXT::RR_TXT(std::string rr_name, std::chrono::seconds ttl, std::string_view value)
         : RR_bytes{std::move(rr_name), ttl}
     {
-        auto* bytes = reinterpret_cast<const std::byte*>(value.data());
-        rData.assign(bytes, bytes + value.size());
+        // TXT records get encoded as {SZ}{data} where SZ is one byte indicating the length of data,
+        // however they can be repeated which is why we have SZ twice: once for the rData, but then
+        // again internally for multiple possible strings within the answer.
+        //
+        // In total that means we are storing the value length plus 1 additional byte per 255 length
+        // (or part thereof):
+        rData.reserve(value.size() + (value.size() + 254) / 255);
+        do
+        {
+            auto* bytes = reinterpret_cast<const std::byte*>(value.data());
+            size_t size = std::min<size_t>(255, value.size());
+            rData.push_back(static_cast<std::byte>(size));
+            rData.insert(rData.end(), bytes, bytes + size);
+            value.remove_prefix(size);
+        } while (!value.empty());
     }
 
     void RR_target::encode_data(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const

@@ -72,7 +72,16 @@ namespace srouter::path
 
         path_hop_stringifier hop_string() const;
 
-        std::vector<std::pair<std::string, std::string>> get_hops_strings_and_ips() const;
+        struct Info
+        {
+            // relay pubkeys and IPv4 addresses, from edge -> pivot (or final relay)
+            std::vector<std::pair<RouterID, ipv4>> relays;
+            sys_ms expiry = {};
+            std::chrono::milliseconds ping_mean;
+            std::chrono::microseconds ping_jitter;
+            int ping_responses, ping_timeouts, ping_recent_timeouts;
+        };
+        Info get_info() const;
 
         sys_ms LastRemoteActivityAt() const { return last_recv_msg; }
 
@@ -219,9 +228,13 @@ namespace srouter::path
         steady_ms next_ping{};
         int ping_responses{0}, ping_timeouts{0};
         int ping_recent_timeouts{0};
+        std::chrono::milliseconds ping_last{0ms};
         // Cumulative time of all `ping_responses` pings (divide by ping_responses for an average).
         std::chrono::milliseconds ping_cumulative{0ms};
-        int64_t ping_sq_cumulative{0};
+        // This is the cumulative absolute differences of all received sequential pings.  E.g. if we
+        // have 4 pings [100, 101, 98, 98] then this equals (|100-101| + |101-98| + |98-98|).
+        // Dividing this by `ping_responses - 1` gives jitter.
+        std::chrono::milliseconds ping_abs_diffs{0ms};
     };
 
 }  // namespace srouter::path

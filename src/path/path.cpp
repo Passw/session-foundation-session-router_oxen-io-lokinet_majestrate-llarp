@@ -72,9 +72,8 @@ namespace srouter::path
         double success_pct = p.ping_responses / (double)(p.ping_responses + p.ping_timeouts) * 100.0;
         if (p.ping_responses == 1)
             return "{:.1f}%, {:.0f}ms avg"_format(success_pct, mean);
-
-        double sd = std::sqrt(((double)p.ping_sq_cumulative - p.ping_responses * mean * mean) / (p.ping_responses - 1));
-        return "{:.1f}%, {:.0f}ms avg, {:.1f}ms s.d."_format(success_pct, mean, sd);
+        double jitter = p.ping_responses < 2 ? 0.0 : (double)p.ping_abs_diffs.count() / (p.ping_responses - 1);
+        return "{:.1f}%, {:.0f}ms avg, {:.1f}ms jitter"_format(success_pct, mean, jitter);
     }
 
     void Path::do_ping(steady_ms start_time)
@@ -96,10 +95,11 @@ namespace srouter::path
                 auto time_taken = now - start_time;
                 if (resp.ok())
                 {
-                    ping_responses++;
+                    if (++ping_responses > 1)
+                        ping_abs_diffs += time_taken >= ping_last ? time_taken - ping_last : ping_last - time_taken;
+                    ping_last = time_taken;
                     ping_recent_timeouts = 0;
                     ping_cumulative += time_taken;
-                    ping_sq_cumulative += time_taken.count() * time_taken.count();
 
                     if (resp.body == messages::OK_RESPONSE)
                         log::debug(
@@ -318,13 +318,29 @@ namespace srouter::path
     }
     path_hop_stringifier Path::hop_string() const { return {hops}; }
 
-    std::vector<std::pair<std::string, std::string>> Path::get_hops_strings_and_ips() const
+    Path::Info Path::get_info() const
     {
-        std::vector<std::pair<std::string, std::string>> ret;
+        Info ret{};
+        ret.expiry = _expiry;
+        if (ping_responses)
+            ret.ping_mean = std::chrono::round<std::chrono::milliseconds>(
+                std::chrono::nanoseconds{ping_cumulative} / ping_responses);
+        if (ping_responses > 1)
+            ret.ping_jitter = std::chrono::round<std::chrono::microseconds>(
+                std::chrono::nanoseconds{ping_abs_diffs} / (ping_responses - 1));
+        ret.ping_responses = ping_responses;
+        ret.ping_timeouts = ping_timeouts;
+        ret.ping_recent_timeouts = ping_recent_timeouts;
         for (const auto& hop : hops)
         {
-            auto rc = _router.node_db().get_rc(hop.router_id);
-            ret.emplace_back(NetworkAddress{hop.router_id, false}.to_string(), rc->addr().to_ipv4().to_string());
+            auto* rc = _router.node_db().get_rc(hop.router_id);
+            if (rc)
+                ret.relays.emplace_back(hop.router_id, rc->addr().to_ipv4());
+            else
+            {
+                log::warning(logcat, "Couldn't find RC of a router on our path?!");
+                ret.relays.emplace_back();
+            }
         }
         return ret;
     }

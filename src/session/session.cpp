@@ -1666,17 +1666,17 @@ namespace srouter::session
             _current_thop->downstream, "session_control"s, std::move(data), nullptr);
     }
 
-    std::vector<std::pair<std::string, std::string>> OutboundSession::current_path() const
+    path::Path::Info OutboundSession::current_path_info() const
     {
         if (_current_path)
-            return _current_path->get_hops_strings_and_ips();
+            return _current_path->get_info();
         return {};
     }
 
-    std::vector<std::pair<std::string, std::string>> InboundClientSession::current_path() const
+    path::Path::Info InboundClientSession::current_path_info() const
     {
         if (_current_path)
-            return _current_path->get_hops_strings_and_ips();
+            return _current_path->get_info();
         return {};
     }
 

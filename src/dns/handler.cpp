@@ -8,6 +8,8 @@
 #include "router/router.hpp"
 #include "util/logging.hpp"
 
+#include <ranges>
+
 namespace srouter::dns
 {
 #ifdef SROUTER_EMBEDDED_ONLY
@@ -295,6 +297,42 @@ namespace srouter::dns
                 }
                 else
                     msg.nxdomain();
+            }
+
+            // TXT on path.PUBKEY.{sesh,snode} returns the current path info to that node, if a
+            // session is established (nxdomain if no active session).
+            else if (sub.size() == 1 && sub.front() == "path")
+            {
+                log::debug(logcat, "TXT path request for {}.{}", hostname, tld);
+                if (auto maybe_netaddr = try_making<NetworkAddress>("{}.{}"_format(hostname, tld)))
+                {
+                    if (auto* s = _router.session_endpoint().get_session(*maybe_netaddr); s && s->is_established())
+                    {
+                        auto path = s->current_path_info();
+                        msg.add_txt_reply(
+                            "d={}; path={}; ttl={}; p={}; pj={}.{:03d}; pr={}; pt={}; pT={}"_format(
+                                s->is_outbound ? "out" : "in",
+                                fmt::join(
+                                    std::views::transform(
+                                        path.relays, [](const auto& r) { return "{}@{}"_format(r.first, r.second); }),
+                                    " "),
+                                std::chrono::round<std::chrono::seconds>(path.expiry - srouter::time_now_ms()).count(),
+                                path.ping_mean.count(),
+                                path.ping_jitter / 1ms,
+                                (path.ping_jitter % 1ms).count(),
+                                path.ping_responses,
+                                path.ping_timeouts,
+                                path.ping_recent_timeouts),
+                            0s);
+                    }
+                    else
+                        msg.add_txt_reply("d=none");
+                }
+                else
+                {
+                    log::warning(logcat, "Failed to parse network address {}.{} for path query", hostname, tld);
+                    msg.nxdomain();
+                }
             }
             else
                 msg.nxdomain();
