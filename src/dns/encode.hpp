@@ -28,7 +28,15 @@ namespace srouter::dns
     /// compression, and buf_offset contains the relative positive of the beginning of buf to the
     /// start of the message.  New names added here should be added into it so that later repeated
     /// names (or name suffixes) can use compression.
-    void encode_name(std::span<std::byte>& buf, std::string_view name, prev_names_t& prev_names, uint16_t& buf_offset);
+    ///
+    /// These should normally be provided so that answers can compress names by pointing back into
+    /// the question, but can be nullptr to disable tracking (such as when dealing with
+    /// pre-compressed name data).
+    void encode_name(std::span<std::byte>& buf, std::string_view name, prev_names_t* prev_names, uint16_t* buf_offset);
+
+    /// Extracts the bytes making up an encoded name from the buffer, returning them and shortening
+    /// buf by the extracted bytes.
+    std::optional<std::span<const std::byte>> extract_name_data(std::span<const std::byte>& buf);
 
     /// decode name from buffer, mutating the buffer to begin just past the extracted name.  Return
     /// nullopt (without mutating buf) on failure.  Does not currently support compressed names (but

@@ -45,6 +45,11 @@ namespace srouter::dns
         // but can also be called if there is a need to listen on multiple addresses.
         void listen(quic::Loop& loop, const quic::Address& bind);
 
+        // Set to the last port on which we set up a listener; this is mainly intended to be used
+        // when listening on an address with a 0 port which will *actually* listen on a high random
+        // port.
+        uint16_t last_port;
+
         ~Listener();
     };
 

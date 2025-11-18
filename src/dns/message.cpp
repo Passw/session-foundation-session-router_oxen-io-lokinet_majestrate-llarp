@@ -4,6 +4,7 @@
 #include "flags.hpp"
 #include "srv_data.hpp"
 #include "util/logging.hpp"
+#include "util/logging/buffer.hpp"
 
 #include <oxenc/endian.h>
 #include <sodium/crypto_shorthash_siphash24.h>
@@ -74,10 +75,12 @@ namespace srouter::dns
 
             oxenc::write_host_as_big(hdr_fields | flags_TC, tmp.data() + 2);
 
-            // Reset our buffer position back to just after the answers were added.  We do this even
-            // if we aren't going to add EDNS stuff below, because we are not supposed to include
-            // partial RR entries in a truncated reply.
+            // Reset our buffer position back to just after the questions were added.  We do this
+            // even if we aren't going to add EDNS stuff below, because we are not supposed to
+            // include partial RR entries in a truncated reply.
             buf = std::span{tmp.data() + initial_len, tmp.size() - initial_len};
+            // Replace the answers count with a 0:
+            oxenc::write_host_as_big(0, tmp.data() + 2 + 2 + 2);
             buf_offset = initial_len;
 
             if (additional_edns)
@@ -92,6 +95,8 @@ namespace srouter::dns
                     log::debug(logcat, "Unable to fit EDNS additional into DNS response!");
                     buf = std::span{tmp.data() + initial_len, tmp.size() - initial_len};
                     buf_offset = initial_len;
+                    // Replace the additional count with a 0:
+                    oxenc::write_host_as_big(0, tmp.data() + 2 + 2 + 2 + 2 + 2);
                 }
             }
         }
@@ -204,7 +209,7 @@ namespace srouter::dns
                     throw std::invalid_argument{"found invalid multiple additional OPT records"};
 
                 auto max_payload = static_cast<uint16_t>(a_rr->rr_class);
-                m.additional_edns.emplace(std::min<uint16_t>(max_payload, 1232));
+                m.additional_edns.emplace(std::min<uint16_t>(max_payload, 1232), a_rr->ttl);
 
                 std::optional<std::vector<std::byte>> cookie;
                 for (auto optbuf = a_rr->rdata; !optbuf.empty();)
@@ -362,6 +367,206 @@ namespace srouter::dns
         return apply_rcode(RCODE_FormErr);
     }
 
+    Message&& Message::refused()
+    {
+        answers.clear();
+        return apply_rcode(RCODE_Refused);
+    }
+
     Message&& Message::nxdomain(bool authoritative) { return apply_rcode(RCODE_NxDomain, authoritative); }
+
+    std::optional<RawMessage> RawMessage::parse(std::span<const std::byte> buf)
+    {
+        auto result = std::make_optional<RawMessage>();
+        auto& m = *result;
+
+        uint16_t qd_count, an_count, ns_count, ar_count;
+        if (!extract_ints(buf, m.hdr_id, m.hdr_fields, qd_count, an_count, ns_count, ar_count))
+        {
+            log::debug(logcat, "Failed to parse DNS header from raw message");
+            return std::nullopt;
+        }
+
+        m.questions.resize(qd_count);
+        m.answers.resize(an_count);
+        m.authorities.resize(ns_count);
+        m.additional.resize(ar_count);
+
+        for (auto& q : m.questions)
+            q.extract(buf);
+
+        for (auto* sect : {&m.answers, &m.authorities, &m.additional})
+        {
+            for (auto& rr : *sect)
+            {
+                auto name_bytes = extract_name_data(buf);
+                if (!name_bytes)
+                {
+                    log::debug(logcat, "Failed to extract name data from raw message");
+                    return std::nullopt;
+                }
+                log::trace(logcat, "Extracted name bytes: {}", buffer_printer{*name_bytes});
+                rr.name.assign(name_bytes->begin(), name_bytes->end());
+                uint16_t typ, cls;
+                uint32_t ttl;
+                uint16_t rdlen;
+                if (!extract_ints(buf, typ, cls, ttl, rdlen))
+                {
+                    log::debug(logcat, "Failed to extract type/class/ttl/len");
+                    return std::nullopt;
+                }
+                rr.type = static_cast<RRType>(typ);
+                rr.cls = static_cast<RRClass>(cls);
+                rr.ttl = std::chrono::seconds{ttl};
+                if (buf.size() < rdlen)
+                {
+                    log::debug(logcat, "Buffer is too short: {} remaining but rdlen={}", buf.size(), rdlen);
+                    return std::nullopt;
+                }
+                rr.rdata.assign(buf.data(), buf.data() + rdlen);
+                buf = buf.subspan(rdlen);
+            }
+        }
+
+        return result;
+    }
+
+    void RawMessage::rewrite_for(const Message& orig)
+    {
+        // We need to rewrite a few things here:
+        // - replace hdr_id
+        // - update/replace hdr_fields
+        //   - AD should be preserved only if the client used EDNS and had the DO bit set, else
+        //     cleared.
+        //   - CD/RD should be copied from the original client message
+        //   - Clear the TC flag.  (We can set if, if needed, when encoding)
+        // - strip TSIG additional section, if present.
+        // - If the original request used EDNS, replace or append the OPT section in additional
+        // - Else strip the OPT from additional, if present.
+
+        hdr_id = orig.hdr_id;
+        if (!orig.additional_edns || !orig.additional_edns->DO_bit())
+            hdr_fields &= ~flags_AD;
+        hdr_fields &= ~(flags_CD | flags_RD | flags_TC);
+        hdr_fields |= orig.hdr_fields & flags_CD;
+        hdr_fields |= orig.hdr_fields & flags_RD;
+
+        for (auto it = additional.begin(); it != additional.end();)
+        {
+            if (it->type == RRType::OPT || it->type == RRType::TSIG)
+                it = additional.erase(it);
+            else
+                ++it;
+        }
+
+        additional_edns = orig.additional_edns;
+    }
+
+    std::vector<std::byte> RawMessage::encode(bool max_size) const
+    {
+        std::vector<std::byte> tmp;
+        tmp.resize(
+            max_size              ? std::numeric_limits<uint16_t>::max()
+                : additional_edns ? additional_edns->max_payload()
+                                  : 512);
+
+        std::span<std::byte> buf{tmp};
+
+        std::optional<RawRR> edns;
+        if (additional_edns)
+            edns = additional_edns->to_raw();
+
+        write_ints_into(
+            buf,
+            hdr_id,
+            hdr_fields,
+            static_cast<uint16_t>(questions.size()),
+            static_cast<uint16_t>(answers.size()),
+            static_cast<uint16_t>(authorities.size()),
+            static_cast<uint16_t>(additional.size() + (edns ? 1 : 0)));
+
+        size_t header_end = buf.data() - tmp.data();
+
+        bool truncate = false;
+
+        for (auto& q : questions)
+        {
+            try
+            {
+                encode_name(buf, q.name(), nullptr, nullptr);
+                write_ints_into(buf, static_cast<uint16_t>(q.qtype), static_cast<uint16_t>(q.qclass));
+            }
+            catch (const std::out_of_range&)
+            {
+                truncate = true;
+                break;
+            }
+        }
+
+        if (truncate)
+            log::warning(
+                logcat, "Unexpected DNS error: can't find question into {}-byte response message?!", tmp.size());
+
+        // If we fail to write the later sections, we'll back up to here so that we can at least
+        // write the EDNS RR in the additional section:
+        size_t q_end = truncate ? 0 : buf.data() - tmp.data();
+
+        auto write_section = [&](std::span<const RawRR> section) {
+            if (truncate)
+                return;
+            for (const auto& rr : section)
+                if (!rr.write_to(buf))
+                {
+                    truncate = true;
+                    return;
+                }
+        };
+
+        for (auto* sect : {&answers, &authorities, &additional})
+            if (!truncate)
+                write_section(*sect);
+
+        if (!truncate && edns)
+            // Append the EDNS (OPT RR) to the end of additional; this *could* cause truncation
+            // which is why we need to do it here and then try again (under truncate) below.
+            write_section({&*edns, 1});
+
+        if (truncate)
+        {
+            // We couldn't fit the entire reply, so we need to:
+            // - set the TC (truncate) bit in the header flags
+            oxenc::write_host_as_big(hdr_fields | flags_TC, tmp.data() + 2);
+
+            // - throw away any answers/authorities/additionals by backing up to the end of the
+            //   question section.
+            buf = std::span{tmp.data() + q_end, tmp.size() - q_end};
+
+            // - If we couldn't even write the question (which is very strange) then reset the
+            //   question count to 0 and reset the buffer even further back to the end of the
+            //   header:
+            if (q_end == 0) [[unlikely]]
+            {
+                buf = std::span{tmp.data() + header_end, tmp.size() - header_end};
+                oxenc::write_host_as_big(uint16_t{0}, tmp.data() + 4);  // question count
+            }
+
+            // - Set the answers, authorities counts to 0
+            oxenc::write_host_as_big(uint16_t{0}, tmp.data() + 6);  // answer count
+            oxenc::write_host_as_big(uint16_t{0}, tmp.data() + 8);  // authority count
+
+            // - Set the additional count to 1 if we have EDNS info, 0 otherwise.
+            oxenc::write_host_as_big(edns ? uint16_t{1} : uint16_t{0}, tmp.data() + 10);  // additional count
+
+            // - Write the EDNS (OPT) RR for the additional section
+            //   - If *this* fails to write then also reset additional to 0
+            if (edns && !edns->write_to(buf))
+                oxenc::write_host_as_big(uint16_t{0}, tmp.data() + 10);  // additional count
+        }
+
+        // Trim the excess:
+        tmp.resize(tmp.size() - buf.size());
+        tmp.shrink_to_fit();
+        return tmp;
+    }
 
 }  // namespace srouter::dns

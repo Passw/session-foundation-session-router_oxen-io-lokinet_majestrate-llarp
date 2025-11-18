@@ -70,12 +70,15 @@ namespace srouter::dns
 
                     // We don't need to worry about keep-alive here because we own the handler, and
                     // so if it's calling something then `this` must still be alive.
-                    _handler(pkt.data(), pkt.path.remote, [path = pkt.path, udp = h->sock.get()](Message m) {
-                        auto payload = m.encode();
-                        const size_t sz = payload.size();
-                        udp->send(path, payload.data(), &sz, 0, 1);
-                    });
+                    _handler(
+                        pkt.data(),
+                        pkt.path.remote,
+                        [path = pkt.path, udp = h->sock.get()](std::span<const std::byte> payload) {
+                            const size_t sz = payload.size();
+                            udp->send(path, payload.data(), &sz, 0, 1);
+                        });
                 });
+            last_port = h->sock->address().port();
             _udp.push_back(std::move(h));
 
             _tcp.emplace_back(evconnlistener_new_bind(
@@ -120,23 +123,26 @@ namespace srouter::dns
                                 log::trace(logcat, "Read {}-byte TCP DNS request", req.size());
 
                                 auto* c = static_cast<tcp_conn*>(ctx);
-                                c->listener._handler(req, c->addr, [c, alive = c->alive](Message m) {
-                                    if (!*alive)
-                                        return;
-                                    auto* out = bufferevent_get_output(c->bev);
-                                    auto payload = m.encode();
-                                    // The only difference between UDP DNS and TCP DNS encoding is that
-                                    // UDP is per-packet, but TCP is a stream of messages where each
-                                    // message is prefixed with the length of the message:
-                                    uint16_t size = oxenc::host_to_big(static_cast<uint16_t>(payload.size()));
-                                    if (evbuffer_add(out, &size, 2) == -1
-                                        || evbuffer_add(out, payload.data(), payload.size()) == -1)
-                                    {
-                                        log::warning(logcat, "Failed to write response to TCP connection; closing");
-                                        bufferevent_free(c->bev);
-                                        delete c;
-                                    }
-                                });
+                                c->listener._handler(
+                                    req,
+                                    c->addr,
+                                    [c, alive = c->alive](std::span<const std::byte> payload) {
+                                        if (!*alive)
+                                            return;
+                                        auto* out = bufferevent_get_output(c->bev);
+                                        // The only difference between UDP DNS and TCP DNS encoding is that
+                                        // UDP is per-packet, but TCP is a stream of messages where each
+                                        // message is prefixed with the length of the message:
+                                        uint16_t size = oxenc::host_to_big(static_cast<uint16_t>(payload.size()));
+                                        if (evbuffer_add(out, &size, 2) == -1
+                                            || evbuffer_add(out, payload.data(), payload.size()) == -1)
+                                        {
+                                            log::warning(logcat, "Failed to write response to TCP connection; closing");
+                                            bufferevent_free(c->bev);
+                                            delete c;
+                                        }
+                                    },
+                                    true);
                             }
                         },
                         nullptr,

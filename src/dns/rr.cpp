@@ -42,7 +42,7 @@ namespace srouter::dns
 
     void ResourceRecord::encode(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const
     {
-        encode_name(buf, rr_name, prev_names, buf_offset);
+        encode_name(buf, rr_name, &prev_names, &buf_offset);
         buf_offset += write_ints_into(
             buf, static_cast<uint16_t>(rr_type()), static_cast<uint16_t>(rr_class), static_cast<uint32_t>(ttl.count()));
         // The RR value is in a chunk with a 2-byte length in front of it.  We don't actually know
@@ -119,17 +119,19 @@ namespace srouter::dns
 
     void RR_target::encode_data(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const
     {
-        encode_name(buf, name, prev_names, buf_offset);
+        encode_name(buf, name, &prev_names, &buf_offset);
     }
 
     void RR_SRV::encode_data(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const
     {
         buf_offset += write_ints_into(buf, priority, weight, port);
-        encode_name(buf, target, prev_names, buf_offset);
+        encode_name(buf, target, &prev_names, &buf_offset);
     }
 
     void PRR_EDNS::encode_data(std::span<std::byte>& buf, prev_names_t&, uint16_t& buf_offset) const
     {
+        // NB: if we update this to write more than just the cookie, to_raw() below also needs to
+        // get updated.
         if (cookie)
         {
             uint16_t datalen = 2 + 2 + cookie->size();  // code + length + data
@@ -140,6 +142,43 @@ namespace srouter::dns
             buf = buf.subspan(datalen);
             buf_offset += datalen;
         }
+    }
+
+    RawRR PRR_EDNS::to_raw() const
+    {
+        RawRR raw;
+        raw.type = rr_type();
+        raw.cls = rr_class;
+        raw.ttl = ttl;
+        raw.name.resize(1, std::byte{0});  // Encoded empty name (i.e. root domain)
+        if (cookie)
+        {
+            raw.rdata.resize(2 + 2 + cookie->size());
+            std::span buf{raw.rdata};
+            prev_names_t ignored;
+            [[maybe_unused]] uint16_t ignored2 = 0;
+            encode_data(buf, ignored, ignored2);
+        }
+        return raw;
+    }
+
+    bool RawRR::write_to(std::span<std::byte>& buf) const
+    {
+        // NAME + TYPE + CLASS + TTL + RDLENGTH + RDATA
+        auto needed = name.size() + 2 + 2 + 4 + 2 + rdata.size();
+        if (needed > buf.size())
+            return false;
+        std::memcpy(buf.data(), name.data(), name.size());
+        buf = buf.subspan(name.size());
+        write_ints_into(
+            buf,
+            static_cast<uint16_t>(type),
+            static_cast<uint16_t>(cls),
+            static_cast<uint32_t>(ttl.count()),
+            static_cast<uint16_t>(rdata.size()));
+        std::memcpy(buf.data(), rdata.data(), rdata.size());
+        buf = buf.subspan(rdata.size());
+        return true;
     }
 
 }  // namespace srouter::dns

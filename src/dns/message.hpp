@@ -14,6 +14,8 @@ namespace srouter
     {
         struct SRVData;
 
+        // Class representing a DNS question and response as returned by Session Router for local
+        // Session Router results (e.g. querying .sesh addresses).
         struct Message
         {
             Message() = default;
@@ -29,13 +31,14 @@ namespace srouter
 
             static constexpr auto DEFAULT_ANSWER_TTL = 10s;
 
-            // These two methods mutates the message into a SERVFAIL or FORMERR response, clearing
-            // all answers.  These return an value reference to the object itself to allow the call
-            // to operator like an implicit `std::move()` call as this is typically a final
-            // operation; in particular this means: `f(msg.nxdomain());` is equivalent to
-            // `msg.nxdomain(); f(std::move(msg));`.
+            // These two methods mutates the message into a SERVFAIL/FORMERR/REFUSED response code,
+            // clearing all answers.  These return an value reference to the object itself to allow
+            // the call to operator like an implicit `std::move()` call as this is typically a final
+            // operation; in particular this means: `f(msg.servfail());` is equivalent to
+            // `msg.servfail(); f(std::move(msg));`.
             Message&& servfail();
             Message&& formerr();
+            Message&& refused();
 
             // Mutate message into a NXDOMAIN but without clearing existing answers.  Returns an
             // rvalue reference to the current object to allow the result to be easily moved away.
@@ -118,6 +121,33 @@ namespace srouter
             void add_reply(RRClass cls, RRType type, std::vector<std::byte> data, std::chrono::seconds ttl);
 
             Message&& apply_rcode(uint16_t rcode, bool authoritative = false);
+        };
+
+        // Somewhat similar to the above, but only designed for passing through a message (with
+        // a few required modifications) rather than building one.
+        struct RawMessage
+        {
+            uint16_t hdr_id;
+            uint16_t hdr_fields;
+            std::vector<Question> questions;
+            std::vector<RawRR> answers;
+            std::vector<RawRR> authorities;
+            std::vector<RawRR> additional;
+
+            /// Parses a DNS message; returns nullopt if unparseable.  Unlike Message, this parsing
+            /// only performs a raw parsing (i.e. there is no interpretation of values).
+            static std::optional<RawMessage> parse(std::span<const std::byte> msg);
+
+            // Does some minor rewriting of the raw message according to the given Message that lead
+            // to the query.  This includes updating the header id to match, updating fields to
+            // match the request, and removing EDNS or TSIG additional value.  If the original
+            // message has an additional_edns value, it is copied into this object's additional_edns
+            // to be appended during encoding.
+            void rewrite_for(const Message& orig);
+
+            std::optional<PRR_EDNS> additional_edns;
+
+            std::vector<std::byte> encode(bool max_size = false) const;
         };
 
     }  // namespace dns

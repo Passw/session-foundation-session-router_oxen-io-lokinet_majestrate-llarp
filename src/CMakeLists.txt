@@ -162,6 +162,7 @@ if (SROUTER_FULL)
     dns/platform.cpp
     dns/question.cpp
     dns/rr.cpp
+    dns/unbound.cpp
   )
 
   # platform specific bits and bobs for setting dns

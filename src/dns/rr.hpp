@@ -25,6 +25,7 @@ namespace srouter::dns
         SRV = 33,
 
         OPT = 41,
+        TSIG = 250,
     };
 
     // Parsed RR data: this is intentionally very raw and is only for extracting the data, not
@@ -41,6 +42,25 @@ namespace srouter::dns
         // Attempts to parse an RR from the beginning of `buf`.  `buf` will have the prefix removed
         // containing the extracted record.  Returns nullopt on extraction error.
         static std::optional<ParsedRR> extract(std::span<const std::byte>& buf);
+    };
+
+    // Unparsed RR data: this is used by RawMessage to hold the basic raw data of an RR, but without
+    // decoding non-integer binary values.  That is, the NAME and RDATA are encoded exactly as
+    // provided (and so may have name compression pointers in them).  This is designed so that it
+    // can be re-encoded in a byte-exact way (to avoid breaking compressed name values that may be
+    // in this or later RRs).
+    struct RawRR
+    {
+        std::vector<std::byte> name;
+        RRType type;
+        RRClass cls;
+        std::chrono::seconds ttl;
+        std::vector<std::byte> rdata;
+
+        // Writes this RR data into `buf`, removing the written prefix from buf and returns true.
+        // If buf does not have enough room for the entire record then nothing is written, buf is
+        // not modified, and false is returned.
+        bool write_to(std::span<std::byte>& buf) const;
     };
 
     // Abstract base class we use for building RR responses
@@ -148,6 +168,8 @@ namespace srouter::dns
         static constexpr uint16_t OPT_COOKIE = 10;
         static constexpr uint16_t EXT_RCODE_BADCOOKIE = 23;
 
+        static constexpr uint32_t DO_BIT = 1 << 15;
+
         std::optional<std::array<std::byte, 24>> cookie;
 
         // Will be true if the full cookie we were provided was invalid or expired, in which case we
@@ -162,22 +184,32 @@ namespace srouter::dns
         //     - 8-bit "extended rcode"
         //     - 8-bit version (currently 0)
         //     - 16-bit flags of which there is one for DNSSEC and all others are reserved
-        //   We currently always use 0 as we don't use extended rcode or dnssec.
         // - CLASS isn't a class at all but rather contains the supported UDP payload size.  We set
         //   it to the recommended 1232 size, but if a client gave us a smaller value we should
         //   reflect that instead.
         //
         //   Beyond that, we support an optional DNS server cookie value (see RFC 7873 and 9018),
         //   which must be the 8-byte cookie sent by the client followed by a 16 byte server cookie.
-        PRR_EDNS(uint16_t max_payload, std::optional<std::array<std::byte, 24>> cookie = std::nullopt)
+        PRR_EDNS(
+            uint16_t max_payload,
+            std::chrono::seconds pttl,
+            std::optional<std::array<std::byte, 24>> cookie = std::nullopt)
             : ResourceRecord{"", 0s}, cookie{std::move(cookie)}
         {
+            // If the psuedo-ttl has the DO bit set then preserve that bit; otherwise we ignore
+            // anything in the pseudo-ttl (leaving it at 0):
+            if (pttl.count() & DO_BIT)
+                ttl = std::chrono::seconds{DO_BIT};
             rr_class = static_cast<RRClass>(max_payload);
         }
+
+        bool DO_bit() const { return ttl.count() & DO_BIT; }
 
         uint16_t max_payload() const { return static_cast<uint16_t>(rr_class); }
         constexpr RRType rr_type() const override { return RRType::OPT; }
         void encode_data(std::span<std::byte>& buf, prev_names_t&, uint16_t& buf_offset) const override;
+
+        RawRR to_raw() const;
     };
 
 }  // namespace srouter::dns

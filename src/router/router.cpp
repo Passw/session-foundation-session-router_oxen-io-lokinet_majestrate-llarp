@@ -559,28 +559,32 @@ namespace srouter
             // only (full) clients should have DNS, relays have no need for it
             if (!is_service_node)
             {
-                auto& dns_bind = config().dns._bind_addrs;
+                auto& dns_bind = config().dns._listen_addrs;
                 if (dns_bind.empty())
                 {
                     // This configuration is allowed (a service-only client might use it), although a bit unusual
                     log::warning(
-                        logcat, "[bind]:bind is empty: DNS disabled.  Making outbound paths will not be possible");
+                        logcat, "[dns]:listen is empty: DNS disabled.  Making outbound paths will not be possible");
                 }
                 else
                 {
-                    for (const auto& addr : dns_bind)
+                    try
                     {
-                        try
+                        for (const auto& addr : dns_bind)
                         {
                             if (!_dns)
-                                _dns = std::make_shared<dns::Listener>(*this, addr);
+                                _dns = _loop->make_shared<dns::Listener>(*this, addr);
                             else
                                 _dns->listen(loop, addr);
+
+                            log::info(log_global, "DNS listening on {} port {}", addr.host(), _dns->last_port);
                         }
-                        catch (const std::exception& e)
-                        {
-                            log::error(logcat, "Failed to initialize DNS listener on {}: {}", addr, e.what());
-                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::error(
+                            logcat, "Failed to initialize DNS listener on {}: {}", fmt::join(dns_bind, ","), e.what());
+                        throw;
                     }
                 }
             }

@@ -20,7 +20,7 @@ namespace srouter::dns
 
     void Question::encode(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const
     {
-        encode_name(buf, qname, prev_names, buf_offset);
+        encode_name(buf, qname, &prev_names, &buf_offset);
         buf_offset += write_ints_into(buf, static_cast<uint16_t>(qtype), static_cast<uint16_t>(qclass));
     }
 

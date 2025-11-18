@@ -950,119 +950,117 @@ namespace srouter
             // see https://github.com/oxen-io/lokinet/issues/1887#issuecomment-1091897282
             Default{"127.0.0.1:0"},
 #endif
-            Default{"127.3.2.1:53"},
+            Default{"127.3.2.1"},
 #else
-            Default{"127.0.0.1:53"},
+            Default{"127.0.0.1"},
 #endif
         };
 
-        auto parse_addr_for_dns = [](const std::string& arg) {
-            std::optional<quic::Address> addr = std::nullopt;
-            std::string_view arg_v{arg}, port;
-            std::string host;
-            uint16_t p{DEFAULT_DNS_PORT};
-
-            if (auto pos = arg_v.find(':'); pos != arg_v.npos)
-            {
-                host = arg_v.substr(0, pos);
-                port = arg_v.substr(pos + 1);
-
-                if (not srouter::parse_int<uint16_t>(port, p))
-                    log::info(logcat, "Failed to parse port in arg:{}, defaulting to DNS port 53", port);
-
-                addr = quic::Address{host, p};
-            }
-
-            return addr;
-        };
+        conf.define_option<std::string>(
+            "dns",
+            "listen",
+            FullClientOnly,
+            DefaultDNSBind,
+            MultiValue,
+            Comment{
+                "Address(es) on which to listen for DNS requests.  This can either be an IP address",
+                "(to use the default DNS port 53) or an IP followed by `:port' to listen on a custom",
+                "port.  To specify an IPv6 address, surround the address with '[' and ']'.",
+                "",
+                "This option can be specified multiple times to bind to multiple addresses.",
+                "",
+                "If this Session Router instance has no need to establish outbound connection (for example,",
+                "for a hidden service) then this can be set to an empty string to disable the DNS listener",
+                "entirely.  WARNING: disabling this makes it impossible to make new outbound connections!",
+            },
+            [this](const std::string& arg) {
+                if (not arg.empty())
+                    _listen_addrs.push_back(quic::Address::parse(arg, DEFAULT_DNS_PORT));
+            });
 
         conf.define_option<std::string>(
             "dns",
             "upstream",
             FullClientOnly,
             MultiValue,
+            std::array{
+                Default{"9.9.9.9"}, Default{"149.112.112.112"}, Default{"[2620:fe::fe]"}, Default{"[2620:fe::9]"}},
             Comment{
                 "Upstream resolver(s) to use as fallback for non-Session Router addresses.",
-                "Multiple values accepted.",
+                "Multiple values accepted.  Can be set to empty to disable upstream DNS resolution",
+                "for advanced setups.",
+                "",
+                "If not specified, the default is to use Quad9 public DNS (https://quad9.net).",
             },
-            [this, parse_addr_for_dns](std::string arg) {
+            [this](const std::string& arg) {
                 if (not arg.empty())
-                {
-                    if (auto maybe_addr = parse_addr_for_dns(arg))
-                        _upstream_dns.push_back(std::move(*maybe_addr));
-                    else
-                        log::warning(logcat, "Failed to parse upstream DNS resolver address:{}", arg);
-                }
-            });
-
-        conf.define_option<bool>(
-            "dns",
-            "l3-intercept",
-            FullClientOnly,
-            Default{
-                platform::is_windows or platform::is_android or (platform::is_macos and not platform::is_apple_sysex)},
-            Comment{"Intercept all dns traffic (udp/53) going into our Session Router network interface "
-                    "instead of binding a local udp socket"},
-            assignment_acceptor(l3_intercept));
-
-        conf.define_option<std::string>(
-            "dns",
-            "query-bind",
-            FullClientOnly,
-#if defined(_WIN32)
-            Default{"0.0.0.0:0"},
-#else
-            Hidden,
-#endif
-            Comment{
-                "Address to bind to for sending upstream DNS requests.",
-            },
-            [this, parse_addr_for_dns](std::string arg) {
-                if (not arg.empty())
-                {
-                    if (auto maybe_addr = parse_addr_for_dns(arg))
-                        _query_bind = std::move(*maybe_addr);
-                    else
-                        log::warning(logcat, "Failed to parse bind address for DNS queries:{}", arg);
-                }
+                    _upstream_dns.push_back(quic::Address::parse(arg, DEFAULT_DNS_PORT));
             });
 
         conf.define_option<std::string>(
             "dns",
-            "bind",
+            "unbound",
             FullClientOnly,
-            DefaultDNSBind,
             MultiValue,
             Comment{
-                "Address to bind to for handling DNS requests.",
+                "This option can be used to supply custom options to libunbound, which is used",
+                "internally when DNS requests are made that are not for a .sesh/.snode address.",
                 "",
-                "Can be specified multiple times to bind to multiple addresses; can be set to empty to disable.",
+                "To add a custom option specify this option with a value of `unbound-option-name: value`;",
+                "for example, to limit the maximum record cache time:",
+                "    unbound=cache-max-ttl: 3600",
+                "Or to enable DNSSEC validation:",
+                "    unbound=trust-anchor-file: /path/to/dns/root.key",
+                "",
+                "You can use this option multiple times to specify more unbound options.",
+                "",
+                "See https://unbound.docs.nlnetlabs.nl/en/latest/manpages/unbound.conf.html",
+                "for all supported unbound options.",
             },
-            [this, parse_addr_for_dns](std::string arg) {
-                if (not arg.empty())
+            [this](std::string option) {
+                auto pos = option.find(':');
+                if (pos == std::string::npos)
+                    throw std::invalid_argument{
+                        "Invalid unbound option '{}': options must be formatted as `option: value`"_format(option)};
+                auto key = std::string_view{option}.substr(0, pos);
+                auto value = std::string_view{option}.substr(pos + 1);
+
+                for (auto* s : {&key, &value})
                 {
-                    if (auto maybe_addr = parse_addr_for_dns(arg))
-                    {
-                        _bind_addrs.push_back(std::move(*maybe_addr));
-                    }
-                    else
-                        log::warning(logcat, "Failed to parse bind address for handling DNS requests:{}", arg);
+                    while (s->starts_with(' '))
+                        s->remove_prefix(1);
+                    while (s->ends_with(' '))
+                        s->remove_suffix(1);
                 }
+                if (key.empty() || value.empty())
+                    throw std::invalid_argument{
+                        "Invalid unbound option '{}': key and/or value cannot be empty"_format(option)};
+
+                unbound_opts.emplace_back("{}:"_format(key), std::string{value});
             });
 
         conf.define_option<std::filesystem::path>(
             "dns",
-            "add-hosts",
+            "unbound-hosts",
             FullClientOnly,
-            Comment{"Add a hosts file to the dns resolver", "For use with client side dns filtering"},
+            Default{std::filesystem::path{"SYSTEM"}},
+            Comment{
+                "Configures unbound to use the given `hosts' files when resolving addresses.  Can be",
+                "used to add custom addresses or perform client-side DNS filtering.  If omitted or set",
+                "to the string 'SYSTEM' then the system default (/etc/hosts, or WINDIR/etc/hosts on",
+                "Windows) will be used.  Can be set to an empty string to not add any hosts file.",
+            },
             [this, rel_base = params.default_data_dir](std::filesystem::path path) {
                 if (path.empty())
                     return;
-                if (path.is_relative())
-                    path = rel_base / path;
-                if (not exists(path))
-                    throw std::invalid_argument{"cannot add hosts file {} as it does not exist"_format(path)};
-                hostfiles.emplace_back(std::move(path));
+                if (path != std::filesystem::path{"SYSTEM"})
+                {
+                    if (path.is_relative())
+                        path = rel_base / path;
+                    if (not exists(path))
+                        throw std::invalid_argument{"cannot add hosts file {} as it does not exist"_format(path)};
+                }
+                unbound_hosts = std::move(path);
             });
 
         // Ignored option (used by the systemd service file to disable resolvconf configuration).
@@ -1076,10 +1074,6 @@ namespace srouter
                 "(This is not used directly by Session Router itself, but by the Session Router init scripts",
                 "on systems which use resolveconf)",
             });
-
-        // forward the rest to libunbound
-        conf.add_undeclared_handler(
-            "dns", [this](auto, std::string_view key, std::string_view val) { extra_opts.emplace(key, val); });
     }
 
     void LinksConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)

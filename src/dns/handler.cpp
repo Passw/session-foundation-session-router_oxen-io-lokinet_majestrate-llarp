@@ -7,6 +7,7 @@
 #include "nodedb.hpp"
 #include "router/router.hpp"
 #include "util/logging.hpp"
+#include "util/logging/buffer.hpp"
 
 #include <ranges>
 
@@ -66,9 +67,13 @@ namespace srouter::dns
     {
         if (!_router.tun_endpoint())
             throw std::logic_error{"dns::RequestHandler requires a TUN endpoint"};
+
+        if (!_router.config().dns._upstream_dns.empty())
+            _unbound.emplace(_router);
     }
 
-    void RequestHandler::operator()(std::span<const std::byte> request, const quic::Address& from, ReplyCallback reply)
+    void RequestHandler::operator()(
+        std::span<const std::byte> request, const quic::Address& from, ReplyCallback reply, bool tcp)
     {
         std::span<const std::byte> client_ip;
         if (from.is_ipv4())
@@ -86,7 +91,7 @@ namespace srouter::dns
 
         if (msg.bad_extract)
         {
-            reply(std::move(msg));
+            reply(msg.encode(tcp));
             return;
         }
 
@@ -104,7 +109,7 @@ namespace srouter::dns
             // badcookie is not an authoritative answer:
             msg.hdr_fields &= ~flags_AA;
 
-            reply(std::move(msg));
+            reply(msg.encode(tcp));
             return;
         }
 
@@ -113,13 +118,13 @@ namespace srouter::dns
         // actual request.
         if (!msg.question)
         {
-            reply(std::move(msg));
+            reply(msg.encode(tcp));
             return;
         }
 
         auto& q = *msg.question;
 
-        if (handle_local(reply, msg, std::string{q.name()}))
+        if (handle_local(reply, msg, std::string{q.name()}, tcp))
             return;
 
         // we don't provide a DoH resolver because it requires verified TLS TLS needs X509/ASN.1-DER
@@ -130,16 +135,16 @@ namespace srouter::dns
         // is this firefox looking for their backdoor record?
         if (q.name() == "use-application-dns.net")
             // yea it is, let's turn off DoH because god is dead.
-            return reply(msg.nxdomain());  // press F to pay respects and send it back where it came from
+            return reply(msg.nxdomain().encode(tcp));  // press F to pay respects and send it back where it came from
 
         // Not for us, so forward to upstream handler
-        forward(std::move(msg), std::move(reply));
+        forward(std::move(msg), std::move(reply), tcp);
     }
 
-    bool RequestHandler::handle_local(ReplyCallback& reply, Message& msg, std::string qname)
+    bool RequestHandler::handle_local(ReplyCallback& reply, Message& msg, std::string qname, bool tcp)
     {
         // hook any PTR (reverse DNS) lookups for our local ranges
-        if (handle_local_ptr(msg, reply))
+        if (handle_local_ptr(msg, reply, tcp))
             return true;
 
         auto& q = *msg.question;
@@ -154,7 +159,7 @@ namespace srouter::dns
             if (nameparts.size() < 2)
             {
                 log::warning(logcat, "bad DNS request, no TLD or hostname: {}", qname);
-                reply(msg.formerr());
+                reply(msg.formerr().encode(tcp));
                 return true;
             }
             hostname = nameparts[nameparts.size() - 2];
@@ -188,7 +193,7 @@ namespace srouter::dns
             if (q.qtype == dns::RRType::CNAME)
             {
                 // If we were queried specifically for a cname, then we are done.
-                reply(std::move(msg));
+                reply(msg.encode(tcp));
                 return true;
             }
 
@@ -217,7 +222,7 @@ namespace srouter::dns
                 msg.add_cname_reply(qname, 1s);
                 if (q.qtype == dns::RRType::CNAME)
                 {
-                    reply(std::move(msg));
+                    reply(msg.encode(tcp));
                     return true;
                 }
 
@@ -226,7 +231,7 @@ namespace srouter::dns
             else
             {
                 // We found no RC at all, which probably means our connection is dead.
-                reply(msg.nxdomain());
+                reply(msg.nxdomain().encode(tcp));
                 return true;
             }
         }
@@ -247,7 +252,8 @@ namespace srouter::dns
                  sub = std::move(sub),
                  reply = std::move(reply),
                  msg_ptr = std::make_shared<dns::Message>(std::move(msg)),
-                 cname_only = q.qtype == dns::RRType::CNAME](
+                 cname_only = q.qtype == dns::RRType::CNAME,
+                 tcp](
                     std::optional<NetworkAddress> maybe_netaddr,
                     bool /*assertive*/,
                     std::chrono::milliseconds ttl) mutable {
@@ -261,11 +267,11 @@ namespace srouter::dns
                             return;
                         auto qname = sub.empty() ? target : "{}.{}"_format(fmt::join(sub, "."), target);
                         msg.set_rr_name(qname);
-                        if (!handle_local(reply, msg, std::move(qname)))
+                        if (!handle_local(reply, msg, std::move(qname), tcp))
                         {
                             log::warning(
                                 logcat, "ONS '{}' subrequest did not properly handle sending a reply!", lookup);
-                            return reply(msg.servfail());
+                            return reply(msg.servfail().encode(tcp));
                         }
                         return;
                     }
@@ -273,7 +279,7 @@ namespace srouter::dns
                     // (via an SOA authority record).  (When not assertive we shouldn't do so,
                     // because not having an SOA TTL means a downstream recursive resolver shouldn't
                     // cache the negative response).
-                    reply(msg.nxdomain());
+                    reply(msg.nxdomain().encode(tcp));
                 });
             return true;
         }
@@ -336,7 +342,7 @@ namespace srouter::dns
             }
             else
                 msg.nxdomain();
-            reply(std::move(msg));
+            reply(msg.encode(tcp));
             return true;
         }
 
@@ -381,13 +387,13 @@ namespace srouter::dns
                 }
                 else
                     msg.nxdomain();
-                reply(std::move(msg));
+                reply(msg.encode(tcp));
 
                 return true;
             }
 
             log::warning(logcat, "DNS query failure: '{}' is not a valid Session Router name or address", qname);
-            reply(msg.nxdomain());
+            reply(msg.encode(tcp));
             return true;
         }
 
@@ -398,7 +404,7 @@ namespace srouter::dns
             {
                 _router.session_endpoint().lookup_client_intro(
                     *rid,
-                    [msg = std::make_shared<dns::Message>(std::move(msg)), sub, reply = std::move(reply)](
+                    [msg = std::make_shared<dns::Message>(std::move(msg)), sub, reply = std::move(reply), tcp](
                         const std::optional<ClientContact>& cc) mutable {
                         if (cc)
                         {
@@ -409,7 +415,7 @@ namespace srouter::dns
                         else
                             msg->nxdomain();
 
-                        reply(std::move(*msg));
+                        reply(msg->encode(tcp));
                     });
                 return true;
             }
@@ -417,11 +423,11 @@ namespace srouter::dns
 
         // If we got through everything above without answering then they requested something weird
         // (unhandled RR type, perhaps) and so let's just give an NXDOMAIN back:
-        reply(msg.nxdomain());
+        reply(msg.nxdomain().encode(tcp));
         return true;
     }
 
-    bool RequestHandler::handle_local_ptr(Message& msg, ReplyCallback& reply)
+    bool RequestHandler::handle_local_ptr(Message& msg, ReplyCallback& reply, bool tcp)
     {
         assert(msg.question);
         if (msg.question->qtype != srouter::dns::RRType::PTR)
@@ -440,16 +446,43 @@ namespace srouter::dns
         else
             msg.nxdomain();
 
-        reply(std::move(msg));
+        reply(msg.encode(tcp));
 
         return true;
     }
 
-    void RequestHandler::forward(Message&& m, ReplyCallback&& reply)
+    void RequestHandler::forward(Message&& m, ReplyCallback&& reply, bool tcp)
     {
-        // TODO FIXME XXX TESTNET TOTHINK
-        log::critical(logcat, "FORWARDED REQUESTS NEEDS IMPLEMENTATION!  RETURNING SERVFAIL");
-        reply(m.servfail());
+        if (!_unbound)
+        {
+            log::warning(
+                logcat, "DNS request received for non-Session Router domain, but no upstream DNS is configured!");
+            reply(m.refused().encode(tcp));
+            return;
+        }
+
+        assert(m.question);
+
+        _unbound->query(
+            std::string{m.question->name()},
+            m.question->qtype,
+            m.question->qclass,
+            [orig = std::make_shared<Message>(m.clone()), reply = std::move(reply), tcp](
+                std::span<const std::byte> response) mutable {
+                if (response.empty())
+                    return reply(orig->servfail().encode(tcp));
+
+                auto msg = RawMessage::parse(response);
+                if (!msg)
+                {
+                    log::warning(logcat, "Failed to parse unbound query response: {}", buffer_printer{response});
+                    return reply(orig->servfail().encode(tcp));
+                }
+
+                msg->rewrite_for(*orig);
+
+                reply(msg->encode(tcp));
+            });
     }
 
 }  // namespace srouter::dns

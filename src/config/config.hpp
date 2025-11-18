@@ -221,16 +221,17 @@ namespace srouter
 
     struct DnsConfig
     {
-        bool l3_intercept{false};
-
-        std::vector<std::filesystem::path> hostfiles;
-
         std::vector<quic::Address> _upstream_dns;
-        quic::Address _default_dns{"9.9.9.10", DEFAULT_DNS_PORT};
-        std::optional<quic::Address> _query_bind;
-        std::vector<quic::Address> _bind_addrs;
+        std::vector<quic::Address> _listen_addrs;
 
-        std::unordered_multimap<std::string, std::string> extra_opts;
+        // {"name:", "value"} pairs that we pass through to unbound to configure upstream DNS
+        // requests:
+        std::vector<std::pair<std::string, std::string>> unbound_opts;
+
+        // Unbound config doesn't support specifying a hosts file for some reason but has to be done
+        // via a different call.  We allow a magic "SYSTEM" value here to instruct unbound to use
+        // the system default (by passing nullptr).
+        std::optional<std::filesystem::path> unbound_hosts;
 
         void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
     };
