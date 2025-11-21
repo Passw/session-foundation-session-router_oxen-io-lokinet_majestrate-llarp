@@ -22,43 +22,11 @@ namespace srouter
 {
     static auto logcat = log::Cat("config");
 
-    static bool check_path_op(std::optional<std::filesystem::path>& path)
-    {
-        if (not path.has_value())
-        {
-            log::info(logcat, "Path input failed to parse...");
-        }
-        else if (path->empty())
-        {
-            log::warning(logcat, "Path contents ({}) empty...", path->c_str());
-            path.reset();
-        }
-        else
-        {
-            log::debug(logcat, "Valid path parsed ({})", path->c_str());
-            return true;
-        }
-
-        return false;
-    }
-
     using namespace config;
 
-    const srouter::net::Platform* ConfigGenParameters::net_ptr()
+    static auto public_ip_loader(std::optional<quic::Address>& into, std::string conf_name)
     {
-#ifndef SROUTER_EMBEDDED_ONLY
-        if (type != config::Type::EmbeddedClient)
-            return srouter::net::Platform::Default_ptr();
-#endif
-        return nullptr;
-    }
-
-    static auto public_ip_loader(
-        std::optional<quic::Address>& into, std::string conf_name, std::string deprecated_for = ""s)
-    {
-        return [&into, conf_name = std::move(conf_name), deprecated_for = std::move(deprecated_for)](std::string ip) {
-            if (!deprecated_for.empty())
-                log::warning(logcat, "{} is deprecated; use {} instead", conf_name, deprecated_for);
+        return [&into, conf_name = std::move(conf_name)](std::string ip) {
             try
             {
                 quic::Address a{ip, into ? into->port() : uint16_t{0}};
@@ -76,12 +44,9 @@ namespace srouter
             }
         };
     }
-    static auto public_port_loader(
-        std::optional<quic::Address>& into, std::string conf_name, std::string deprecated_for = ""s)
+    static auto public_port_loader(std::optional<quic::Address>& into, std::string conf_name)
     {
-        return [&into, conf_name = std::move(conf_name), deprecated_for = std::move(deprecated_for)](uint16_t port) {
-            if (!deprecated_for.empty())
-                log::warning(logcat, "{} is deprecated; use {} instead", conf_name, deprecated_for);
+        return [&into, conf_name = std::move(conf_name)](uint16_t port) {
             if (port == 0)
                 throw std::invalid_argument{"{} cannot be 0"_format(conf_name)};
             if (!into)
@@ -90,20 +55,15 @@ namespace srouter
         };
     }
 
-    void RouterConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void RouterConfig::define_config_options(ConfigDefinition& conf)
     {
+        is_relay = conf.type == config::Type::Relay;
+
         conf.add_section_comments(
             "router",
             {
                 "Configuration for routing activity.",
             });
-
-        conf.define_option<int>("router", "job-queue-size", Default{1024 * 8}, Hidden, [this](int arg) {
-            if (arg < 1024)
-                throw std::invalid_argument("job-queue-size must be 1024 or greater");
-
-            job_que_size = arg;
-        });
 
         conf.define_option<std::string>(
             "router",
@@ -112,21 +72,13 @@ namespace srouter
             Comment{"Network ID; this is '{}' for mainnet, '{}' for testnet."_format(NetID::MAINNET, NetID::TESTNET)},
             [this](std::string arg) { net_id = netid_from_string(arg); });
 
-        conf.define_option<int>("router", "relay-connections", Deprecated);
-
-        conf.define_option<int>("router", "min-connections", Deprecated);
-
-        conf.define_option<int>("router", "max-connections", Deprecated);
-
-        conf.define_option<std::string>("router", "nickname", Deprecated);
-
         conf.define_option<std::filesystem::path>(
             "router",
             "data-dir",
-            Default{params.default_data_dir},
             Comment{
-                "Optional directory for containing Session Router runtime data. This includes generated",
-                "private keys.",
+                "Directory in which to store Session Router runtime data such as router contact info",
+                "and connection data.  If not specified, the default is to use the directory containing",
+                "the config file specified when starting Session Router.",
             },
             [this](std::filesystem::path arg) {
                 if (arg.empty())
@@ -174,29 +126,9 @@ namespace srouter
         // Hidden option because this isn't something that should ever be turned off occasionally
         // when doing dev/testing work.
         conf.define_option<bool>("router", "block-bogons", Default{true}, Hidden, assignment_acceptor(block_bogons));
-
-        conf.define_option<std::string>("router", "contact-file", Deprecated);
-
-        conf.define_option<std::string>("router", "encryption-privkey", Deprecated);
-
-        conf.define_option<std::string>("router", "ident-privkey", Deprecated);
-
-        conf.define_option<std::string>("router", "transport-privkey", RelayOnly, Deprecated);
-
-        // Deprecated options:
-
-        // these weren't even ever used!
-        conf.define_option<std::string>("router", "max-routers", Deprecated);
-        conf.define_option<std::string>("router", "min-routers", Deprecated);
-
-        // TODO: this may have been a synonym for [router]worker-threads
-        conf.define_option<std::string>("router", "threads", Deprecated);
-        conf.define_option<std::string>("router", "net-threads", Deprecated);
-
-        is_relay = params.type == config::Type::Relay;
     }
 
-    void ExitConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void ExitConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.define_option<std::string>(
             "exit",
@@ -213,7 +145,11 @@ namespace srouter
             },
             [this](std::string arg) {
                 if (arg.empty())
-                    throw std::invalid_argument{"Empty argument passed to '[exit]:auth'"};
+                {
+                    sns_auth_tokens.clear();
+                    auth_tokens.clear();
+                    return;
+                }
 
                 const auto pos = arg.find(":");
 
@@ -274,6 +210,11 @@ namespace srouter
                 "would allow TCP traffic on the standard smtp port (21).",
             },
             [this](std::string arg) {
+                if (arg.empty())
+                {
+                    exit_policy.protocols.clear();
+                    return;
+                }
                 // this will throw on error
                 exit_policy.protocols.insert(net::ProtocolInfo::from_config(arg));
             });
@@ -374,7 +315,7 @@ namespace srouter
             });
     }
 
-    void NetworkConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void NetworkConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "network",
@@ -385,32 +326,34 @@ namespace srouter
         conf.define_option<bool>(
             "network",
             "save-profiles",
-            Default{params.type != config::Type::EmbeddedClient},
+            Default{conf.type != config::Type::EmbeddedClient},
             Hidden,
             assignment_acceptor(save_profiles));
 
         conf.define_option<bool>("network", "profiling", Default{true}, Hidden, assignment_acceptor(enable_profiling));
 
-        conf.define_option<std::string>("network", "profiles", Deprecated);
-
-        conf.define_option<std::string>(
+        conf.define_option<std::filesystem::path>(
             "network",
             "keyfile",
             ClientOnly,
-            [this](std::string arg) {
+            [this, rel_base = conf.conf_dir](std::filesystem::path arg) {
                 if (arg.empty())
+                {
+                    keyfile.reset();
                     return;
-
-                keyfile = arg;
-
-                if (check_path_op(keyfile))
-                    log::info(logcat, "Client configured to try private key file at path: {}", keyfile->c_str());
-                else
-                    log::warning(logcat, "Bad input for client private key file ({}); using ephemeral...", arg);
+                }
+                if (arg.is_relative())
+                    arg = rel_base / arg;
+                if (!exists(arg))
+                    throw std::invalid_argument{"cannot load key file {}: file not found"_format(arg)};
+                log::info(logcat, "Client configured to use private key file {}", arg);
+                keyfile.emplace(std::move(arg));
             },
             Comment{
-                "The private key to persist address with. If not specified the address will be",
-                "ephemerally generated.",
+                "Filename of a persistent, private key to use on the network.  If not specified a",
+                "different random address will be used each time Session Router restarts.",
+                "",
+                "The session-router-config program can be used to generate such a key file.",
             });
 
         conf.define_option<std::string>(
@@ -489,7 +432,7 @@ namespace srouter
                 "Read auth tokens from file to accept endpoint auth",
                 "Can be provided multiple times",
             },
-            [this, rel_base = params.default_data_dir](std::filesystem::path arg) {
+            [this, rel_base = conf.conf_dir](std::filesystem::path arg) {
                 if (!arg.empty() && arg.is_relative())
                     arg = rel_base / arg;
                 if (not exists(arg))
@@ -543,20 +486,6 @@ namespace srouter
             Comment{
                 "Determines whether we will pubish our service's ClientContact to the network (client default: TRUE)",
             });
-
-        conf.define_option<int>("network", "hops", ClientOnly, Hidden, [](int) {
-            log::warning(
-                logcat,
-                "[network]:hops is no longer supported; default path lengths applied. See the path options in the "
-                "[paths] section instead");
-        });
-
-        conf.define_option<int>("network", "paths", ClientOnly, Hidden, [](int) {
-            log::error(
-                logcat,
-                "[network]:paths is no longer supported; default path numbers applied. See the path options in the "
-                "[paths] section instead");
-        });
 
         conf.define_option<bool>(
             "network",
@@ -747,7 +676,7 @@ namespace srouter
             "network",
             "expired-address-cache",
             NotEmbedded,
-            Default{params.type == config::Type::Relay ? 100 : 1000},
+            Default{conf.type == config::Type::Relay ? 100 : 1000},
             Comment{
                 "This controls how many recently expired connection addresses to remember: if a connection",
                 "closed or expires then the assigned addresses are remembered in this cache and will be reserved",
@@ -758,7 +687,6 @@ namespace srouter
                 "address, use the mapaddr= setting instead.",
             });
 
-        // TODO: support SRV records for routers, but for now client only
         conf.define_option<std::string>(
             "network",
             "srv",
@@ -783,8 +711,6 @@ namespace srouter
 
                 srv_records.push_back(std::move(*maybe_srv));
             });
-
-        conf.define_option<int>("network", "path-alignment-timeout", Deprecated);
 
 #if 0
         conf.define_option<std::filesystem::path>(
@@ -927,12 +853,9 @@ namespace srouter
                 addr_map_persist_file = file;
             });
 #endif
-
-        // Deprecated options:
-        conf.define_option<std::string>("network", "enabled", Deprecated);
     }
 
-    void DnsConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void DnsConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "dns",
@@ -990,7 +913,7 @@ namespace srouter
                 "Multiple values accepted.  Can be set to empty to disable upstream DNS resolution",
                 "for advanced setups.",
                 "",
-                "If not specified, the default is to use Quad9 public DNS (https://quad9.net).",
+                "If not specified, the default is to use Quad9 public DNS servers (https://quad9.net).",
             },
             [this](const std::string& arg) {
                 if (not arg.empty())
@@ -1039,28 +962,31 @@ namespace srouter
                 unbound_opts.emplace_back("{}:"_format(key), std::string{value});
             });
 
-        conf.define_option<std::filesystem::path>(
+        conf.define_option<std::string>(
             "dns",
             "unbound-hosts",
             FullClientOnly,
-            Default{std::filesystem::path{"SYSTEM"}},
+            Default{"SYSTEM"s},
             Comment{
                 "Configures unbound to use the given `hosts' files when resolving addresses.  Can be",
                 "used to add custom addresses or perform client-side DNS filtering.  If omitted or set",
                 "to the string 'SYSTEM' then the system default (/etc/hosts, or WINDIR/etc/hosts on",
                 "Windows) will be used.  Can be set to an empty string to not add any hosts file.",
             },
-            [this, rel_base = params.default_data_dir](std::filesystem::path path) {
-                if (path.empty())
-                    return;
-                if (path != std::filesystem::path{"SYSTEM"})
+            [this, rel_base = conf.conf_dir](std::string p) {
+                if (p.empty())
+                    unbound_hosts.reset();
+                else if (p == "SYSTEM")
+                    unbound_hosts.emplace("SYSTEM");
+                else
                 {
+                    std::filesystem::path path{p};
                     if (path.is_relative())
                         path = rel_base / path;
-                    if (not exists(path))
-                        throw std::invalid_argument{"cannot add hosts file {} as it does not exist"_format(path)};
+                    if (!exists(path))
+                        throw std::invalid_argument{"[dns]:unbound-hosts file '{}' does not exist"_format(path)};
+                    unbound_hosts = std::move(path);
                 }
-                unbound_hosts = std::move(path);
             });
 
         // Ignored option (used by the systemd service file to disable resolvconf configuration).
@@ -1076,31 +1002,16 @@ namespace srouter
             });
     }
 
-    void LinksConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void LinksConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "bind",
             {
-                "This section allows specifying the IPs that Session Router uses for incoming and outgoing",
+                "This section allows specifying the IP that Session Router uses for incoming and outgoing",
                 "connections.  For simple setups it can usually be left blank, but may be required",
-                "for routers with multiple IPs, or routers that must listen on a private IP with",
-                "forwarded public traffic.  It can also be useful for clients that want to use a",
-                "consistent outgoing port for which firewall rules can be configured.",
+                "for relays with multiple IP address, or relays that listen on a private IP with",
+                "forwarded public traffic.",
             });
-
-        conf.define_option<std::string>(
-            "bind",
-            "public-ip",
-            Hidden,
-            RelayOnly,
-            public_ip_loader(public_addr, "[bind]:public-ip", "[router]:public-ip"));
-
-        conf.define_option<uint16_t>(
-            "bind",
-            "public-port",
-            Hidden,
-            RelayOnly,
-            public_port_loader(public_addr, "[bind]:public-port", "[router]:public-port"));
 
         auto parse_addr_for_link = [](std::string_view arg) {
             quic::Address a = quic::Address::parse(arg, 0);
@@ -1118,7 +1029,7 @@ namespace srouter
         conf.define_option<std::string>(
             "bind",
             "listen",
-            params.type == config::Type::Relay
+            conf.type == config::Type::Relay
               ? Comment{
                 "IP and/or port for Session Router to bind to for inbound/outbound connections.",
                 "",
@@ -1153,70 +1064,9 @@ namespace srouter
                         "[bind]:inbound and [bind]:IP and use only one [bind]:listen"};
                 listen_addr = parse_addr_for_link(arg);
             });
-
-        conf.define_option<std::string>(
-            "bind", "inbound", RelayOnly, MultiValue, Hidden, [this, parse_addr_for_link](const std::string& arg) {
-                if (listen_addr)
-                    throw std::runtime_error{
-                        "Multiple listen addresses found.  If upgrading from an older Session Router, delete extra "
-                        "[bind]:inbound and [bind]:IP and use only one [bind]:listen"};
-                listen_addr = parse_addr_for_link(arg);
-                log::warning(
-                    logcat,
-                    "Loaded listen address {} from deprecated [bind]:inbound option; please update your config to "
-                    "use [bind]:listen instead",
-                    *listen_addr);
-            });
-
-        conf.define_option<std::string>("bind", "outbound", MultiValue, Deprecated, Hidden);
-
-        conf.add_undeclared_handler("bind", [this](std::string_view, std::string_view key, std::string_view val) {
-            // special case: old Session Router used '*' for outbound port, which now does nothing
-            if (key == "*")
-            {
-                log::warning(
-                    logcat,
-                    "[bind]:*=PORT is deprecated and no longer does anything in this version of Session Router");
-                return;
-            }
-
-            log::warning(
-                logcat, "[bind]:{} is deprecated: Please update your config to use [bind]:listen instead", key);
-
-            // Otherwise you could have either `A.B.C.D=PORT` or `IFNAME=port`.  The latter was
-            // almost never used, and so we only look for the format and error on the latter.
-            if (listen_addr)
-                throw std::runtime_error{
-                    "Multiple listen addresses found.  If upgrading from an older Session Router, replace extra "
-                    "[bind]:inbound=/IP= settings with a single [bind]:listen="};
-
-            uint16_t port{0};
-
-            quic::Address temp;
-            try
-            {
-                if (!srouter::parse_int<uint16_t>(val, port))
-                    throw std::runtime_error{"Could not parse port"};
-                temp = quic::Address{std::string{key}, port};
-            }
-            catch (const std::exception&)
-            {
-                throw std::runtime_error{
-                    "Invalid [bind] deprecated config item: {}={}. "
-                    "Please replace with a [bind]:listen=... directive"_format(key, val)};
-            }
-
-            listen_addr = std::move(temp);
-
-            log::warning(
-                logcat,
-                "[bind]:{0}={1} is deprecated; please replace with [bind] config entry: listen={0}:{1}",
-                key,
-                val);
-        });
     }
 
-    void ApiConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void ApiConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "api",
@@ -1235,7 +1085,7 @@ namespace srouter
             "api",
             "enabled",
             NotEmbedded,
-            Default{params.type == config::Type::FullClient},
+            Default{conf.type == config::Type::FullClient},
             assignment_acceptor(enable_rpc_server),
             Comment{
                 "Determines whether or not the OMQ JSON API is enabled. By default this is enabled for clients, "
@@ -1265,13 +1115,11 @@ namespace srouter
                 "Recommend localhost-only for security purposes.",
             });
 
-        conf.define_option<std::string>("api", "authkey", Deprecated);
-
         // TODO: this was from pre-refactor:
         // TODO: add pubkey to whitelist
     }
 
-    void OxendConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void OxendConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "oxend",
@@ -1310,7 +1158,7 @@ namespace srouter
             });
     }
 
-    void BootstrapConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void BootstrapConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "bootstrap",
@@ -1338,7 +1186,7 @@ namespace srouter
             });
     }
 
-    void LoggingConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void LoggingConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "logging",
@@ -1350,7 +1198,7 @@ namespace srouter
             "logging",
             "type",
             Default{
-                params.type == config::Type::EmbeddedClient      ? "none"
+                conf.type == config::Type::EmbeddedClient        ? "none"
                     : platform::is_android or platform::is_apple ? "system"
                                                                  : "print"},
             [this](std::string arg) {
@@ -1364,18 +1212,18 @@ namespace srouter
                 "  print - print logs to standard output",
                 "  system - logs directed to the system logger (syslog/eventlog/etc.)",
                 "  file - plaintext formatting to a file",
-                (params.type == config::Type::EmbeddedClient ? "  none - do not reset the logging system (for embedded "
-                                                               "use with external oxen::logging)"
-                                                             : ""),
+                (conf.type == config::Type::EmbeddedClient ? "  none - do not reset the logging system (for embedded "
+                                                             "use with external oxen::logging)"
+                                                           : ""),
             });
 
         conf.define_option<std::string>(
             "logging",
             "level",
             Default{
-                params.type == config::Type::Relay            ? "warn"
-                    : params.type == config::Type::FullClient ? "info"
-                                                              : ""},
+                conf.type == config::Type::Relay            ? "warn"
+                    : conf.type == config::Type::FullClient ? "info"
+                                                            : ""},
             [this](std::string arg) { levels = std::move(arg); },
             Comment{
                 "Minimum log severity level to print. Logging below this level will be ignored.",
@@ -1396,7 +1244,7 @@ namespace srouter
             });
     }
 
-    void PathConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void PathConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "paths",
@@ -1428,8 +1276,8 @@ namespace srouter
                 "and as a fallback for path failure.",
                 "",
                 "Note that this value applies to EACH outbound connection separately: if you have active",
-                "connections to 5 clients and 3 snodes, Session Router will maintain 16 outbound paths (at the",
-                "default setting of 2).",
+                "connections to 5 clients and 3 snodes, Session Router will maintain 16 outbound paths (at",
+                "the default setting of 2).",
                 "",
                 "Setting this value to 1 is allowed, but will result in brief periods of packet loss",
                 "whenever paths expire due to the lack of allowed backup path.",
@@ -1700,181 +1548,31 @@ namespace srouter
 #endif
     }
 
-    std::unique_ptr<ConfigGenParameters> Config::make_gen_params() const
-    {
-        auto cgp = std::make_unique<ConfigGenParameters>();
-        cgp->default_data_dir = data_dir;
-        cgp->type = type;
-        return cgp;
-    }
+    Config::Config(config::Type type, std::filesystem::path conf_file)
+        : Config{type, util::file_to_string(conf_file), conf_file.parent_path(), util::path_as_str(conf_file)}
+    {}
 
-    Config::Config(config::Type type, std::filesystem::path conf_file) : data_dir{conf_file.parent_path()}, type{type}
-    {
-        auto ini = util::file_to_string(conf_file);
-        load_config_data(std::move(ini), std::move(conf_file));
-    }
-
-    Config::Config(config::Type type, std::string ini, std::filesystem::path default_data_dir)
-        : data_dir{std::move(default_data_dir)}, type{type}
-    {
-        load_config_data(std::move(ini));
-    }
-
-    static std::filesystem::path overrides_dir(const std::filesystem::path& datadir) { return datadir / "conf.d"; }
-
-    void Config::save()
-    {
-        const auto overridesDir = overrides_dir(data_dir);
-        if (not exists(overridesDir))
-            create_directories(overridesDir);
-        parser.save();
-    }
-
-    void Config::override(std::string section, std::string key, std::string value)
-    {
-        parser.add_override(overrides_dir(data_dir) / "overrides.ini", section, key, value);
-    }
-
-    void Config::load_overrides(ConfigDefinition& conf) const
-    {
-        ConfigParser parser;
-        const auto overridesDir = overrides_dir(data_dir);
-        if (exists(overridesDir))
-        {
-            for (const auto& f : std::filesystem::directory_iterator{overridesDir})
-            {
-                if (not f.is_regular_file() or f.path().extension() != ".ini")
-                    continue;
-                ConfigParser parser;
-                try
-                {
-                    parser.load_file(f.path());
-                }
-                catch (const std::exception& e)
-                {
-                    throw std::runtime_error{"Failed to load config file {}: {}"_format(f.path().string(), e.what())};
-                }
-
-                parser.iter_all_sections([&](std::string_view section, const SectionValues& values) {
-                    for (const auto& [k, v] : values)
-                        conf.add_config_value(section, k, v);
-                });
-            }
-        }
-    }
-
-    void Config::add_default(std::string section, std::string key, std::string val)
-    {
-        additional.emplace_back(std::array<std::string, 3>{section, key, val});
-    }
-
-    void Config::load_config_data(std::string ini, std::optional<std::filesystem::path> filename)
+    Config::Config(config::Type type, std::string ini, std::filesystem::path conf_dir, std::string config_for_debug)
+        : type{type}, defs{type, std::move(conf_dir)}, parser{std::move(config_for_debug)}
     {
 #ifdef SROUTER_EMBEDDED_ONLY
         if (type != Type::EmbeddedClient)
             throw std::runtime_error{
                 "This Session Router build only supports embedded clients, not {}"_format(to_string(type))};
 #endif
-        auto params = make_gen_params();
-        ConfigDefinition conf{type};
-        add_backcompat_opts(conf);
-        init_config(conf, *params);
-
-        for (const auto& item : additional)
-        {
-            conf.add_config_value(item[0], item[1], item[2]);
-        }
-
-        parser.clear();
-
-        if (filename)
-            parser.set_filename(*filename);
-        else
-            parser.set_filename(std::filesystem::path{});
+        for (ConfigBase* c : std::initializer_list<ConfigBase*>{
+                 &router, &exit, &network, &paths, &dns, &links, &api, &oxend, &bootstrap, &logging})
+            c->define_config_options(defs);
 
         parser.load_from_str(std::move(ini));
 
-        parser.iter_all_sections([&](std::string_view section, const SectionValues& values) {
-            for (const auto& pair : values)
-            {
-                conf.add_config_value(section, pair.first, pair.second);
-            }
+        parser.iter_all_sections([this](std::string_view section, const SectionValues& values) {
+            for (const auto& [k, vs] : values)
+                for (const auto& v : vs)
+                    defs.add_config_value(section, k, v);
         });
 
-        load_overrides(conf);
-
-        conf.process();
-    }
-
-    void Config::init_config(ConfigDefinition& conf, const ConfigGenParameters& params)
-    {
-        router.define_config_options(conf, params);
-        exit.define_config_options(conf, params);
-        network.define_config_options(conf, params);
-        paths.define_config_options(conf, params);
-        dns.define_config_options(conf, params);
-        links.define_config_options(conf, params);
-        api.define_config_options(conf, params);
-        oxend.define_config_options(conf, params);
-        bootstrap.define_config_options(conf, params);
-        logging.define_config_options(conf, params);
-    }
-
-    void Config::add_backcompat_opts(ConfigDefinition& conf)
-    {
-        // These config sections don't exist anymore:
-
-        conf.define_option<std::string>("system", "user", Deprecated);
-        conf.define_option<std::string>("system", "group", Deprecated);
-        conf.define_option<std::string>("system", "pidfile", Deprecated);
-
-        conf.define_option<std::string>("netdb", "dir", Deprecated);
-
-        conf.define_option<std::string>("metrics", "json-metrics-path", Deprecated);
-    }
-
-    void ensure_config(std::filesystem::path dataDir, std::filesystem::path confFile, bool overwrite, config::Type type)
-    {
-        // fail to overwrite if not instructed to do so
-        if (exists(confFile) && !overwrite)
-        {
-            log::info(logcat, "Config file already exists; NOT creating new config");
-            return;
-        }
-
-        const auto parent = confFile.parent_path();
-
-        // create parent dir if it doesn't exist
-        if ((not parent.empty()) and (not exists(parent)))
-        {
-            create_directory(parent);
-        }
-
-        log::info(logcat, "Attempting to create config file for {} at file path:{}", to_string(type), confFile);
-
-        srouter::Config config{type, "", dataDir};
-        auto confStr = config.generate_config_base();
-
-        try
-        {
-            util::buffer_to_file(confFile, confStr);
-        }
-        catch (const std::exception& e)
-        {
-            throw std::runtime_error{"Failed to write config data to {}: {}"_format(confFile, e.what())};
-        }
-
-        log::info(logcat, "Generated new config (path: {})", confFile);
-    }
-
-    std::string Config::generate_config_base()
-    {
-        auto params = make_gen_params();
-
-        srouter::ConfigDefinition def{type};
-        init_config(def, *params);
-
-        return def.generate_ini_config(true);
+        defs.process();
     }
 
 }  // namespace srouter

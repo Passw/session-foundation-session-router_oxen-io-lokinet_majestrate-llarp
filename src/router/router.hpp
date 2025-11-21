@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config/definition.hpp"
 #include "contact/relay_contact.hpp"
 #include "crypto/key_manager.hpp"
 #include "handlers/session.hpp"
@@ -267,7 +268,7 @@ namespace srouter
 
         NetID netid() const { return _config.router.net_id; }
 
-        bool embedded() const { return _config.embedded(); }
+        bool embedded() const { return _config.type == config::Type::EmbeddedClient; }
 
         oxenmq::OxenMQ* omq() { return _omq.get(); }
         const oxenmq::OxenMQ* omq() const { return _omq.get(); }

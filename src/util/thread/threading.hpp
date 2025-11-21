@@ -1,7 +1,7 @@
 #pragma once
 
+#include <cassert>
 #include <condition_variable>
-#include <iostream>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -37,17 +37,9 @@ namespace srouter::util
         void lock() const
         {
             if (!m_id)
-            {
                 m_id = std::this_thread::get_id();
-            }
-            else if (*m_id != std::this_thread::get_id())
-            {
-                std::cerr << "NullMutex " << this << " was used across threads: locked by "
-                          << std::this_thread::get_id() << " and was previously locked by " << *m_id << "\n";
-                // if you're encountering this abort() call, you may have discovered a
-                // case where a NullMutex should be reverted to a "real mutex"
-                std::abort();
-            }
+            else
+                assert(*m_id == std::this_thread::get_id());
         }
 #else
         void lock() const {}

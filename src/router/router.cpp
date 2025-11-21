@@ -222,8 +222,6 @@ namespace srouter
         if (is_service_node)
         {
             auto paddr = _config.router.public_addr;
-            if (!paddr)
-                paddr = _config.links.public_addr;
 
             // Treat 0.0.0.0:0 as not specified:
             if (_config.links.listen_addr && _config.links.listen_addr->is_any_addr()
@@ -718,7 +716,7 @@ namespace srouter
 
     void Router::_relay_tick([[maybe_unused]] sys_ms now)
     {
-        assert(_config.relay());
+        assert(_config.type == config::Type::Relay);
 #ifndef SROUTER_EMBEDDED_ONLY
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
