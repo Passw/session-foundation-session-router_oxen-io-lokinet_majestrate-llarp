@@ -490,6 +490,8 @@ namespace srouter::handlers
     {
         log::debug(logcat, "Successfully built path {}", p);
 
+        router.on_inbound_path_change(true);
+
         if (not router.config().network.is_reachable)
             return;
 
@@ -509,6 +511,8 @@ namespace srouter::handlers
         log::info(logcat, "Inbound active paths changed; re-publishing client contact");
         update_and_publish_localcc();
     }
+
+    void SessionEndpoint::no_established_paths_left() { router.on_inbound_path_change(false); }
 
     void SessionEndpoint::on_path_build_failure(int64_t /*build_id*/, path::Path* path, bool timeout)
     {

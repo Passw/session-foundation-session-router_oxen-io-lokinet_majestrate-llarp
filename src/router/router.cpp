@@ -15,6 +15,7 @@
 #include "util/random.hpp"
 #include "util/service_manager.hpp"
 #include "util/time.hpp"
+#include "util/try_calling.hpp"
 
 #include <nlohmann/json.hpp>
 #include <oxen/log.hpp>
@@ -878,65 +879,49 @@ namespace srouter
         tick();
     }
 
-    bool Router::is_connected() const
+    bool Router::is_edge_connected() const
     {
-        return loop.call_get([this] { return _is_connected; });
+        return loop.call_get([this] { return _is_edge_connected; });
+    }
+    bool Router::is_path_connected() const
+    {
+        return loop.call_get([this] { return _is_edge_connected && _has_established_paths; });
     }
 
-    void Router::on_connected(std::function<void()> callback, bool persistent)
-    {
-        if (!callback)
-            return;
-        loop.call([this, callback = std::move(callback), persistent] {
-            if (_is_connected)
-                try
-                {
-                    callback();
-                }
-                catch (const std::exception& e)
-                {
-                    log::error(logcat, "Uncaught exception calling on_connected callback: {}", e.what());
-                }
-
-            if (persistent or not _is_connected)
-                _on_connected.emplace_back(std::move(callback), persistent);
-        });
-    }
-
-    void Router::on_disconnected(std::function<void()> callback, bool persistent)
+    void Router::on_connected(std::function<void()> callback, bool with_paths, bool persistent)
     {
         if (!callback)
             return;
-        loop.call([this, callback = std::move(callback), persistent] {
-            if (not _is_connected)
-                try
-                {
-                    callback();
-                }
-                catch (const std::exception& e)
-                {
-                    log::error(logcat, "Uncaught exception calling on_disconnected callback: {}", e.what());
-                }
+        loop.call([this, with_paths, callback = std::move(callback), persistent] {
+            bool fire_now = _is_edge_connected && (_has_established_paths || !with_paths);
+            if (fire_now)
+                try_calling(logcat, callback);
 
-            if (persistent or _is_connected)
-                _on_disconnected.emplace_back(std::move(callback), persistent);
+            if (persistent || !fire_now)
+                (with_paths ? _on_path_connected : _on_edge_connected).emplace_back(std::move(callback), persistent);
         });
     }
 
-    static void process_on_conn_callbacks(
-        std::list<std::pair<std::function<void()>, bool>> callbacks, std::string_view type)
+    void Router::on_disconnected(std::function<void()> callback, bool with_paths, bool persistent)
+    {
+        if (!callback)
+            return;
+        loop.call([this, callback = std::move(callback), persistent, with_paths] {
+            bool fire_now = !_is_edge_connected || (with_paths && !_has_established_paths);
+            if (fire_now)
+                try_calling(logcat, callback);
+
+            if (persistent || !fire_now)
+                (with_paths ? _on_path_disconnected : _on_path_connected).emplace_back(std::move(callback), persistent);
+        });
+    }
+
+    static void process_on_conn_callbacks(std::list<std::pair<std::function<void()>, bool>> callbacks)
     {
         for (auto it = callbacks.begin(); it != callbacks.end();)
         {
             auto& [f, persist] = *it;
-            try
-            {
-                f();
-            }
-            catch (const std::exception& e)
-            {
-                log::error(logcat, "Uncaught exception calling {} callback: {}", type, e.what());
-            }
+            try_calling(logcat, f);
             if (persist)
                 ++it;
             else
@@ -949,20 +934,21 @@ namespace srouter
         assert(loop.inside());
 
         int conns = link_endpoint().num_relay_conns();
-        if (conns == 0 and _is_connected)
+        if (conns == 0 and _is_edge_connected)
         {
-            _is_connected = false;
+            _is_edge_connected = false;
 
             log::warning(log_global, "Session Router is no longer connected to the network!");
 
-            process_on_conn_callbacks(_on_disconnected, "on_disconnected");
+            process_on_conn_callbacks(_on_path_disconnected);
+            process_on_conn_callbacks(_on_edge_disconnected);
         }
         else if (
-            not _is_connected
+            not _is_edge_connected
             and conns * CLIENT_CONNECTED_THRESHOLD::den
                 >= config().paths.edge_connections * CLIENT_CONNECTED_THRESHOLD::num)
         {
-            _is_connected = true;
+            _is_edge_connected = true;
 
             log::info(
                 log_global,
@@ -971,7 +957,41 @@ namespace srouter
                 conns,
                 config().paths.edge_connections);
 
-            process_on_conn_callbacks(_on_connected, "on_connected");
+            process_on_conn_callbacks(_on_edge_connected);
+            if (_has_established_paths)
+                process_on_conn_callbacks(_on_path_connected);
+        }
+    }
+
+    void Router::on_inbound_path_change(bool connected)
+    {
+        if (connected == _has_established_paths)
+            return;
+
+        _has_established_paths = connected;
+
+        if (_has_established_paths)
+        {
+            if (!_is_edge_connected)
+            {
+                // If we aren't edge connected then an established path isn't enough to push us into
+                // "path connected" state, so do nothing for now aside from setting the cool.  When
+                // we hit edge connected state (above) it will fire the _on_path_connected callbacks.
+                return;
+            }
+
+            process_on_conn_callbacks(_on_path_connected);
+        }
+        else
+        {
+            if (!_is_edge_connected)
+            {
+                // If we already lost all our edges then the path disconnected callbacks were
+                // already fired as part of that, so we don't need to call them now.
+                return;
+            }
+
+            process_on_conn_callbacks(_on_path_disconnected);
         }
     }
 

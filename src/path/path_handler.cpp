@@ -70,6 +70,7 @@ namespace srouter::path
     {
         Lock_t lock{paths_mutex};
 
+        int still_established = 0;
         int n = 0;
         for (auto itr = _paths.begin(); itr != _paths.end();)
         {
@@ -80,11 +81,19 @@ namespace srouter::path
                 n++;
             }
             else
+            {
+                if (itr->second and itr->second->is_established())
+                    still_established++;
                 ++itr;
+            }
         }
 
         if (n)
+        {
             log::debug(logcat, "{} expired paths dropped", n);
+            if (!still_established)
+                no_established_paths_left();
+        }
     }
 
     void PathHandler::invalidate_paths()
@@ -121,7 +130,7 @@ namespace srouter::path
 
         expire_paths(now);
 
-        if (not router.is_service_node and not router.is_connected())
+        if (not router.is_service_node and not router.is_edge_connected())
             // If we are not yet fully connected then we can't initiate path builds.  (In theory we
             // could whe not yet fully connected, but don't want to because that would bias edge
             // router selection towards faster ones).
