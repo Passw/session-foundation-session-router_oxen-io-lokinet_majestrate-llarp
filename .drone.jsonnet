@@ -89,6 +89,7 @@ local debian_pipeline(name,
                   'echo "man-db man-db/auto-update boolean false" | debconf-set-selections',
                   apt_get_quiet + ' update',
                   apt_get_quiet + ' install -y eatmydata',
+                  'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
                 ] + (
                   if std.length(oxen_repo) > 0 then [
                     'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y lsb-release',
@@ -99,7 +100,6 @@ local debian_pipeline(name,
                   ] else []
                 ) + extra_setup
                 + [
-                  'eatmydata ' + apt_get_quiet + ' dist-upgrade -y',
                   'eatmydata ' + apt_get_quiet + ' install --no-install-recommends -y gdb cmake git pkg-config ccache ' + std.join(' ', deps),
                   'mkdir build',
                   'cd build',
