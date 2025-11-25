@@ -156,11 +156,13 @@ if (SROUTER_FULL)
   # parse modify and reconstitute dns wire proto, dns queries and RR
   target_sources(session-router-dns PRIVATE
     dns/encode.cpp
+    dns/handler.cpp
+    dns/listener.cpp
     dns/message.cpp
     dns/platform.cpp
     dns/question.cpp
     dns/rr.cpp
-    dns/server.cpp
+    dns/unbound.cpp
   )
 
   # platform specific bits and bobs for setting dns
@@ -188,8 +190,8 @@ endforeach()
 configure_file("nodedb-bootstraps.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/nodedb-bootstraps.cpp" @ONLY)
 target_sources(session-router-nodedb PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nodedb-bootstraps.cpp")
 
-# session-router-config is for all configuration types and parsers
-session_router_add_library(session-router-config
+# session-router-conf is for all configuration types and parsers
+session_router_add_library(session-router-conf
   config/config.cpp
   config/definition.cpp
   config/ini.cpp
@@ -207,7 +209,7 @@ session_router_add_library(session-router-path
 
 if(SROUTER_DEBUG_PATH_SEED)
   target_compile_definitions(session-router-nodedb PRIVATE SROUTER_DEBUG_PATH_SEED)
-  target_compile_definitions(session-router-config PRIVATE SROUTER_DEBUG_PATH_SEED)
+  target_compile_definitions(session-router-conf PRIVATE SROUTER_DEBUG_PATH_SEED)
   target_compile_definitions(session-router-path PRIVATE SROUTER_DEBUG_PATH_SEED)
 endif()
 
@@ -215,18 +217,18 @@ endif()
 target_link_libraries(session-router-nodedb PUBLIC session-router-addressing session-router-cryptography)
 target_link_libraries(session-router-contact PUBLIC session-router-dns)
 if(SROUTER_FULL)
-  target_link_libraries(session-router-rpc PUBLIC session-router-contact session-router-config)
+  target_link_libraries(session-router-rpc PUBLIC session-router-contact session-router-conf)
 endif()
 target_link_libraries(session-router-addressing PUBLIC session-router-utils session-router-cryptography session-router-contact session-router-ip)
-target_link_libraries(session-router-config PUBLIC session-router-cryptography session-router-addressing)
+target_link_libraries(session-router-conf PUBLIC session-router-cryptography session-router-addressing)
 if(SROUTER_FULL)
   target_link_libraries(session-router-platform PUBLIC session-router-cryptography session-router-ip)
-  target_link_libraries(session-router-config PUBLIC session-router-exit-auth)
+  target_link_libraries(session-router-conf PUBLIC session-router-exit-auth)
 endif()
 target_link_libraries(session-router-dns
   PUBLIC
   session-router-cryptography
-  session-router-config
+  session-router-conf
 )
 if(SROUTER_FULL)
   target_link_libraries(session-router-dns PUBLIC session-router-platform)
@@ -239,7 +241,7 @@ target_link_libraries(session-router-path
 
 target_link_libraries(session-router-core-utils 
   PUBLIC 
-  session-router-config
+  session-router-conf
   session-router-dns
 )
 

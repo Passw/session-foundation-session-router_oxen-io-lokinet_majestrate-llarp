@@ -69,21 +69,15 @@ namespace srouter
     {
         if (not is_relay)
         {
-            if (config.network.keyfile and std::filesystem::exists(*config.network.keyfile))
+            if (config.network.keyfile)
             {
                 load_from_file(secret_key, *config.network.keyfile);
                 log::info(logcat, "Successfully loaded persistent client key from config path");
             }
             else
             {
-                log::debug(logcat, "Client generating secret key...");
+                log::debug(logcat, "Generating ephemeral client key...");
                 secret_key = crypto::generate_ed25519();
-
-                if (config.network.keyfile && !write_to_file(secret_key, *config.network.keyfile))
-                {
-                    log::critical(logcat, "Failed to save persistent key to {}", *config.network.keyfile);
-                    throw std::runtime_error{"Failed to save configured persistent key file"};
-                }
             }
 
             public_key.assign(secret_key.pubkey_span());

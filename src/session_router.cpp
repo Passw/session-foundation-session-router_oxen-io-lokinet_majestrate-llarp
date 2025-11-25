@@ -157,6 +157,14 @@ namespace session::router
         context->router->session_endpoint().unmap_udp_remote_port(netaddr, port);
     }
 
+    static snode_path to_snode_path(const srouter::path::Path::Info& info)
+    {
+        snode_path path;
+        for (const auto& [rid, ip] : info.relays)
+            path.emplace_back(srouter::NetworkAddress{rid, false}.to_string(), ip.to_string());
+        return path;
+    }
+
     std::optional<snode_path> SessionRouter::get_path_for_session(std::string_view remote)
     {
         srouter::NetworkAddress netaddr;
@@ -172,10 +180,8 @@ namespace session::router
 
         return context->router->loop.call_get([&r = context->router, addr = std::move(netaddr)]() {
             std::optional<snode_path> ret;
-            if (auto s = r->session_endpoint().get_session(addr); s)
-            {
-                ret = s->current_path();
-            }
+            if (auto* s = r->session_endpoint().get_session(addr))
+                ret = to_snode_path(s->current_path_info());
             return ret;
         });
     }
@@ -184,9 +190,10 @@ namespace session::router
     {
         return context->router->loop.call_get([&r = context->router]() {
             std::vector<session_path> ret;
-            auto f = [&ret](const srouter::NetworkAddress& addr, const srouter::session::Session& s) {
-                ret.emplace_back(s.current_path(), addr.to_string());
-            };
+            r->session_endpoint().for_each_session(
+                [&ret](const srouter::NetworkAddress& addr, const srouter::session::Session& s) {
+                    ret.emplace_back(to_snode_path(s.current_path_info()), addr.to_string());
+                });
             return ret;
         });
     }

@@ -4,8 +4,6 @@
 #include "config/ini.hpp"
 #include "constants/version.hpp"
 #include "contact/client_contact.hpp"
-#include "dns/dns.hpp"
-#include "dns/server.hpp"
 #include "router/router.hpp"
 #include "rpc/rpc_request_definitions.hpp"
 #include "rpc_request.hpp"
@@ -28,6 +26,7 @@ namespace srouter::rpc
         log::info(logcat, "RPC Server received request for endpoint `{}`", req.name);
     }
 
+#if 0
     // Fake packet source that serializes repsonses back into dns
     class DummyPacketSource final : public dns::PacketSource
     {
@@ -47,6 +46,7 @@ namespace srouter::rpc
         /// returns the sockaddr we are bound on if applicable
         std::optional<quic::Address> bound_on() const override { return std::nullopt; }
     };
+#endif
 
     bool check_path(std::string path)
     {
@@ -601,70 +601,6 @@ namespace srouter::rpc
         return;
     }
 #endif
-
-    void RPCServer::invoke(Config& config)
-    {
-        log_print_rpc(config);
-
-        if (config.request.filename.empty() and not config.request.ini.empty())
-        {
-            SetJSONError("No filename specified for .ini file", config.response);
-            return;
-        }
-        if (config.request.ini.empty() and not config.request.filename.empty())
-        {
-            SetJSONError("No .ini chunk provided", config.response);
-            return;
-        }
-
-        if (config.request.filename.ends_with(".ini"))
-        {
-            SetJSONError("Must append '.ini' to filename", config.response);
-            return;
-        }
-
-        if (not check_path(config.request.filename))
-        {
-            SetJSONError("Bad filename passed", config.response);
-            return;
-        }
-
-        std::filesystem::path conf_d{"conf.d"};
-
-        if (config.request.del and not config.request.filename.empty())
-        {
-            try
-            {
-                if (exists(conf_d / config.request.filename))
-                    remove(conf_d / config.request.filename);
-            }
-            catch (std::exception& e)
-            {
-                SetJSONError(e.what(), config.response);
-                return;
-            }
-        }
-        else
-        {
-            try
-            {
-                if (not exists(conf_d))
-                    create_directory(conf_d);
-
-                auto parser = ConfigParser();
-                parser.load_new_from_str(config.request.ini);
-                parser.set_filename(conf_d / config.request.filename);
-                parser.save_new();
-            }
-            catch (std::exception& e)
-            {
-                SetJSONError(e.what(), config.response);
-                return;
-            }
-        }
-
-        SetJSONResponse("OK", config.response);
-    }
 
     void RPCServer::HandleLogsSubRequest(oxenmq::Message& m)
     {

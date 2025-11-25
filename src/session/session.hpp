@@ -3,7 +3,6 @@
 #include "address/address.hpp"
 #include "constants/path.hpp"
 #include "ev/tcp.hpp"
-#include "ev/udp.hpp"
 #include "net/ip_packet.hpp"
 #include "path/path.hpp"
 #include "path/path_handler.hpp"
@@ -220,7 +219,7 @@ namespace srouter
             // rather than waiting for the next tick)
             virtual void tick(sys_ms now);
 
-            virtual std::vector<std::pair<std::string, std::string>> current_path() const { return {}; };
+            virtual path::Path::Info current_path_info() const { return {}; };
         };
 
         class OutboundSession : public path::PathHandler, public Session
@@ -300,7 +299,7 @@ namespace srouter
 
             inline static constexpr int MAX_QUEUED_PACKETS = 30;
 
-            std::vector<std::pair<std::string, std::string>> current_path() const override;
+            path::Path::Info current_path_info() const override;
         };
 
         // Outbound Session to Remote Relay
@@ -419,7 +418,7 @@ namespace srouter
 
             void handle_path_switch(HopID pivot, std::shared_ptr<path::Path> path);
 
-            std::vector<std::pair<std::string, std::string>> current_path() const override;
+            path::Path::Info current_path_info() const override;
 
             std::string to_string() const override;
         };

@@ -2,7 +2,7 @@
 
 // Header for making actual log statements such as srouter::log::Info and so on work.
 
-#include <oxen/log.hpp>
+#include <oxen/log.hpp>  // IWYU pragma: export
 #include <oxen/log/catlogger.hpp>
 #include <oxen/log/ring_buffer_sink.hpp>
 

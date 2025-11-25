@@ -1,6 +1,8 @@
 #include "encode.hpp"
 
 #include "address/address.hpp"
+#include "util/logging.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/str.hpp"
 
 #include <oxenc/endian.h>
@@ -10,6 +12,8 @@
 
 namespace srouter::dns
 {
+    static auto logcat = log::Cat("dns");
+
     std::optional<std::string> extract_name(std::span<const std::byte>& buf)
     {
         std::optional<std::string> name;
@@ -46,36 +50,125 @@ namespace srouter::dns
         return name;
     }
 
-    size_t encode_name(std::span<std::byte> buf, std::string_view name)
+    std::optional<std::span<const std::byte>> extract_name_data(std::span<const std::byte>& buf)
     {
-        auto orig = buf.size();
+        log::trace(logcat, "Extracting name data from: {}", buffer_printer{buf});
+        auto* p = buf.data();
+        auto* end = p + buf.size();
+        while (true)
+        {
+            if (p == end)
+                return std::nullopt;
+            auto len = static_cast<size_t>(*p++);
+            if (len > 63)
+            {
+                // This is a compressed name pointer, so we need this byte and the next one, and
+                // then that's it, we're done.
+                if (p == end)
+                    return std::nullopt;
+                p++;
+                break;
+            }
+
+            if (len == 0)
+                break;  // Terminating null
+
+            // Otherwise we have a length prefix:
+            if (p + len >= end)
+                return std::nullopt;
+            p += len;
+        }
+
+        auto result = std::make_optional<std::span<const std::byte>>(buf.subspan(0, p - buf.data()));
+        buf = buf.subspan(p - buf.data());
+        return result;
+    }
+
+    void encode_name(std::span<std::byte>& buf, std::string_view name, prev_names_t* prev_names, uint16_t* buf_offset)
+    {
         if (name.size() && name.back() == '.')
             name.remove_suffix(1);
 
-        for (auto part : srouter::split(name, "."))
+        assert((prev_names && buf_offset) || (!prev_names && !buf_offset));
+
+        // Look for a previously used suffix of this name.  For instance, if we have a response
+        // consisting of:
+        //
+        // localhost.sesh IN CNAME mylongpubkey.sesh
+        // foo.mylongpubkey.sesh IN AAAA 1:2:3::4
+        //
+        // then when we repeat the question itself (IN AAAA localhost.sesh) we echo that question
+        // back into the response as the 16 bytes:
+        //     \x09localhost\x04sesh\x00
+        // Suppose that this was written at location Z in the DNS message, this creates two
+        // pointable addresses:
+        // - "localhost.sesh" -> Z
+        // - "sesh" -> Z+10
+        //
+        // Then we come to the answers, and for the first "localhost.sesh" value, we can simply
+        // write that as a single pointer [Z] (where the pointer is a 16-bit, big-endian value with
+        // the highest two bits set and the remaining 14 bits set to "Z").
+        //
+        // Then we get to "mylongpubkey.sesh" and we can encode that as:
+        //
+        //     \x34mylongpubkey[pointer to Z+10]
+        //
+        // This also creates a new pointable address:
+        // - "mylongpubkey.sesh" -> Y
+        //
+        // Then we come to foo.mylongpubkey.sesh and we can encode this as:
+        //
+        // - \x03foo[pointer to Y]
+        //
+        // i.e. we only need 6 bytes for this address instead of 1+3+1+52+1+4+1=63 bytes that we
+        // would need for the uncompressed version.
+        //
+        // Although this compression is optional, given how frequently we reuse long session router
+        // names (particularly for something like SRV records where a name can be repeated multiple
+        // times), and the DNS response size limit of 512 bytes, we implement that here.
+
+        for (size_t pos = name.empty() ? std::string::npos : 0; pos != std::string_view::npos;)
         {
+            std::string_view check = name.substr(pos);
+            if (prev_names)
+                if (auto it = prev_names->find(check); it != prev_names->end())
+                {
+                    if (buf.size() < 2)
+                        throw std::out_of_range{"Buffer too small"};
+                    uint16_t ptr = uint16_t{0b11000000'00000000} | it->second;
+                    oxenc::write_host_as_big(ptr, buf.data());
+                    buf = buf.subspan(2);
+                    *buf_offset += 2;
+                    // A pointer is terminal (i.e. no nullptr to add), so we're done.
+                    return;
+                }
+
+            auto next = name.find('.', pos + 1);
+            auto part = next == std::string_view::npos ? check : name.substr(pos, next - pos);
+
             size_t l = part.size();
             if (l > 63 || l >= buf.size())
-                return false;
-            buf.front() = static_cast<std::byte>(l);
+                throw std::out_of_range{"Buffer too small"};
+            buf.front() = static_cast<std::byte>(l);  // Length prefix
             std::memcpy(buf.data() + 1, part.data(), part.size());
+            if (prev_names)
+            {
+                prev_names->emplace(std::string{check}, static_cast<uint16_t>(*buf_offset));
+                *buf_offset += 1 + part.size();
+            }
             buf = buf.subspan(1 + part.size());
+
+            pos = next == std::string_view::npos ? next : next + 1;
         }
+
+        // If we get here we wrote all the pieces without pointing at anything, so we need to append
+        // a null byte to terminate the name:
         if (buf.empty())
-            return false;
+            throw std::out_of_range{"Buffer too small"};
         buf.front() = std::byte{0};
         buf = buf.subspan(1);
-        return orig - buf.size();
-    }
-
-    bool write_name_into(std::span<std::byte>& buf, std::string_view name)
-    {
-        if (auto s = encode_name(buf, name))
-        {
-            buf = buf.subspan(s);
-            return true;
-        }
-        return false;
+        if (buf_offset)
+            ++*buf_offset;
     }
 
     std::optional<std::variant<ipv4, ipv6>> decode_ptr(std::string_view name)
