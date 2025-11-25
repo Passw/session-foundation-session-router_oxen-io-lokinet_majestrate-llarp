@@ -274,7 +274,7 @@ namespace srouter
                 assert(!_config.links.listen_addr->is_any_port());  // Should be assured from above
                 // port given but not IP: if we have a public ip then use that, else go search
                 if (paddr)
-                    _listen_address = quic::Address{*paddr, _config.links.listen_addr->port()};
+                    _listen_address = quic::Address{paddr->host(), _config.links.listen_addr->port()};
                 else
                 {
                     auto_detect = true;
