@@ -87,25 +87,41 @@ namespace session::router
         ~SessionRouter();
 
         // Schedules the given callback to be fired when Session Router edge connections are mostly
-        // established (and thus Session Router is ready to start building paths).  If Session Router is already
-        // established, this will schedule an immediate invocation of the callback.
+        // established (and thus Session Router is ready to start building paths).  If Session
+        // Router is already established, this will schedule an immediate invocation of the
+        // callback.
+        //
+        // If the `with_path` argument is true (or omitted) then the callback instead fires with
+        // there are edge connections *and* at least one inbound/utility path, which is needed to be
+        // able to query the network for things like ONS records and client contacts.  `false`, on
+        // the other hand, will fire sooner without requiring a path be completed: it is suitable
+        // for signalling when Session Router is sufficient connected to start building sessions to
+        // relays.
         //
         // If persist is true then the callback will be stored and called *each* time Session Router enters
         // the connected state (i.e. it will be called again if Session Router loses all connectivity and
-        // then regains connections).
-        void on_connected(std::function<void()> callback, bool persist = false);
+        // then regains connections and/or paths).
+        void on_connected(std::function<void()> callback, bool with_path = true, bool persist = false);
 
-        // Schedules the given callback to be fired when Session Router becomes fully disconnected, i.e.
-        // loses all established edge connections.  If persist is true then the callback will be
-        // fired *each* time Session Router transitions from connected to disconnected state.  If Session Router
+        // Schedules the given callback to be fired when Session Router becomes fully disconnected,
+        // i.e.  loses all established edge connections or its last inbound path.  When `with_path`
+        // is given and false, this tracks edge disconnection, which means the instance has lost all
+        // connectivity; when omitted or true, the callback is also fired if the last inbound path
+        // is lost, signalling that network querying and client sessions cannot currently work, but
+        // sessions to relays may still be functional.
+        //
+        // If `persist` is true then the callback will be fired *each* time Session Router
+        // transitions from connected to disconnected state.  If Session Router
         // is not currently connected then the callback will be scheduled immediately.
-        void on_disconnected(std::function<void()> callback, bool persist = false);
+        void on_disconnected(std::function<void()> callback, bool with_path = true, bool persist = false);
 
-        // Establishes a session to the given remote (.loki or .snode), with an IPv6 localhost port
-        // mapped to a port on the remote.  A limited number of packets (e.g. to establish a
-        // connection) can be sent to the mapped port immediately even before the session
-        // establishes: a few packets will be queued and delivered once (and if) the session
+        // Establishes a session to the given remote (pubkey.sesh or pubkey.snode), with an IPv6
+        // localhost port mapped to a port on the remote.  A limited number of packets (e.g. to
+        // establish a connection) can be sent to the mapped port immediately even before the
+        // session establishes: a few packets will be queued and delivered once (and if) the session
         // establishes.
+        //
+        // (This method does not accept SNS names: you need to call resolve_sns() first for that).
         //
         // The returned object contains the port information.  The tunnel will remain active until
         // drop_udp() is called with the same remote address and port (or the SessionRouter instance
@@ -121,13 +137,14 @@ namespace session::router
         // call.  Note that `on_established` can be called immediately (i.e. before
         // `establish_udp()` returns), if a session to the remote is already established.
         //
-        // `on_timeout` is invoked instead of `on_established` if the session fails to establish for
-        // whatever reason, with a string giving a descriptive reason.  Note that `on_timeout` is
-        // *not* called if the call throws (such as if given an unparseable address).  Note that an
-        // `on_timeout` call does *not* mean the tunnel has been cancelled: it will remain and future
-        // attempts to connect to the tunnel port will attempt to (re-)establish the session.  If
-        // you want to cancel it on session initiation failure, call `close_udp()` from within the
-        // on_timeout callback.
+        // `on_timeout` is invoked instead of `on_established` if the session fails to establish.
+        // Note that:
+        // - `on_timeout` is *not* called if the call throws (such as if given an unparseable
+        //   address).
+        // - an `on_timeout` call does *not* mean the tunnel has been cancelled: it will remain
+        //   active and future attempts to connect to the tunnel port will attempt to (re-)establish
+        //   the session.  If you want to cancel it on session initiation failure, you must call
+        //   `close_udp()` from within the on_timeout callback.
         //
         // Take care not to use very slow or blocking code inside the callbacks: they are called
         // from Session Router's logic thread (and so any blocking will stall Session Router).
@@ -140,6 +157,29 @@ namespace session::router
         // Closes a tunnel socket to the given remote/port combination, releasing any internal
         // mappings set up from previous connections through the tunnel.
         void close_udp(std::string_view remote, uint16_t port);
+
+        // Takes an ONS/SNS address such as "blocks.loki" and attempts to resolve it to a Session
+        // Router client (aka hidden service) address such as
+        // "kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.sesh".
+        //
+        // This method will also accept a full network address (PUBKEY.sesh or PUBKEY.snode), in
+        // which case it simply instantly calls the callback with the same address.  (This
+        // capability is designed to allow this method to be used with an address that could be
+        // either ONS/SNS or direct pubkey).
+        //
+        // When the name is resolved, the callback will be invoked with the network address.  If the
+        // name does not exist or a timeout occurs it will be invoked with nullopt and a second
+        // argument that is true if we timed out (i.e. don't know), false if we got a definitive
+        // answer from the network that the name does not exist.  (The bool should not be used when
+        // `addr` has a value).
+        //
+        // It is possible for the callback to be called instantly (i.e. before resolve_sns returns)
+        // if the result is already cached, or when given a direct pubkey address rather than a
+        // resolvable ONS/SNS name.
+        //
+        // This method will throw an invalid_argument exception if the given address is neither a
+        // valid pubkey address nor potentially valid ONS/SNS address.
+        void resolve(std::string address, std::function<void(std::optional<std::string> addr, bool timeout)> callback);
 
         // If we have a session with the given remote, returns the path we are currently using for
         // that session.  In the case of a client<->client session, this will be the relay which we

@@ -63,14 +63,14 @@ namespace session::router
         context->wait();
     }
 
-    void SessionRouter::on_connected(std::function<void()> callback, bool persist)
+    void SessionRouter::on_connected(std::function<void()> callback, bool with_path, bool persist)
     {
-        context->router->on_connected(std::move(callback), persist);
+        context->router->on_connected(std::move(callback), with_path, persist);
     }
 
-    void SessionRouter::on_disconnected(std::function<void()> callback, bool persist)
+    void SessionRouter::on_disconnected(std::function<void()> callback, bool with_path, bool persist)
     {
-        context->router->on_disconnected(std::move(callback), persist);
+        context->router->on_disconnected(std::move(callback), with_path, persist);
     }
 
     tunnel_info SessionRouter::establish_udp(
@@ -79,7 +79,9 @@ namespace session::router
         std::function<void(tunnel_info)> on_established,
         std::function<void()> on_timeout)
     {
-        // FIXME: check for valid ONS, and if so, we need to defer the lookup as well
+        if (srouter::is_valid_sns(remote))
+            throw std::invalid_argument{"establish_udp requires a network pubkey address, not an ONS/SNS addresses"};
+
         srouter::NetworkAddress netaddr;
         try
         {
@@ -143,7 +145,6 @@ namespace session::router
 
     void SessionRouter::close_udp(std::string_view remote, uint16_t port)
     {
-        // FIXME: check for valid ONS, and if so, we need to defer the lookup as well
         srouter::NetworkAddress netaddr;
         try
         {
@@ -163,6 +164,39 @@ namespace session::router
         for (const auto& [rid, ip] : info.relays)
             path.emplace_back(srouter::NetworkAddress{rid, false}.to_string(), ip.to_string());
         return path;
+    }
+
+    void SessionRouter::resolve(
+        std::string address, std::function<void(std::optional<std::string> addr, bool timeout)> callback)
+    {
+        if (!srouter::is_valid_sns(address))
+        {
+            try
+            {
+                srouter::NetworkAddress{address};
+            }
+            catch (...)
+            {
+                throw std::invalid_argument{
+                    "Invalid address: '{}' is not a valid SNS nor a valid network pubkey address"_format(address)};
+            }
+            callback(std::move(address), false);
+            return;
+        }
+
+        context->router->loop.call([address = std::move(address),
+                                    callback = std::move(callback),
+                                    &ep = context->router->session_endpoint()]() mutable {
+            ep.resolve_sns(
+                std::move(address),
+                [callback = std::move(callback)](
+                    std::optional<srouter::NetworkAddress> netaddr, bool assertive, std::chrono::milliseconds /*ttl*/) {
+                    std::optional<std::string> a;
+                    if (netaddr)
+                        a = netaddr->to_string();
+                    callback(std::move(a), !assertive);
+                });
+        });
     }
 
     std::optional<snode_path> SessionRouter::get_path_for_session(std::string_view remote)

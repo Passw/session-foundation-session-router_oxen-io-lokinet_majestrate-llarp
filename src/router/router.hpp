@@ -119,7 +119,13 @@ namespace srouter
         std::atomic<bool> _is_stopping{false};
         std::atomic<bool> _is_running{false};
 
-        bool _is_connected{false};
+        // True once we have enough edges
+        bool _is_edge_connected{false};
+        // True once we have at least one inbound/utility path.  Note that this is subtly different
+        // than the `is_path_connected()` method and the on_connected triggers: this only tracks
+        // whether we have paths, but the public path connectivity checks also require edge
+        // connections.
+        bool _has_established_paths{false};
 
         // Not actually shared, but not available at all in non-full builds.
         std::shared_ptr<consensus::reachability_testing> _router_testing;
@@ -166,13 +172,14 @@ namespace srouter
         steady_ms _next_dereg_warning{steady_now_ms() + 15s};
 
         // Application callback(s) to fire as soon as we reach "connected" or "disconnected" status,
-        // which means when we have established our target number of edge connections or lost all
-        // edge connections, respectively.  Typically used as a "ready-to-go" callback during
-        // initialization.  The bool value indicates whether the callback is persistent (true) or
-        // one-time (false).  Note that callbacks are only called when the connected state changes:
-        // that is when we were disconnected and became connected, or were connected and became
-        // disconnected.
-        std::list<std::pair<std::function<void()>, bool>> _on_connected, _on_disconnected;
+        // with different versions for "edge connected" or "path connected".
+        //
+        // Typically used as a "ready-to-go" callback during initialization.  The bool is whether
+        // the callback is persistent (true) or one-time (false).  Note that callbacks are only
+        // called when the connected state changes: that is when we were disconnected and became
+        // connected, or were connected and became disconnected.
+        std::list<std::pair<std::function<void()>, bool>> _on_edge_connected, _on_edge_disconnected, _on_path_connected,
+            _on_path_disconnected;
 
         // These aren't actually shared, but we unique_ptr requires destructor visibility, which
         // embedded-only clients won't have as they don't compile any RPC code.
@@ -311,24 +318,40 @@ namespace srouter
 
         std::string status_line();
 
-        // Returns the client connectivity status: we enter "connected" state once the target number
-        // of edge router connections is reached, and we lose connected state when we lose all edge
-        // connections.  Application code can monitor this state by setting callbacks via
-        // `on_connected`/`on_disconnected`.
-        bool is_connected() const;
+        // Returns the client "edge connectivity" status: we enter "edge connected" state once the
+        // target number of edge router connections is reached, and we lose connected state when we
+        // lose all edge connections.  Application code can monitor this state by setting callbacks
+        // via `on_connected`/`on_disconnected`.
+        bool is_edge_connected() const;
 
-        // Adds an application callback to invoke when the connectivity state changes to
-        // "connected".  If the state is already connected when this is called, the callback will be
-        // invoked immediately.  If `persistent` is true then the callback will be stored and called
-        // again if the state leaves and re-enters the connected state.
-        void on_connected(std::function<void()> callback, bool persistent);
+        // Returns the client "path connectivity" status: this requires edge connectivity (see
+        // above) but also requires that the router has at least one established inbound/utility
+        // path, as is required for things like SNS queries and client contact retrieval and
+        // publishing.
+        bool is_path_connected() const;
+
+        //
+        // If `with_paths` is false, this returns true if we have enough edge connections, which is
+        // enough to be able to build outbound sessions to routers.  If true, the returns true if we
+        // have edge connections *and* at least one inbound/utility path, which is needed for things
+        // like client contact lookups and ONS queries.
+
+        // Adds an application callback to invoke when the connectivity state changes to "connected"
+        // (see is_connected).  If the state is already connected when this is called, the callback
+        // will be invoked immediately.  If `persistent` is true then the callback will be stored
+        // and called again if the state leaves and re-enters the connected state.
+        void on_connected(std::function<void()> callback, bool with_paths, bool persistent);
 
         // Like `is_connected`, but fires on disconnections.
-        void on_disconnected(std::function<void()> callback, bool persistent);
+        void on_disconnected(std::function<void()> callback, bool with_paths, bool persistent);
 
         // Internal method: called from link::Endpoint to re-check and possibly change connected
         // state when a client edge connection is established or lost.
         void on_edge_conn_change();
+
+        // Internal method: called from SessionEndpoint when we establish (true) an inbound/utility
+        // path and previously had none; or when we lose our last inbound/utility path (false).
+        void on_inbound_path_change(bool connected);
 
         // Called when we get a relay testing ping to pass through to the router tester so that it
         // can warn if we haven't received pings in a long time.

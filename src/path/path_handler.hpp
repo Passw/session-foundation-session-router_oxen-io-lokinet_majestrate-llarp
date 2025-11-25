@@ -99,6 +99,15 @@ namespace srouter
 
             void expire_paths(sys_ms now);
 
+            // Called whenever our last a path gets dropped (expires naturally or was forced to expire
+            // early because of timeout) if we have no established paths.  This is mainly used by
+            // SessionEndpoint to be able to trigger Router's "on_disconnected" callbacks.  Note
+            // that this is not stateful, i.e. it can potentially fire multiple times without having
+            // actually established new paths in between calls.
+            //
+            // The default does nothing.
+            virtual void no_established_paths_left() {}
+
             // In case we know none of our paths are still valid, e.g. we received a close on a
             // relay session so we assume it's restarting.
             void invalidate_paths();

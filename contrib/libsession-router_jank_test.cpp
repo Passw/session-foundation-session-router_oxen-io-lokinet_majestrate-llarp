@@ -1,5 +1,6 @@
 #include <session/router.hpp>
 
+#include <chrono>
 #include <csignal>
 #include <exception>
 #include <filesystem>
@@ -17,7 +18,7 @@ int main(int argc, char** argv)
 {
     if (argc <= 1)
     {
-        std::cerr << "USAGE: " << argv[0] << " {WHATEVER.loki | WHATEVER.snode}\n";
+        std::cerr << "USAGE: " << argv[0] << " {PUBKEY.sesh | PUBKEY.snode | ONS.loki}\n";
         return 1;
     }
 
@@ -48,13 +49,47 @@ int main(int argc, char** argv)
     {
         conn_prom.get_future().get();
 
-        //std::this_thread::sleep_for(500ms);
-        std::cout << "\x1b[33;1mINITIATING SESSION TO " << target << "\x1b[0m\n\n" << std::flush;
+        auto start = std::chrono::steady_clock::now();
+        std::cout << "\x1b[33;1mINITIATING SESSION TO \x1b[34;1m" << target << "\x1b[0m\n\n" << std::flush;
+
+        std::promise<std::string> resolve_prom;
+        srouter->resolve(target, [&](std::optional<std::string> a, bool timeout) {
+            if (a)
+            {
+                if (*a != target)
+                {
+                    auto now = std::chrono::steady_clock::now();
+                    std::cout << "\n\n\x1b[35;1mRESOLVED SNS \x1b[34;1m" << target << "\x1b[35;1m TO \x1b[34;1m" << *a
+                              << "\x1b[35;1m in " << std::chrono::round<std::chrono::milliseconds>(now - start).count()
+                              << "ms\x1b[0m\n\n";
+                    start = now;
+                }
+                resolve_prom.set_value(std::move(*a));
+                return;
+            }
+
+            try
+            {
+                throw std::runtime_error{
+                    "Failed to resolve ("s + (timeout ? "timeout" : "does not exist") + ") target \x1b[34;1m" + target};
+            }
+            catch (...)
+            {
+                resolve_prom.set_exception(std::current_exception());
+            }
+        });
+
+        target = resolve_prom.get_future().get();
+
         srouter->establish_udp(
             target,
             12345,
-            [&prom](auto udp_info) {
-                std::cout << "\n\x1b[32;1mUDP bound to port [::1]:" << udp_info.local_port << "\x1b[0m\n\n" << std::flush;
+            [&prom, &start](auto udp_info) {
+                std::cout
+                    << "\n\x1b[32;1mSession established ("
+                    << std::chrono::round<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()
+                    << "ms); UDP bound to port [::1]:" << udp_info.local_port << "\x1b[0m\n\n"
+                    << std::flush;
                 prom.set_value();
             },
             [&prom]() {

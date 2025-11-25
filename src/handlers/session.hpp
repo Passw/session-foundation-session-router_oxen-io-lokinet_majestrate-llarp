@@ -63,6 +63,7 @@ namespace srouter
 
             void on_path_build_failure(int64_t build_id, path::Path* path, bool timeout) override;
             void on_path_build_success(int64_t build_id, path::Path& p) override;
+            void no_established_paths_left() override;
 
             void session_post_init(std::shared_ptr<session::InboundSession> new_session);
 
