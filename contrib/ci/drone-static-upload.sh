@@ -63,7 +63,7 @@ elif [ -e build-mac ]; then
 else
     # TODO FIXME: bundle s-r-cntrl once it does something more useful
     #cp -av build/session-router{,-cntrl} "$base"
-    cp -av build/session-router "$base"
+    cp -av build/session-router{,-config} "$base"
     archive="$base.tar.xz"
     tar cJvf "$archive" "$base"
 fi
