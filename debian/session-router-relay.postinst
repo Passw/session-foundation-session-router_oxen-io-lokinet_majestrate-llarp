@@ -11,8 +11,7 @@ if [ "$1" = configure ]; then
         chown _session:_session $datadir
 
     tmpdir=$(mktemp --tmpdir -d session-router.XXXXXXXXXX)
-    /usr/bin/session-router -r -g $tmpdir/relay.ini
-    sed -i -e "s!#data-dir=.*!data-dir=$datadir!" $tmpdir/relay.ini
+    /usr/bin/session-router-config --relay --data-dir $datadir $tmpdir/relay.ini
     chmod 640 $tmpdir/relay.ini
     chgrp _session $tmpdir/relay.ini
     ucf --debconf-ok $tmpdir/relay.ini /etc/session-router/relay.ini
