@@ -5,7 +5,6 @@
 #include "path_handler.hpp"
 #include "transit_hop.hpp"
 #include "util/compare_ptr.hpp"
-#include "util/decaying_hashset.hpp"
 
 #include <memory>
 #include <unordered_map>
@@ -57,7 +56,7 @@ namespace srouter::path
         // early (i.e. just before dropping all their connections), which will need this:
         void drop(const TransitHop& thop);
 
-        void expire_hops(std::chrono::milliseconds now);
+        void expire_hops(sys_ms now);
 
         void allow_transit();
 

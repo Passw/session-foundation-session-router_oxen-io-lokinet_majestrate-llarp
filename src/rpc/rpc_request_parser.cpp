@@ -88,9 +88,4 @@ namespace srouter::rpc
     }
 #endif
 
-    void parse_request(Config& config, rpc_input input)
-    {
-        get_values(input, "delete", config.request.del, "filename", config.request.filename, "ini", config.request.ini);
-    }
-
 }  // namespace srouter::rpc

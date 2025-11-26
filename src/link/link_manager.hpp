@@ -5,11 +5,9 @@
 #include "constants/path.hpp"
 #include "crypto/crypto.hpp"
 #include "endpoint.hpp"
-#include "messages/common.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "util/compare_ptr.hpp"
-#include "util/decaying_hashset.hpp"
 #include "util/zstd.hpp"
 
 #include <oxen/quic/btstream.hpp>
@@ -71,8 +69,6 @@ namespace srouter::link
         friend class Endpoint;
         friend class srouter::NodeDB;
 
-        util::DecayingHashSet<RouterID> clients{path::MAX_LIFETIME_ACCEPTED};
-
         quic::Address addr;
 
         std::atomic<bool> is_stopping{false};
@@ -96,16 +92,11 @@ namespace srouter::link
 
         bool have_client_connection_to(const RouterID& remote) const;
 
-        // TODO FIXME: see comments in router.cpp about required fixes!
-        // void test_reachability(const RouterID& rid, connection_established_callback, connection_closed_callback);
-
         void connect_to(
             const RelayContact& rc, connection_established_callback = nullptr, connection_closed_callback = nullptr);
 
         // Closes all connections and releases the network event loop.
         void stop();
-
-        nlohmann::json extract_status() const;
 
         // Attempts to connect to a number of random routers.
         //

@@ -84,7 +84,7 @@ class SessionRouterMain: NSObject, NSApplicationDelegate {
                 }
             }
             let providerProtocol = NETunnelProviderProtocol()
-            providerProtocol.serverAddress = "loki.loki" // Needs to be set to some non-null dummy value
+            providerProtocol.serverAddress = "sesh.sesh" // Needs to be set to some non-null dummy value
             providerProtocol.username = "anonymous"
             providerProtocol.providerBundleIdentifier = self.netextBundleId
             if #available(macOS 11, *) {

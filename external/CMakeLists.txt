@@ -113,7 +113,7 @@ set(default_libcrypt OFF)
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT STATIC_LINK)
   pkg_check_modules(LIBCRYPT libcrypt IMPORTED_TARGET)
-  if(LIBCRYPTO_FOUND)
+  if(LIBCRYPT_FOUND)
       set(default_libcrypt ON)
   endif()
 endif()

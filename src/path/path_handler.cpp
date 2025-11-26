@@ -3,7 +3,7 @@
 #include "constants/path.hpp"
 #include "crypto/crypto.hpp"
 #include "link/link_manager.hpp"
-#include "messages/path.hpp"
+#include "messages/common.hpp"
 #include "nodedb.hpp"
 #include "path.hpp"
 #include "path_context.hpp"
@@ -11,6 +11,7 @@
 #include "router/router.hpp"
 #include "util/bspan.hpp"
 #include "util/logging.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
 
@@ -56,19 +57,20 @@ namespace srouter::path
         return &*std::next(active_paths().begin(), std::uniform_int_distribution<int>{0, n_paths - 1}(srouter::csrng));
     }
 
-    void PathHandler::ping_paths(std::chrono::milliseconds now)
+    void PathHandler::ping_paths()
     {
         Lock_t l{paths_mutex};
 
+        auto now = steady_now_ms();
         for (const auto& [h, p] : _paths)
-            if (p)
-                p->do_ping(now);
+            p->do_ping(now);
     }
 
-    void PathHandler::expire_paths(std::chrono::milliseconds now)
+    void PathHandler::expire_paths(sys_ms now)
     {
         Lock_t lock{paths_mutex};
 
+        int still_established = 0;
         int n = 0;
         for (auto itr = _paths.begin(); itr != _paths.end();)
         {
@@ -79,11 +81,19 @@ namespace srouter::path
                 n++;
             }
             else
+            {
+                if (itr->second and itr->second->is_established())
+                    still_established++;
                 ++itr;
+            }
         }
 
         if (n)
+        {
             log::debug(logcat, "{} expired paths dropped", n);
+            if (!still_established)
+                no_established_paths_left();
+        }
     }
 
     void PathHandler::invalidate_paths()
@@ -107,12 +117,12 @@ namespace srouter::path
     Path* PathHandler::get_path_by_terminus(const HopID& terminal_hop_id)
     {
         for (auto& p : std::views::values(_paths))
-            if (p && p->terminal_hopid() == terminal_hop_id)
+            if (p->terminal_hopid() == terminal_hop_id)
                 return p.get();
         return nullptr;
     }
 
-    void PathHandler::tick(std::chrono::milliseconds now)
+    void PathHandler::tick(sys_ms now)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
@@ -120,7 +130,7 @@ namespace srouter::path
 
         expire_paths(now);
 
-        if (not router.is_service_node and not router.is_connected())
+        if (not router.is_service_node and not router.is_edge_connected())
             // If we are not yet fully connected then we can't initiate path builds.  (In theory we
             // could whe not yet fully connected, but don't want to because that would bias edge
             // router selection towards faster ones).
@@ -129,19 +139,9 @@ namespace srouter::path
         if (!is_stopped())
             update_paths(now);
 
-        router.path_builds.update(now);
+        router.path_builds.update();
 
-        ping_paths(now);
-    }
-
-    nlohmann::json PathHandler::ExtractStatus() const
-    {
-        auto paths = nlohmann::json::array();
-        for (auto& [h, path] : _paths)
-            if (path)
-                paths.push_back(path->ExtractStatus());
-
-        return nlohmann::json{{"numHops", _num_hops}, {"targetPaths", _target_paths}, {"paths", std::move(paths)}};
+        ping_paths();
     }
 
     const RelayContact* PathHandler::select_first_hop(std::function<bool(const RelayContact&)> pred) const
@@ -204,25 +204,24 @@ namespace srouter::path
         return selected;
     }
 
-    int PathHandler::num_active_paths(std::chrono::milliseconds expiry_ts) const
+    int PathHandler::num_active_paths(sys_ms expiry_ts) const
     {
         Lock_t l(paths_mutex);
 
         int n = 0;
         for (const auto& [_, p] : _paths)
-            if (p and p->is_active() and not p->is_expired(expiry_ts))
+            if (p->is_active() and not p->is_expired(expiry_ts))
                 n++;
         return n;
     }
 
-    int PathHandler::num_paths(std::chrono::milliseconds expiry_ts) const
+    int PathHandler::num_paths(sys_ms expiry_ts) const
     {
         Lock_t l(paths_mutex);
 
         int n = 0;
         for (const auto& [_, p] : _paths)
-            // TODO FIXME: what does a nullptr path mean?
-            if (p and not p->is_expired(expiry_ts))
+            if (not p->is_expired(expiry_ts))
                 n++;
         return n;
     }
@@ -444,13 +443,10 @@ namespace srouter::path
             return false;
         }
 
-        _last_build = srouter::time_now_ms();
-
         return true;
     }
 
-    std::shared_ptr<Path> PathHandler::build_init_path(
-        std::span<const RelayContact> hops, std::chrono::milliseconds expiry_ts)
+    std::shared_ptr<Path> PathHandler::build_init_path(std::span<const RelayContact> hops, sys_ms expiry_ts)
     {
         auto path = std::make_shared<path::Path>(router, hops, *this, expiry_ts);
 
@@ -458,9 +454,7 @@ namespace srouter::path
 
         if (auto [it, b] = _paths.try_emplace(path->edge().rxid, path); not b)
         {
-            // TODO FIXME: doesn't this mean we somehow selected an invalid rxid for the path
-            // build, not that there is a path to the same remote?
-            log::debug(logcat, "Pending build to {} already underway... aborting...", path->edge().rxid);
+            log::debug(logcat, "Pending path build aborted, ludicrously unlikely hop id collision.");
             return nullptr;
         }
 
@@ -609,7 +603,7 @@ namespace srouter::path
         std::span<const std::byte, path::BUILD_FRAME_SIZE> frame,
         const Router& r,
         const std::variant<RouterID, quic::ConnectionID>& src,
-        std::chrono::milliseconds now)
+        sys_ms now)
     {
         std::pair<std::shared_ptr<path::TransitHop>, SymmNonce> ret;
         auto& [hop_ptr, dh_nonce] = ret;
@@ -675,12 +669,10 @@ namespace srouter::path
         return ret;
     }
 
-    // TODO FIXME: investigate return type?
-    Path* PathHandler::build(std::span<const RelayContact> hops, std::chrono::milliseconds expiry_ts)
+    Path* PathHandler::build(std::span<const RelayContact> hops, sys_ms expiry_ts)
     {
         Lock_t lock{paths_mutex};
 
-        // error message logs in function scope
         if (can_build(hops))
         {
             if (auto new_path = build_init_path(hops, expiry_ts))
@@ -688,7 +680,6 @@ namespace srouter::path
                 auto ptr = new_path.get();
                 auto id = ++_path_counter;
                 send_path_build(std::move(new_path), id);
-                // send_path_build calls the appropriate success/failure method
                 return ptr;
             }
         }
@@ -739,19 +730,17 @@ namespace srouter::path
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-        if (p)
-            drop_path(*p);
+        drop_path(*p);
 
         if (timeout)
         {
-            if (p)
-                router.router_profiling().path_timeout(*p);
+            router.router_profiling().path_timeout(*p);
             router.path_builds.timeouts++;
         }
         else
             router.path_builds.build_fails++;
 
-        _last_failure = srouter::time_now_ms();
+        _last_failure = steady_now_ms();
         _consecutive_failures++;
 
         on_path_build_failure(build_id, p, timeout);
@@ -771,8 +760,9 @@ namespace srouter::path
         on_path_build_success(build_id, p);
     }
 
-    bool PathHandler::cooldown(std::chrono::milliseconds now) const
+    bool PathHandler::cooldown() const
     {
+        auto now = steady_now_ms();
         if (_consecutive_failures < BACKOFF_THRESHOLD)
             return false;
 

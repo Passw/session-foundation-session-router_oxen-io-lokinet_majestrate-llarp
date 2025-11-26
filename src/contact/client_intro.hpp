@@ -19,12 +19,9 @@ namespace srouter
         ClientIntro(oxenc::bt_dict_consumer&&);
         ClientIntro(std::string_view buf);
 
-        std::chrono::milliseconds expires_in(std::chrono::milliseconds now = srouter::time_now_ms()) const
-        {
-            return expiry.time_since_epoch() - now;
-        }
+        std::chrono::milliseconds expires_in(sys_ms now = srouter::time_now_ms()) const { return expiry - now; }
 
-        bool is_expired(std::chrono::milliseconds now = srouter::time_now_ms()) const { return expires_in(now) <= 0ms; }
+        bool is_expired(sys_ms now = srouter::time_now_ms()) const { return expires_in(now) <= 0ms; }
 
         void bt_encode(oxenc::bt_dict_producer&& subdict) const;
 

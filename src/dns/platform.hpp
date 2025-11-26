@@ -25,9 +25,10 @@ namespace srouter::dns
         ///
         /// \param if_index -- the interface index to which we add the DNS servers, this can be
         /// gotten from the interface name e.g. sr-tun0 (Typically tun_endpoint.GetIfName().) and
-        /// then put through if_nametoindex(). \param dns -- the listening address of the Session Router
-        /// DNS server \param global -- whether to set up Session Router for all DNS queries (true) or just
-        /// .loki & .snode addresses (false).
+        /// then put through if_nametoindex().
+        /// \param dns -- the listening address of the Session Router DNS server
+        /// \param global -- whether to set up Session Router for all DNS queries (true) or just
+        /// .sesh/.loki/.snode addresses (false).
         virtual void set_resolver(unsigned int if_index, quic::Address dns, bool global) = 0;
     };
 

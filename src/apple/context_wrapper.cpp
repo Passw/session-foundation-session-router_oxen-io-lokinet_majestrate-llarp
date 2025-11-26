@@ -72,7 +72,7 @@ void* llarp_apple_init(llarp_apple_config* appleconf)
         // that's going to take a bit more work because we currently can't *get* the (usually)
         // ephemeral pubkey at this stage of Session Router configuration.  So for now we just stick our
         // IPv4 address into it until #1705 gets implemented.
-        srouter::huint128_t ipv6{srouter::uint128_t{0xfd2e'6c6f'6b69'0000, srouter::net::TruncateV6(range.addr).h}};
+        srouter::huint128_t ipv6{srouter::uint128_t{0xfd2e'7365'7368'0000, srouter::net::TruncateV6(range.addr).h}};
         std::strncpy(appleconf->tunnel_ipv6_ip, ipv6.to_string().c_str(), sizeof(appleconf->tunnel_ipv6_ip));
         appleconf->tunnel_ipv6_prefix = 48;
 

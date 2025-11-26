@@ -68,8 +68,8 @@ namespace srouter::path
         // used all along) but rather is used to make traffic correlation more difficult.
         SymmNonce xor_nonce;
 
-        std::chrono::milliseconds expiry{0s};
-        std::chrono::milliseconds last_activity{0s};
+        sys_ms expiry{sys_ms::min()};
+        sys_ms last_activity{sys_ms::min()};
 
         uint8_t version;
         bool terminal_hop{false};
@@ -91,9 +91,7 @@ namespace srouter::path
                 == std::tie(other.txid, other.rxid, other.upstream, other.downstream);
         }
 
-        bool is_expired(std::chrono::milliseconds now = srouter::time_now_ms()) const { return now >= expiry; };
-
-        nlohmann::json ExtractStatus() const;
+        bool is_expired(sys_ms now = srouter::time_now_ms()) const { return now >= expiry; };
 
         std::string to_string() const;
         static constexpr bool to_string_formattable = true;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "address/address.hpp"
 #include "contact/router_id.hpp"
 #include "keys.hpp"
 #include "types.hpp"
@@ -13,8 +14,9 @@ namespace srouter
 
 namespace srouter::crypto
 {
-    /// decrypt cipherText given the key generated from name
-    std::optional<RouterID> maybe_decrypt_name(std::string_view ciphertext, SymmNonce nonce, std::string_view name);
+    /// Decrypt cipherText given the key generated from name, for ONS name encryption.
+    std::optional<NetworkAddress> maybe_decrypt_name(
+        std::string_view ciphertext, const SymmNonce& nonce, std::string_view name);
 
     /// xchacha symmetric cipher
     void xchacha20(std::span<std::byte> buf, const SharedSecret&, const SymmNonce&);
@@ -58,26 +60,6 @@ namespace srouter::crypto
         std::span<const std::byte, PUBKEYSIZE> pub,
         std::span<const std::byte> data,
         std::span<const std::byte, SIGSIZE> sig);
-
-    /// Used in path-build and session initiation messages. Derives a shared secret key for symmetric DH, encrypting
-    /// the given payload in-place. Will throw on failure of either the client DH derivation or the xchacha20
-    /// payload mutation
-    void derive_encrypt_outer_wrapping(
-        const Ed25519SecretKey& shared_key,
-        SharedSecret& secret,
-        const SymmNonce& nonce,
-        const RouterID& remote,
-        std::span<std::byte> payload);
-
-    /// Used in receiving path-build and session initiation messages. Derives a shared secret key using an ephemeral
-    /// pubkey and the provided nonce. The encrypted payload is mutated in-place. Will throw on failure of either
-    /// the server DH derivation or the xchacha20 payload mutation
-    void derive_decrypt_outer_wrapping(
-        const Ed25519SecretKey& local,
-        SharedSecret& shared,
-        const PubKey& remote,
-        const SymmNonce& nonce,
-        std::span<std::byte> encrypted);
 
     /// Returns the Ed25519 scalar used for blinding of the given pubkey with the given
     /// blind_domain.  See `blind`.
