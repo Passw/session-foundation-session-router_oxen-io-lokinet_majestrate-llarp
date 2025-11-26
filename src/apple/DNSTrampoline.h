@@ -18,7 +18,7 @@ extern NSString* error_domain;
  * - DNS requests go to unbound, as above, and unbound forwards them to 127.0.0.1:1053, which
  *   encapsulates them in Apple's god awful crap, then (on a response) sends them back to
  *   libunbound to be delivered back to the requestor.
- * (This assumes a non-Session Router DNS; .loki and .snode get handled before either of these).
+ * (This assumes a non-Session Router DNS; .sesh and .snode get handled before either of these).
  */
 @interface LLARPDNSTrampoline : NSObject
 {

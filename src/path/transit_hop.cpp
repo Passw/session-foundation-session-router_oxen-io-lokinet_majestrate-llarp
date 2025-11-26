@@ -2,11 +2,8 @@
 
 #include "crypto/crypto.hpp"
 #include "link/endpoint.hpp"
-#include "messages/common.hpp"
-#include "messages/path.hpp"
 #include "router/router.hpp"
 #include "util/bspan.hpp"
-#include "util/buffer.hpp"
 #include "util/time.hpp"
 
 #include <nlohmann/json.hpp>
@@ -33,12 +30,6 @@ namespace srouter::path
         return {downstream, rxid};
     }
 
-    nlohmann::json TransitHop::ExtractStatus() const
-    {
-        return {
-            {"rid", router_id.ToHex()}, {"rxid", rxid.ToHex()}, {"txid", txid.ToHex()}, {"expiry", to_json(expiry)}};
-    }
-
     static std::string short_string(const std::variant<RouterID, quic::ConnectionID>& downstream)
     {
         if (auto* rid = std::get_if<RouterID>(&downstream))
@@ -49,7 +40,12 @@ namespace srouter::path
     std::string TransitHop::to_string() const
     {
         return "TransitHop:[ Terminal:{} | TX:{} | RX:{} | Upstream:{} | Downstream:{} | Expiry:{} ]"_format(
-            terminal_hop, txid, rxid, upstream.short_string(), short_string(downstream), expiry.count());
+            terminal_hop,
+            txid,
+            rxid,
+            upstream.short_string(),
+            short_string(downstream),
+            expiry.time_since_epoch().count());
     }
 
 }  // namespace srouter::path

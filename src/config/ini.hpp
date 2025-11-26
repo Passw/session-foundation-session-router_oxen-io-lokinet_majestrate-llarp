@@ -1,7 +1,6 @@
 #pragma once
 
-#include "util/file.hpp"
-
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -11,17 +10,16 @@ namespace srouter
 {
     struct ConfigParser
     {
-        using SectionValues = std::unordered_multimap<std::string, std::string>;
+        explicit ConfigParser(std::string file_description) : _file_desc{std::move(file_description)} {}
+
+        using SectionValues = std::unordered_map<std::string, std::vector<std::string>>;
         using ConfigMap = std::unordered_map<std::string, SectionValues>;
+
         /// clear parser
         void clear();
 
         /// Load config file.  Throws on error.
         void load_file(const std::filesystem::path& fname);
-
-        /// Load new .ini data from string (calls ParseAll() rather than Parse())
-        /// Throws on error.
-        void load_new_from_str(std::string str);
 
         /// Load from string. Throws on error.
         void load_from_str(std::string str);
@@ -33,17 +31,6 @@ namespace srouter
         /// return false if no section or value propagated from visitor
         bool visit_section(const char* name, std::function<bool(const SectionValues&)> visit) const;
 
-        /// add a config option that is appended in another file
-        void add_override(std::filesystem::path file, std::string section, std::string key, std::string value);
-
-        /// save config overrides
-        void save();
-
-        /// save new .ini config file to path
-        void save_new() const;
-
-        void set_filename(const std::filesystem::path& f) { _filename = f; }
-
       private:
         void parse_all();
 
@@ -51,8 +38,7 @@ namespace srouter
 
         std::string _data;
         ConfigMap _config;
-        std::unordered_map<std::filesystem::path, ConfigMap, util::FileHash> _overrides;
-        std::filesystem::path _filename;
+        std::string _file_desc;
     };
 
 }  // namespace srouter
