@@ -181,7 +181,7 @@ int main(int argc, char* argv[])
             check_overwrite(target);
             assert(client || hidden_svc || embedded || relay);
             std::string extra_ini = "";
-            if (hidden_svc || persist_key)
+            if (hidden_svc || (!relay && persist_key))
             {
                 Ed25519SecretKey skey;
                 auto key_file = target;
