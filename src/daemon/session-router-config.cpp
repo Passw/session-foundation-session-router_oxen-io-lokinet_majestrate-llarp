@@ -9,6 +9,18 @@
 #include "util/logging.hpp"
 
 #include <CLI/CLI.hpp>
+#include <oxenmq/address.h>
+
+#include <charconv>
+#include <stdexcept>
+
+#ifndef _WIN32
+extern "C"
+{
+#include <sys/ioctl.h>
+#include <unistd.h>
+}
+#endif
 
 auto& logcat = srouter::log_global;
 
@@ -23,6 +35,27 @@ int main(int argc, char* argv[])
     CLI::App cli{
         "Session Router is a free, open source, private, decentralized, market-based sybil resistant "
         "and IP-based onion routing network"};
+
+    size_t wrap_width = 0;
+#ifndef _WIN32
+    if (struct winsize w{}; isatty(STDOUT_FILENO) && ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) != -1)
+        wrap_width = w.ws_col;
+    else
+#endif
+        if (const char* cols = std::getenv("COLUMNS"))
+    {
+        size_t c;
+        if (auto [ptr, ec] = std::from_chars(cols, cols + std::strlen(cols), c); ec == std::errc())
+            wrap_width = c;
+    }
+
+    if (wrap_width < 80)
+        wrap_width = 80;
+    --wrap_width;  // So that we aren't putting a character in the very last position which makes
+                   // some terminals add a blank line
+    cli.get_formatter()->column_width(30);
+    cli.get_formatter()->right_column_width(wrap_width - 30);
+    cli.get_formatter()->description_paragraph_width(wrap_width);
 
     bool version = false;
     bool client = false;
