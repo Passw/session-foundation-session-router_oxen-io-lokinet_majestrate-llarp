@@ -1,5 +1,6 @@
 #pragma once
 
+#include "address/address.hpp"
 #include "net/id.hpp"
 #include "router_id.hpp"
 #include "util/time.hpp"
@@ -69,9 +70,13 @@ namespace srouter
 
         const RouterID& router_id() const { return _router_id; }
 
+        NetworkAddress network_addr() const { return {_router_id, false}; }
+
         const std::chrono::sys_seconds& timestamp() const { return _timestamp; }
 
         NetID netid() const { return _netid; }
+
+        const std::array<uint8_t, 3>& version() const { return _router_version; }
 
       private:
         // public signing public key
@@ -106,8 +111,6 @@ namespace srouter
         // Constructs a signed RC from the info in the given Router object.
         explicit RelayContact(const Router& router);
 
-        nlohmann::json extract_status() const;
-
         bool write(const std::filesystem::path& fname) const;
 
         bool operator==(const RelayContact& other) const { return compare_tuple() == other.compare_tuple(); }
@@ -115,19 +118,19 @@ namespace srouter
         bool has_ip_overlap(const RelayContact& other, uint8_t netmask) const;
 
         /// does this RC expire soon? default delta is 1 minute
-        bool expires_within_delta(std::chrono::milliseconds now, std::chrono::milliseconds dlt = 1min) const;
+        bool expires_within_delta(sys_ms now, std::chrono::milliseconds dlt = 1min) const;
 
         /// returns true if this RC is outdated and should be re-fetched
-        bool is_outdated(std::chrono::milliseconds now = srouter::time_now_ms()) const;
+        bool is_outdated(sys_ms now = srouter::time_now_ms()) const;
 
         /// returns true if this RC is expired and should be removed
-        bool is_expired(std::chrono::milliseconds now) const;
+        bool is_expired(sys_ms now) const;
 
         /// returns time in ms until we expire or 0 if we have expired
-        std::chrono::milliseconds time_to_expiry(std::chrono::milliseconds now) const;
+        std::chrono::milliseconds time_to_expiry(sys_ms now) const;
 
         /// get the age of this RC in ms
-        std::chrono::milliseconds age(std::chrono::milliseconds now) const;
+        std::chrono::milliseconds age(sys_ms now) const;
 
         // Returns true if this RC is at least `at_least` newer than `other`.  (By default threshold
         // is 1s, which is the minimum precision of RCs, and so this returns true if this is at all

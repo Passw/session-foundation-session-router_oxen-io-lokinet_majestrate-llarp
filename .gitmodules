@@ -13,7 +13,7 @@
 	url = https://github.com/fnc12/sqlite_orm
 [submodule "external/oxen-mq"]
 	path = external/oxen-mq
-	url = https://github.com/oxen-io/oxen-mq
+	url = https://github.com/session-foundation/liboxenmq.git
 [submodule "gui"]
 	path = gui
 	url = https://github.com/oxen-io/lokinet-gui.git
@@ -22,4 +22,4 @@
 	url = https://github.com/CLIUtils/CLI11.git
 [submodule "external/oxen-libquic"]
 	path = external/oxen-libquic
-	url = https://github.com/oxen-io/oxen-libquic.git
+	url = https://github.com/session-foundation/libquic.git

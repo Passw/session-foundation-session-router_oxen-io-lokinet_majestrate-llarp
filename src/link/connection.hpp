@@ -24,6 +24,6 @@ namespace srouter::link
 
         bool is_inbound() const { return conn->is_inbound(); }
 
-        void close_quietly();
+        void close(uint64_t errcode = 0);
     };
 }  // namespace srouter::link
