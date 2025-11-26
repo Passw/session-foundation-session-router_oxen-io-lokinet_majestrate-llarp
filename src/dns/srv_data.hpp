@@ -27,28 +27,30 @@ namespace srouter::dns
         SRVData() = default;
         // SRVData constructor expecting a bt-encoded dictionary
         SRVData(oxenc::bt_dict_consumer&& btdc);
-        SRVData(std::string _proto, uint16_t _priority, uint16_t _weight, uint16_t _port, std::string _target);
+        SRVData(
+            std::string svc, std::string proto, uint16_t priority, uint16_t weight, uint16_t port, std::string target);
+        SRVData(std::string_view svc_proto, uint16_t priority, uint16_t weight, uint16_t port, std::string target);
 
         /* bind-like formatted string for SRV records in config file
          *
          * format:
-         *   srv=service.proto priority weight port target
+         *   srv=_service._proto priority weight port target
          *
          * exactly one space character between parts.
          *
          * target can be empty, in which case the space after port should
          * be omitted.  if this is the case, the target is
-         * interpreted as the .loki or .snode of the current context.
+         * interpreted as the .sesh of the current context.
          *
          * if target is not empty, it must be either
          *  - simply a full stop (dot/period) OR
-         *  - a name within the .loki or .snode subdomains. a target
+         *  - a name within the .loki or .sesh subdomains. a target
          *    specified in this manner must not end with a full stop.
          */
         static std::optional<SRVData> from_srv_string(std::string buf);
 
-        std::string service_proto;  // service and protocol may as well be together
-
+        std::string service;
+        std::string proto;
         uint16_t priority;
         uint16_t weight;
         uint16_t port;
@@ -57,7 +59,7 @@ namespace srouter::dns
         // options:
         //   empty                     - refer to query name
         //   dot                       - authoritative "no such service available"
-        //   any other .loki or .snode - target is that .loki or .snode
+        //   any other .loki or .sesh  - target is that .loki or .sesh
         std::string target;
 
         // do some basic validation on the target string
@@ -65,11 +67,7 @@ namespace srouter::dns
         // but rather some sanity/safety checks
         bool is_valid() const;
 
-        bool operator==(const SRVData& other) const
-        {
-            return std::tie(service_proto, priority, weight, port, target)
-                == std::tie(other.service_proto, other.priority, other.weight, other.port, other.target);
-        }
+        bool operator==(const SRVData& other) const = default;
 
         void bt_encode(oxenc::bt_dict_producer&& btdp) const;
 
@@ -78,26 +76,9 @@ namespace srouter::dns
 
         bool bt_decode(std::string buf);
 
-        nlohmann::json ExtractStatus() const;
-
       private:
         bool bt_decode(oxenc::bt_dict_consumer&& btdc);
         bool from_string(std::string_view srvString);
     };
 
 }  // namespace srouter::dns
-
-namespace std
-{
-    template <>
-    struct hash<srouter::dns::SRVData>
-    {
-        size_t operator()(const srouter::dns::SRVData& data) const noexcept
-        {
-            const std::hash<std::string> h_str{};
-            const std::hash<uint16_t> h_port{};
-            return h_str(data.service_proto) ^ (h_str(data.target) << 3) ^ (h_port(data.priority) << 5)
-                ^ (h_port(data.weight) << 7) ^ (h_port(data.port) << 9);
-        }
-    };
-}  // namespace std

@@ -10,14 +10,9 @@ namespace srouter::path
 
     static auto logcat = log::Cat("path");
 
-    nlohmann::json BuildStats::ExtractStatus() const
+    void BuildStats::update()
     {
-        return nlohmann::json{
-            {"success", success}, {"attempts", attempts}, {"timeouts", timeouts}, {"fails", build_fails}};
-    }
-
-    void BuildStats::update(std::chrono::milliseconds now)
-    {
+        auto now = steady_now_ms();
         if (attempts > 50 && attempts >= (success * 4) && now - last_warn_time > 5s)
         {
             log::warning(logcat, "Low path build success: {}", *this);

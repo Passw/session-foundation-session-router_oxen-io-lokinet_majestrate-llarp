@@ -24,7 +24,7 @@ namespace srouter::controller
         if (auto it = _binds.find(src); it != _binds.end())
             _omq->request(
                 it->second.cid,
-                "llarp.session_init",
+                "srouter.session_init",
                 [&](bool success, std::vector<std::string> data) {
                     if (success)
                     {
@@ -45,7 +45,7 @@ namespace srouter::controller
         log::info(logcat, "Querying Session Router instance (bind:{}) for router status", src.full_address());
 
         if (auto it = _binds.find(src); it != _binds.end())
-            _omq->request(it->second.cid, "llarp.status", [&](bool success, std::vector<std::string> data) {
+            _omq->request(it->second.cid, "srouter.status", [&](bool success, std::vector<std::string> data) {
                 if (success)
                 {
                     auto res = nlohmann::json::parse(data[0]);
@@ -73,7 +73,7 @@ namespace srouter::controller
         if (auto it = _binds.find(src); it != _binds.end())
             _omq->request(
                 it->second.cid,
-                "llarp.session_close",
+                "srouter.session_close",
                 [&](bool success, std::vector<std::string> data) {
                     if (success)
                     {
@@ -95,7 +95,7 @@ namespace srouter::controller
 
         if (auto it = _binds.find(src); it != _binds.end())
         {
-            _omq->request(it->second.cid, "llarp.halt", [&](bool success, std::vector<std::string> data) {
+            _omq->request(it->second.cid, "srouter.halt", [&](bool success, std::vector<std::string> data) {
                 if (success)
                 {
                     auto res = nlohmann::json::parse(data[0]);

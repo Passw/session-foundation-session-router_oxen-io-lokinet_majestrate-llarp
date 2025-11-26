@@ -2,7 +2,6 @@
 
 #include "crypto/constants.hpp"
 #include "util/aligned.hpp"
-#include "util/buffer.hpp"
 
 namespace srouter
 {
@@ -13,9 +12,6 @@ namespace srouter
         bool from_hex(const std::string& str);
 
         std::string to_string() const;
-
-        // FIXME TODO revisit this
-        PubKey& operator=(const uint8_t* ptr);
     };
 
     struct PubKey;

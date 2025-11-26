@@ -13,7 +13,6 @@
 #include <initializer_list>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
@@ -64,7 +63,7 @@ namespace srouter
             {};
             struct FULLCLIENTONLY : CLIENTONLY, NOTEMBEDDED
             {};
-            struct DEPRECATED : opt
+            struct OBSOLETE : opt
             {};
         }  // namespace flag
 
@@ -73,7 +72,7 @@ namespace srouter
         /// Value to pass for an OptionDefinition to indicate that the option should be hidden from
         /// the generate config file if it is unset (and has no comment).  Typically for deprecated,
         /// renamed options that still do something, and for internal dev options that aren't
-        /// usefully exposed. (For do-nothing deprecated options use Deprecated instead).
+        /// usefully exposed. (For do-nothing obsolete options use Obsolete instead).
         inline constexpr flag::HIDDEN Hidden{};
         /// Value to pass for an OptionDefinition to indicate that the option takes multiple values
         inline constexpr flag::MULTIVALUE MultiValue{};
@@ -92,11 +91,11 @@ namespace srouter
         /// both full clients and relays but not embedded configs.  If such an option is specified
         /// for an embedded client config it will be ignored (but will produce a warning).
         inline constexpr flag::NOTEMBEDDED NotEmbedded{};
-        /// Value to pass for an option that is deprecated and does nothing and should be ignored
-        /// (with a deprecation warning) if specified.  Note that Deprecated implies Hidden, and
+        /// Value to pass for an option that is obsolete and does nothing and should be ignored
+        /// (with a warning) if encountered, but not an error.  Note that Obsolete implies Hidden, and
         /// that {client,relay}-only options in a {relay,client} config are also considered
-        /// Deprecated.
-        inline constexpr flag::DEPRECATED Deprecated{};
+        /// Obsolete.
+        inline constexpr flag::OBSOLETE Obsolete{};
 
         /// Wrapper to specify a default value to an OptionDefinition
         template <typename T>
@@ -194,8 +193,8 @@ namespace srouter
               name(std::move(name_)),
               required{(std::derived_from<T, config::flag::REQUIRED> || ...)},
               multi_valued{(std::derived_from<T, config::flag::MULTIVALUE> || ...)},
-              deprecated{(std::derived_from<T, config::flag::DEPRECATED> || ...)},
-              hidden{deprecated || (std::derived_from<T, config::flag::HIDDEN> || ...)},
+              obsolete{(std::derived_from<T, config::flag::OBSOLETE> || ...)},
+              hidden{obsolete || (std::derived_from<T, config::flag::HIDDEN> || ...)},
               relay_only{(std::derived_from<T, config::flag::RELAYONLY> || ...)},
               client_only{(std::derived_from<T, config::flag::CLIENTONLY> || ...)},
               no_embedded{(std::derived_from<T, config::flag::NOTEMBEDDED> || ...)}
@@ -233,7 +232,7 @@ namespace srouter
         std::string name;
         bool required = false;
         bool multi_valued = false;
-        bool deprecated = false;
+        bool obsolete = false;
         bool hidden = false;
         bool relay_only = false;
         bool client_only = false;
@@ -517,9 +516,6 @@ namespace srouter
     // value, and nullopt if neither.
     std::optional<bool> parse_boolean(std::string_view input);
 
-    using UndeclaredValueHandler =
-        std::function<void(std::string_view section, std::string_view name, std::string_view value)>;
-
     // map of k:v pairs
     using DefinitionMap = std::unordered_map<std::string, std::unique_ptr<OptionDefinitionBase>>;
 
@@ -535,14 +531,16 @@ namespace srouter
     /// format using the generateINIConfig() function.
     ///
     /// Configured values (e.g. those encountered when parsing a file) can be provided through calls
-    /// to addConfigValue(). These take a std::string as a value, which is automatically parsed.
+    /// to add_config_value(). These take a std::string as a value, which is automatically parsed.
     ///
     /// The ConfigDefinition can be used to print out a full config string (or file), including
     /// fields with defaults and optionally fields which have a specified value (values provided
-    /// through calls to addConfigValue()).
+    /// through calls to add_config_value()).
     struct ConfigDefinition
     {
-        explicit ConfigDefinition(config::Type type) : type{type} {}
+        explicit ConfigDefinition(config::Type type, std::filesystem::path conf_dir)
+            : type{type}, conf_dir{std::move(conf_dir)}
+        {}
 
         /// Specify the parameters and type of a configuration option. The parameters are members of
         /// OptionDefinitionBase; the type is inferred from OptionDefinition's template parameter T.
@@ -602,23 +600,6 @@ namespace srouter
             return derived->getValue();
         }
 
-        /// Add an "undeclared" handler for the given section. This is a handler that will be called
-        /// whenever a k:v pair is found that doesn't match a provided definition.
-        ///
-        /// Any exception thrown by the handler will progagate back through the call to
-        /// addConfigValue().
-        ///
-        /// @param section is the section for which any undeclared values will invoke the provided
-        ///        handler
-        /// @param handler
-        /// @throws if there is already a handler for this section
-        void add_undeclared_handler(const std::string& section, UndeclaredValueHandler handler);
-
-        /// Removes an "undeclared" handler for the given section.
-        ///
-        /// @param section is the section which we want to remove the handler for
-        void remove_undeclared_handler(const std::string& section);
-
         /// Validate that all required fields are present.
         ///
         /// @throws std::invalid_argument if configuration constraints are not met
@@ -626,7 +607,8 @@ namespace srouter
 
         /// Adds an options validator that runs after all options have been parsed and can be used
         /// to check for conflicting or invalid option combinations or other checks that cannot be
-        /// performed when processing an individual item.
+        /// performed when processing an individual item.  This is passed the main Config object to
+        /// allow cross-section validation or depedent values.
         void add_options_validator(std::function<void()> validator);
 
         /// Accept all options. This will call the acceptor (if present) on each option. Note that
@@ -636,9 +618,10 @@ namespace srouter
         /// @throws if any option's acceptor throws
         void accept_all_options();
 
-        /// Runs any options validators to check that accepted options are not conflicting.  For
-        /// example, if option A must be larger than B, this is where that check would be carried
-        /// out.
+        /// Runs any options validators to check that accepted options that depends on other config
+        /// options.  For example, if option A must be larger than B, this is where that check would
+        /// be carried out.  This is also where relative paths (which need to know the final data
+        /// dir) should be resolved and checked for existence, if necessary.
         void validate_all_options();
 
         /// validates and accept all parsed options
@@ -675,15 +658,19 @@ namespace srouter
         /// complete documentation of the configuration file.
         ///
         /// @param useValues specifies whether we use specified values (e.g. those from calls to
-        ///        addConfigValue()) or only definitions
+        ///        add_config_value()) or only definitions
         /// @return a string containing the config in INI format
         std::string generate_ini_config(bool useValues = false);
 
-      private:
-        // Config file; this defines where we skip client-only, relay-only, or non-embedded config
-        // items.
+        // Config file type; this defines where we skip client-only, relay-only, or non-embedded
+        // config items.
         config::Type type;
 
+        // The base directory of the main config file.  Any relative paths in config options should
+        // be resolved relative to this.
+        std::filesystem::path conf_dir;
+
+      private:
         std::unique_ptr<OptionDefinitionBase>& lookup_definition_or_throw(
             std::string_view section, std::string_view name);
         const std::unique_ptr<OptionDefinitionBase>& lookup_definition_or_throw(
@@ -696,8 +683,6 @@ namespace srouter
         void visit_definitions(const std::string& section, DefVisitor visitor) const;
 
         SectionMap definitions;
-
-        std::unordered_map<std::string, UndeclaredValueHandler> undeclared_handlers;
 
         // track insertion order. the vector<string>s are ordered list of section/option names.
         std::vector<std::string> section_ordering;

@@ -7,14 +7,15 @@
 #include "constants/version.hpp"
 #include "contact/contactdb.hpp"
 #include "crypto/crypto.hpp"
+#include "dns/listener.hpp"
 #include "link/link_manager.hpp"
-#include "messages/dht.hpp"
 #include "nodedb.hpp"
 #include "util/formattable.hpp"
 #include "util/logging.hpp"
 #include "util/random.hpp"
 #include "util/service_manager.hpp"
 #include "util/time.hpp"
+#include "util/try_calling.hpp"
 
 #include <nlohmann/json.hpp>
 #include <oxen/log.hpp>
@@ -53,7 +54,7 @@ namespace srouter
           _vpn{std::move(vpnPlatform)},
           _close_promise{std::move(p)},
           _contact_db{std::make_unique<ContactDB>(*this)},
-          _last_tick{srouter::time_now_ms()}
+          _last_tick{}
     {
 #ifndef SROUTER_EMBEDDED_ONLY
         // Not actually shared, but unique_ptr would require destructor visibility which
@@ -62,10 +63,9 @@ namespace srouter
         // for oxend, so we don't close the connection when syncing the registered relay (which can
         // exceed the defaut 1MB limit).
         _omq->MAX_MSG_SIZE = -1;
-        if (_config.router.worker_threads > 0)
-            _omq->set_general_threads(_config.router.worker_threads);
 
-        _router_testing = std::make_shared<consensus::reachability_testing>(*this);
+        if (is_service_node)
+            _router_testing = std::make_shared<consensus::reachability_testing>(*this);
 #endif
 
         init_logging();
@@ -80,146 +80,6 @@ namespace srouter
     // Default, but we define it here because some of the unique_ptrs are for forward-declared types
     // in router.hpp which aren't available for destruction, but are available here.
     Router::~Router() = default;
-
-    nlohmann::json Router::ExtractStatus() const
-    {
-        if (not _is_running)
-            nlohmann::json{{"running", false}};
-
-        nlohmann::json links;
-        if (is_service_node)
-        {
-            auto [relays, out, in, pending, clients] = _link_endpoint->relay_connection_counts();
-            links = {
-                {"relays", relays},
-                {"relays_in", in},
-                {"relays_out", out},
-                {"pending_out", pending},
-                {"clients_in", clients}};
-        }
-        else
-        {
-            auto [nconns, pending] = _link_endpoint->client_connection_counts();
-            links = {{"relays", nconns}, {"relays_out", nconns}, {"pending_out", pending}};
-        }
-        auto [rcs, rids, bootstraps] = node_db().db_stats();
-        auto [npaths, nhops] = path_context.path_ctx_stats();
-        auto [s_in, s_out_r, s_out_c, s_out_r_pending, s_out_c_pending] = _session_endpoint->session_stats();
-        auto ccs = contact_db().num_ccs();
-
-        return {
-            {"instance",
-             {{"id", id().to_network_address(is_service_node).to_string()},
-              {"running", true},
-              {"relay", is_service_node}}},
-            {"links", std::move(links)},
-            {"sessions",
-             {{"in", s_in},
-              {"relay_out", s_out_r},
-              {"client_out", s_out_c},
-              {"relay_pending", s_out_r_pending},
-              {"client_pending", s_out_c_pending}}},
-            {"nodedb", {{"rcs", rcs}, {"rids", rids}}},
-            {"contactdb", {{"ccs", ccs}}},
-            {"path_ctx", {{"paths", npaths}, {"hops", nhops}}}};
-    }
-
-    nlohmann::json Router::ExtractSummaryStatus() const
-    {
-        // if (!is_running)
-        //   return nlohmann::json{{"running", false}};
-
-        // auto services = _hidden_service_context.ExtractStatus();
-
-        // auto link_types = _link_manager->extract_status();
-
-        // uint64_t tx_rate = 0;
-        // uint64_t rx_rate = 0;
-        // uint64_t peers = 0;
-        // for (const auto& links : link_types)
-        // {
-        //   for (const auto& link : links)
-        //   {
-        //     if (link.empty())
-        //       continue;
-        //     for (const auto& peer : link["sessions"]["established"])
-        //     {
-        //       tx_rate += peer["tx"].get<uint64_t>();
-        //       rx_rate += peer["rx"].get<uint64_t>();
-        //       peers++;
-        //     }
-        //   }
-        // }
-
-        // // Compute all stats on all path builders on the default endpoint
-        // // Merge snodeSessions, remoteSessions and default into a single array
-        // std::vector<nlohmann::json> builders;
-
-        // if (services.is_object())
-        // {
-        //   const auto& serviceDefault = services.at("default");
-        //   builders.push_back(serviceDefault);
-
-        //   auto snode_sessions = serviceDefault.at("snodeSessions");
-        //   for (const auto& session : snode_sessions)
-        //     builders.push_back(session);
-
-        //   auto remote_sessions = serviceDefault.at("remoteSessions");
-        //   for (const auto& session : remote_sessions)
-        //     builders.push_back(session);
-        // }
-
-        // // Iterate over all items on this array to build the global pathStats
-        // uint64_t pathsCount = 0;
-        // uint64_t success = 0;
-        // uint64_t attempts = 0;
-        // for (const auto& builder : builders)
-        // {
-        //   if (builder.is_null())
-        //     continue;
-
-        //   const auto& paths = builder.at("paths");
-        //   if (paths.is_array())
-        //   {
-        //     for (const auto& [key, value] : paths.items())
-        //     {
-        //       if (value.is_object() && value.at("status").is_string()
-        //           && value.at("status") == "established")
-        //         pathsCount++;
-        //     }
-        //   }
-
-        //   const auto& buildStats = builder.at("buildStats");
-        //   if (buildStats.is_null())
-        //     continue;
-
-        //   success += buildStats.at("success").get<uint64_t>();
-        //   attempts += buildStats.at("attempts").get<uint64_t>();
-        // }
-        // double ratio = static_cast<double>(success) / (attempts + 1);
-
-        nlohmann::json stats{
-            {"running", true},
-            {"version", srouter::VERSION},
-            {"version_full", srouter::VERSION_FULL},
-            {"uptime", to_json(Uptime())},
-            // {"numPathsBuilt", pathsCount},
-            // {"numPeersConnected", peers},
-            {"numRoutersKnown", _node_db->num_rcs()},
-            // {"ratio", ratio},
-            // {"txRate", tx_rate},
-            // {"rxRate", rx_rate},
-        };
-
-        // if (services.is_object())
-        // {
-        //   stats["authCodes"] = services["default"]["authCodes"];
-        //   stats["exitMap"] = services["default"]["exitMap"];
-        //   stats["networkReady"] = services["default"]["networkReady"];
-        //   stats["lokiAddress"] = services["default"]["identity"];
-        // }
-        return stats;
-    }
 
     void Router::start_tickers()
     {
@@ -363,8 +223,6 @@ namespace srouter
         if (is_service_node)
         {
             auto paddr = _config.router.public_addr;
-            if (!paddr)
-                paddr = _config.links.public_addr;
 
             // Treat 0.0.0.0:0 as not specified:
             if (_config.links.listen_addr && _config.links.listen_addr->is_any_addr()
@@ -416,7 +274,7 @@ namespace srouter
                 assert(!_config.links.listen_addr->is_any_port());  // Should be assured from above
                 // port given but not IP: if we have a public ip then use that, else go search
                 if (paddr)
-                    _listen_address = quic::Address{*paddr, _config.links.listen_addr->port()};
+                    _listen_address = quic::Address{paddr->host(), _config.links.listen_addr->port()};
                 else
                 {
                     auto_detect = true;
@@ -483,7 +341,7 @@ namespace srouter
 
             // default listen port for clients is a specific port, we want 0 for embedded,
             // but perhaps the default should be 0 for all clients?
-            if (_config.links.listen_addr && embedded())
+            if (!_config.links.listen_addr && embedded())
                 _listen_address.set_port(0);
 
             log::info(log_global, "Session Router client connection using {}", _listen_address);
@@ -533,22 +391,15 @@ namespace srouter
             }
             log::info(logcat, "Session Router IPv4 local network is {}", *netconf._local_ip_net);
 
-            if (netconf.enable_ipv6)
+            if (!netconf._local_ipv6_net || (!netconf._local_ipv6_net->ip.hi && !netconf._local_ipv6_net->ip.lo))
             {
-                if (!netconf._local_ipv6_net || (!netconf._local_ipv6_net->ip.hi && !netconf._local_ipv6_net->ip.lo))
-                {
-                    if (auto maybe =
-                            net()->find_free_ipv6_net(netconf._local_ipv6_net ? netconf._local_ipv6_net->mask : 64))
-                        netconf._local_ipv6_net = std::move(*maybe);
-                    else
-                        throw std::runtime_error("cannot find free IPv6 address range!");
-                }
-                log::info(logcat, "Session Router IPv6 local network is {}", *netconf._local_ipv6_net);
-                log::warning(
-                    logcat,
-                    "Session Router IPv6 support is a work-in-progress and unsupported; enabling it is not "
-                    "recommended");
+                if (auto maybe =
+                        net()->find_free_ipv6_net(netconf._local_ipv6_net ? netconf._local_ipv6_net->mask : 64))
+                    netconf._local_ipv6_net = std::move(*maybe);
+                else
+                    throw std::runtime_error("cannot find free IPv6 address range!");
             }
+            log::info(logcat, "Session Router IPv6 local network is {}", *netconf._local_ipv6_net);
 
             // Make sure any reserved addresses are within our local network range:
             std::erase_if(netconf._reserved_local_ipv4, [&netconf](const auto& addr_ip) {
@@ -588,6 +439,14 @@ namespace srouter
                     logcat,
                     "Local client configured to maintain {} random router edge connections",
                     config().paths.edge_connections);
+
+            // If any SRV records are pointing at localhost.loki, replace that with our actual
+            // address
+            for (auto& srv : netconf.srv_records)
+            {
+                if (srv.target == "localhost.{}"_format(CLIENT_TLD) || srv.target == "localhost.loki")
+                    srv.target = "{}.{}"_format(id(), CLIENT_TLD);
+            }
         }
     }
 
@@ -599,7 +458,7 @@ namespace srouter
             sys::service_manager->starting();
 #endif
 
-        if (_is_exit_node and is_service_node)
+        if (_config.exit.exit_enabled and is_service_node)
             throw std::runtime_error{
                 "Session Router cannot simultaneously operate as a service node and client-operated exit node "
                 "service!"};
@@ -694,26 +553,53 @@ namespace srouter
             throw std::runtime_error{"This Session Router build only supports embedded configurations!"};
 #else
             log::debug(logcat, "Initializing TUN device");
-            auto tun = _loop->make_shared<handlers::TunEndpoint>(*this);
+            _tun = _loop->make_shared<handlers::TunEndpoint>(*this);
 
             // only (full) clients should have DNS, relays have no need for it
             if (!is_service_node)
-                tun->setup_dns();
+            {
+                auto& dns_bind = config().dns._listen_addrs;
+                if (dns_bind.empty())
+                {
+                    // This configuration is allowed (a service-only client might use it), although a bit unusual
+                    log::warning(
+                        logcat, "[dns]:listen is empty: DNS disabled.  Making outbound paths will not be possible");
+                }
+                else
+                {
+                    try
+                    {
+                        for (const auto& addr : dns_bind)
+                        {
+                            if (!_dns)
+                                _dns = _loop->make_shared<dns::Listener>(*this, addr);
+                            else
+                                _dns->listen(loop, addr);
+
+                            log::info(log_global, "DNS listening on {} port {}", addr.host(), _dns->last_port);
+                        }
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::error(
+                            logcat, "Failed to initialize DNS listener on {}: {}", fmt::join(dns_bind, ","), e.what());
+                        throw;
+                    }
+                }
+            }
 
             log::info(
                 log_global,
                 "Session Router internal network: {} on device {}",
-                tun->get_ipv4_network(),
-                tun->get_if_name());
-
-            _tun = std::move(tun);
+                _tun->get_ipv4_network(),
+                _tun->get_if_name());
 #endif
         }
         else
             log::debug(logcat, "Not initializing TUN device; running as an embedded client");
     }
 
-    bool Router::is_exit_node() const { return _is_exit_node; }
+    bool Router::is_exit_node() const { return _config.exit.exit_enabled; }
 
     bool Router::insufficient_peers() const
     {
@@ -761,14 +647,14 @@ namespace srouter
         }
     }
 
-    bool Router::should_report_stats(std::chrono::milliseconds now) const
+    bool Router::should_report_stats(steady_ms now) const
     {
-        return now >= _started_at + 10s
+        return uptime() >= 10s
             and now >= _last_stats_report
                 + (log::get_level(logcat) <= log::Level::debug ? REPORT_STATS_INTERVAL_DEBUG : REPORT_STATS_INTERVAL);
     }
 
-    std::string Router::_stats_line(std::chrono::milliseconds now) const
+    std::string Router::_stats_line(sys_ms now) const
     {
         using namespace fmt::literals;
         auto [rcs, rids, bs] = _node_db->db_stats();
@@ -817,7 +703,7 @@ namespace srouter
 
         log::info(log_global, "Local {}: {}", is_service_node ? "Relay" : "Client", _stats_line(now));
 
-        _last_stats_report = now;
+        _last_stats_report = steady_now_ms();
 
         oxen::log::flush();
     }
@@ -829,30 +715,31 @@ namespace srouter
             fmt::join(srouter::VERSION, "."), is_service_node ? "relay" : "client", _stats_line(now));
     }
 
-    void Router::_relay_tick([[maybe_unused]] std::chrono::milliseconds now)
+    void Router::_relay_tick([[maybe_unused]] sys_ms now)
     {
-        assert(_config.relay());
+        assert(_config.type == config::Type::Relay);
 #ifndef SROUTER_EMBEDDED_ONLY
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-        if (should_report_stats(now))
+        auto steady_now = steady_now_ms();
+        if (should_report_stats(steady_now))
             report_stats();
 
         bool registered = appears_registered();
 
-        if (now >= _next_dereg_warning)
+        if (steady_now >= _next_dereg_warning)
         {
             if (not registered)
             {
                 // complain about being deregistered/decommed
                 log::error(logcat, "We are running as a relay but are not a registered service node");
-                _next_dereg_warning = now + DECOMM_WARNING_INTERVAL;
+                _next_dereg_warning = steady_now + DECOMM_WARNING_INTERVAL;
             }
             else if (insufficient_peers())
             {
                 log::error(
                     logcat, "We are an active service node, but have too few ({}) known peers!", node_db().num_rcs());
-                _next_dereg_warning = now + DECOMM_WARNING_INTERVAL;
+                _next_dereg_warning = steady_now + DECOMM_WARNING_INTERVAL;
             }
         }
 
@@ -872,13 +759,14 @@ namespace srouter
 #endif
     }
 
-    void Router::_client_tick(std::chrono::milliseconds now)
+    void Router::_client_tick(sys_ms now)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         _router_profiling.tick();
 
-        if (should_report_stats(now))
+        auto steady_now = steady_now_ms();
+        if (should_report_stats(steady_now))
             report_stats();
 
         // if we need more sessions to routers we shall connect out to others
@@ -909,10 +797,11 @@ namespace srouter
             return;
         }
 
-        const auto now = srouter::time_now_ms();
+        const auto now = time_now_ms();
+        const auto steady_now = steady_now_ms();
 
-        if (const auto delta = now - _last_tick;
-            _last_tick != 0s and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
+        if (const auto delta = steady_now - _last_tick;
+            _last_tick != steady_ms{} and (delta > NETWORK_RESET_SKIP_INTERVAL || delta < -NETWORK_RESET_SKIP_INTERVAL))
         {
             // TODO: this, if needed?
             // we detected a time skip into the futre, thaw the network
@@ -925,7 +814,7 @@ namespace srouter
             _client_tick(now);
 
         // update tick timestamp
-        _last_tick = srouter::time_now_ms();
+        _last_tick = steady_now_ms();
     }
 
     void Router::start()
@@ -971,8 +860,6 @@ namespace srouter
         log::debug(logcat, "Starting Router main tick interval");
         _loop_ticker = _loop->call_every(ROUTER_TICK_INTERVAL, [this] { tick(); });
 
-        _started_at = srouter::time_now_ms();
-
         start_tickers();
         _is_running = true;
 
@@ -992,73 +879,49 @@ namespace srouter
         tick();
     }
 
-    std::chrono::milliseconds Router::Uptime() const
+    bool Router::is_edge_connected() const
     {
-        const std::chrono::milliseconds now = srouter::time_now_ms();
-        if (_started_at > 0s && now > _started_at)
-            return now - _started_at;
-        return 0s;
+        return loop.call_get([this] { return _is_edge_connected; });
+    }
+    bool Router::is_path_connected() const
+    {
+        return loop.call_get([this] { return _is_edge_connected && _has_established_paths; });
     }
 
-    bool Router::is_connected() const
-    {
-        return loop.call_get([this] { return _is_connected; });
-    }
-
-    void Router::on_connected(std::function<void()> callback, bool persistent)
+    void Router::on_connected(std::function<void()> callback, bool with_paths, bool persistent)
     {
         if (!callback)
             return;
-        loop.call([this, callback = std::move(callback), persistent] {
-            if (_is_connected)
-                try
-                {
-                    callback();
-                }
-                catch (const std::exception& e)
-                {
-                    log::error(logcat, "Uncaught exception calling on_connected callback: {}", e.what());
-                }
+        loop.call([this, with_paths, callback = std::move(callback), persistent] {
+            bool fire_now = _is_edge_connected && (_has_established_paths || !with_paths);
+            if (fire_now)
+                try_calling(logcat, callback);
 
-            if (persistent or not _is_connected)
-                _on_connected.emplace_back(std::move(callback), persistent);
+            if (persistent || !fire_now)
+                (with_paths ? _on_path_connected : _on_edge_connected).emplace_back(std::move(callback), persistent);
         });
     }
 
-    void Router::on_disconnected(std::function<void()> callback, bool persistent)
+    void Router::on_disconnected(std::function<void()> callback, bool with_paths, bool persistent)
     {
         if (!callback)
             return;
-        loop.call([this, callback = std::move(callback), persistent] {
-            if (not _is_connected)
-                try
-                {
-                    callback();
-                }
-                catch (const std::exception& e)
-                {
-                    log::error(logcat, "Uncaught exception calling on_disconnected callback: {}", e.what());
-                }
+        loop.call([this, callback = std::move(callback), persistent, with_paths] {
+            bool fire_now = !_is_edge_connected || (with_paths && !_has_established_paths);
+            if (fire_now)
+                try_calling(logcat, callback);
 
-            if (persistent or _is_connected)
-                _on_disconnected.emplace_back(std::move(callback), persistent);
+            if (persistent || !fire_now)
+                (with_paths ? _on_path_disconnected : _on_path_connected).emplace_back(std::move(callback), persistent);
         });
     }
 
-    static void process_on_conn_callbacks(
-        std::list<std::pair<std::function<void()>, bool>> callbacks, std::string_view type)
+    static void process_on_conn_callbacks(std::list<std::pair<std::function<void()>, bool>> callbacks)
     {
         for (auto it = callbacks.begin(); it != callbacks.end();)
         {
             auto& [f, persist] = *it;
-            try
-            {
-                f();
-            }
-            catch (const std::exception& e)
-            {
-                log::error(logcat, "Uncaught exception calling {} callback: {}", type, e.what());
-            }
+            try_calling(logcat, f);
             if (persist)
                 ++it;
             else
@@ -1071,20 +934,21 @@ namespace srouter
         assert(loop.inside());
 
         int conns = link_endpoint().num_relay_conns();
-        if (conns == 0 and _is_connected)
+        if (conns == 0 and _is_edge_connected)
         {
-            _is_connected = false;
+            _is_edge_connected = false;
 
             log::warning(log_global, "Session Router is no longer connected to the network!");
 
-            process_on_conn_callbacks(_on_disconnected, "on_disconnected");
+            process_on_conn_callbacks(_on_path_disconnected);
+            process_on_conn_callbacks(_on_edge_disconnected);
         }
         else if (
-            not _is_connected
+            not _is_edge_connected
             and conns * CLIENT_CONNECTED_THRESHOLD::den
                 >= config().paths.edge_connections * CLIENT_CONNECTED_THRESHOLD::num)
         {
-            _is_connected = true;
+            _is_edge_connected = true;
 
             log::info(
                 log_global,
@@ -1093,14 +957,49 @@ namespace srouter
                 conns,
                 config().paths.edge_connections);
 
-            process_on_conn_callbacks(_on_connected, "on_connected");
+            process_on_conn_callbacks(_on_edge_connected);
+            if (_has_established_paths)
+                process_on_conn_callbacks(_on_path_connected);
+        }
+    }
+
+    void Router::on_inbound_path_change(bool connected)
+    {
+        if (connected == _has_established_paths)
+            return;
+
+        _has_established_paths = connected;
+
+        if (_has_established_paths)
+        {
+            if (!_is_edge_connected)
+            {
+                // If we aren't edge connected then an established path isn't enough to push us into
+                // "path connected" state, so do nothing for now aside from setting the cool.  When
+                // we hit edge connected state (above) it will fire the _on_path_connected callbacks.
+                return;
+            }
+
+            process_on_conn_callbacks(_on_path_connected);
+        }
+        else
+        {
+            if (!_is_edge_connected)
+            {
+                // If we already lost all our edges then the path disconnected callbacks were
+                // already fired as part of that, so we don't need to call them now.
+                return;
+            }
+
+            process_on_conn_callbacks(_on_path_disconnected);
         }
     }
 
     void Router::on_test_ping()
     {
 #ifndef SROUTER_EMBEDDED_ONLY
-        _router_testing->incoming_ping();
+        if (_router_testing)
+            _router_testing->incoming_ping();
 #endif
     }
 
@@ -1128,7 +1027,8 @@ namespace srouter
                 srouter::sys::service_manager->stopping();
             }
 
-            _router_testing->stop();
+            if (_router_testing)
+                _router_testing->stop();
 #endif
 
             _session_endpoint->stop(true);
@@ -1138,6 +1038,14 @@ namespace srouter
 
             log::debug(logcat, "closing all connections");
             _link_manager->stop();
+
+#ifndef SROUTER_EMBEDDED_ONLY
+            if (_dns)
+                _dns.reset();
+
+            if (_tun)
+                _tun->stop();
+#endif
 
             auto rv = _loop_ticker->stop();
             log::debug(logcat, "router loop ticker stopped {}successfully!", rv ? "" : "un");
@@ -1169,6 +1077,9 @@ namespace srouter
             _link_endpoint = nullptr;
             _link_manager.reset();
 
+            if (_tun)
+                _tun.reset();
+
             if (_router_close_cb)
                 _router_close_cb();
 
@@ -1179,6 +1090,24 @@ namespace srouter
             _close_promise.set_value();
             log::info(log_global, "Session Router has stopped");
         });
+    }
+
+    std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv4& addr) const
+    {
+#ifndef SROUTER_EMBEDDED_ONLY
+        if (_tun)
+            return _tun->reverse_lookup(addr);
+#endif
+        return {std::nullopt, false};
+    }
+
+    std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv6& addr) const
+    {
+#ifndef SROUTER_EMBEDDED_ONLY
+        if (_tun)
+            return _tun->reverse_lookup(addr);
+#endif
+        return {std::nullopt, false};
     }
 
     const srouter::net::Platform* Router::net() const

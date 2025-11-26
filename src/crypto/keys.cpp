@@ -25,12 +25,6 @@ namespace srouter
 
     std::string PubKey::to_string() const { return oxenc::to_base32z(begin(), end()); }
 
-    PubKey& PubKey::operator=(const uint8_t* ptr)
-    {
-        std::copy(ptr, ptr + SIZE, begin());
-        return *this;
-    }
-
     bool Ed25519SecretKey::check_pubkey() const
     {
         std::array<unsigned char, 32> pk;
