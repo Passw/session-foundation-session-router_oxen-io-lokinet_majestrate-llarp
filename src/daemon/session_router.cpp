@@ -29,16 +29,9 @@ namespace
         // bool options
         bool help = false;
         bool version = false;
-        bool generate = false;
-        bool generate_embedded = false;
-        bool router = false;
-        bool config = false;
-        bool overwrite = false;
+        bool relay = false;
 
-        // string options
-        // TODO: change this to use a std::filesystem::path once we stop using ghc::filesystem on
-        // some platforms
-        std::string configPath;
+        std::filesystem::path config;
 
         // windows options
         bool win_install = false;
@@ -53,11 +46,11 @@ namespace
     // operational function definitions
     int srouter_main(int, char**);
     void handle_signal(int sig);
-    void start_srouter(std::optional<std::filesystem::path> confFile, bool snode);
+    void start_srouter(std::filesystem::path confFile, bool snode);
 
     // variable declarations
     static auto logcat = srouter::log::Cat("daemon");
-    std::unique_ptr<srouter::Context> ctx;
+    std::optional<srouter::Context> ctx;
 
     // operational function definitions
     void handle_signal(int sig)
@@ -335,18 +328,12 @@ namespace
 
         // flags: boolean values in command_line_options struct
         cli.add_flag("--version", options.version, "Session Router version");
-        cli.add_flag("-g,--generate", options.generate, "Generate default configuration and exit");
         cli.add_flag(
-            "-r,--router", options.router, "Run Session Router as a router (service node) instead of as a client");
-        cli.add_flag(
-            "-e,--generate-embedded",
-            options.generate_embedded,
-            "Generate a default config file for an embedded clients and exit");
-        cli.add_flag("-f,--force", options.overwrite, "Force writing config even if file exists");
+            "-r,--relay", options.relay, "Run Session Router as a relay (service node) instead of as a client");
 
         // options: string
-        cli.add_option("config,--config", options.configPath, "Path to session-router.ini configuration file")
-            ->capture_default_str();
+        cli.add_option("config,-c,--config", options.config, "Path to session-router.ini configuration file")
+            ->required();
 
         if constexpr (srouter::platform::is_windows)
         {
@@ -362,8 +349,6 @@ namespace
         {
             return cli.exit(e);
         }
-
-        std::optional<std::filesystem::path> configFile;
 
         try
         {
@@ -386,11 +371,6 @@ namespace
                     return 0;
                 }
             }
-
-            if (not options.configPath.empty())
-            {
-                configFile = options.configPath;
-            }
         }
         catch (const CLI::OptionNotFound& e)
         {
@@ -401,60 +381,18 @@ namespace
             cli.exit(e);
         }
 
-        auto type = options.generate_embedded ? srouter::config::Type::EmbeddedClient
-            : options.router                  ? srouter::config::Type::Relay
-                                              : srouter::config::Type::FullClient;
+        auto type = options.relay ? srouter::config::Type::Relay : srouter::config::Type::FullClient;
 
-        if (configFile.has_value())
+        if (options.config.empty())
         {
-            // when we have an explicit filepath
-            std::filesystem::path basedir = configFile->parent_path();
-            if (options.generate || options.generate_embedded)
-            {
-                try
-                {
-                    srouter::ensure_config(basedir, *configFile, options.overwrite, type);
-                }
-                catch (std::exception& ex)
-                {
-                    srouter::log::error(logcat, "cannot generate config at {}: {}", *configFile, ex.what());
-                    return 1;
-                }
-            }
-            else
-            {
-                try
-                {
-                    if (!exists(*configFile))
-                    {
-                        srouter::log::error(logcat, "Config file not found {}", *configFile);
-                        return 1;
-                    }
-                }
-                catch (std::exception& ex)
-                {
-                    srouter::log::error(logcat, "cannot check if ", *configFile, " exists: ", ex.what());
-                    return 1;
-                }
-            }
+            srouter::log::critical(logcat, "config file path cannot be empty");
+            return 1;
         }
-        else
+        if (!exists(options.config))
         {
-            try
-            {
-                srouter::ensure_config(
-                    srouter::GetDefaultDataDir(), srouter::GetDefaultConfigPath(), options.overwrite, type);
-            }
-            catch (std::exception& ex)
-            {
-                srouter::log::error(logcat, "cannot ensure config: {}", ex.what());
-                return 1;
-            }
-            configFile = srouter::GetDefaultConfigPath();
+            srouter::log::critical(logcat, "Config file '{}' not found", options.config);
+            return 1;
         }
-
-        if (options.generate || options.generate_embedded)
-            return 0;
 
 #ifdef _WIN32
         SetUnhandledExceptionFilter(&GenerateDump);
@@ -462,7 +400,7 @@ namespace
 
         try
         {
-            start_srouter(configFile, options.router);
+            start_srouter(options.config, options.relay);
         }
         catch (const std::exception& e)
         {
@@ -472,7 +410,7 @@ namespace
 
         std::promise<void> watchdog_stop;
         std::thread watchdog{[ftr = watchdog_stop.get_future()] {
-            srouter::util::SetThreadName("llarp-watchdog");
+            srouter::util::SetThreadName("srtr-watchdog");
             while (ftr.wait_for(1s) != std::future_status::ready)
             {
                 // do periodic non Session Router related tasks here
@@ -498,17 +436,16 @@ namespace
     }
 
     // this sets up, configures and runs the main context
-    void start_srouter(std::optional<std::filesystem::path> confFile, bool snode)
+    void start_srouter(std::filesystem::path confFile, bool snode)
     {
-        srouter::log::info(logcat, "starting up {}", srouter::VERSION_FULL);
+        srouter::log::info(logcat, "starting {}", srouter::VERSION_FULL);
         try
         {
             auto type = snode ? srouter::config::Type::Relay : srouter::config::Type::FullClient;
             std::optional<srouter::Config> conf;
             try
             {
-                conf = confFile ? srouter::Config{type, *confFile}
-                                : srouter::Config{type, "", srouter::GetDefaultDataDir()};
+                conf.emplace(type, confFile);
             }
             catch (const std::exception& e)
             {
@@ -516,13 +453,13 @@ namespace
                 throw;
             }
 
-            ctx = std::make_unique<srouter::Context>(/*embedded=*/false);
+            ctx.emplace(/*embedded=*/false);
 
             signal(SIGINT, handle_signal);
             signal(SIGTERM, handle_signal);
             signal(SIGKILL, handle_signal);
 
-            srouter::util::SetThreadName("llarp-main");
+            srouter::util::SetThreadName("srtr-main");
             ctx->start(std::move(*conf));
         }
         catch (srouter::util::bind_socket_error& ex)

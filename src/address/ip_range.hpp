@@ -12,6 +12,12 @@ namespace srouter
     // from the string.  (Otherwise the mask must be provided in the string).
     //
     // Throws on invalid input.
+    std::variant<ipv4_net, ipv6_net> parse_ip_net(
+        std::string_view address,
+        std::optional<uint8_t> default_mask4 = std::nullopt,
+        std::optional<uint8_t> default_mask6 = std::nullopt);
+
+    // Same as above, but also throws if given IPv4 for IPv6 or vice versa.
     ipv4_net parse_ipv4_net(std::string_view address, std::optional<uint8_t> default_mask = std::nullopt);
     ipv6_net parse_ipv6_net(std::string_view address, std::optional<uint8_t> default_mask = std::nullopt);
 

@@ -26,6 +26,23 @@ namespace srouter::util
     /// on error.
     void buffer_to_file(const std::filesystem::path& filename, std::string_view contents);
 
+    /// Extracts the filename as a std::string from a filename from a file.  On most platforms this is
+    /// simply the same as path.string(), but that is non-portable (because of Windows) and so this
+    /// gives you a version that works everywhere by extracting the utf8 representation (which
+    /// converts from native on Windows).
+    inline std::string path_as_str(const std::filesystem::path& p)
+    {
+        auto u8path = p.u8string();
+        return {reinterpret_cast<const char*>(u8path.data()), u8path.size()};
+    }
+    /// Loads a fs::path from a utf8 string by first mashing that string into a std::u8string_view;
+    /// this is primarily for portability, where fs::paths are not constructible from std::string on
+    /// Windows.
+    inline std::filesystem::path utf8_path(std::string_view p)
+    {
+        return std::filesystem::path{std::u8string_view{reinterpret_cast<const char8_t*>(p.data()), p.size()}};
+    }
+
     struct FileHash
     {
         size_t operator()(const std::filesystem::path& f) const

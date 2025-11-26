@@ -154,7 +154,7 @@ namespace srouter::vpn
 
                     req_attr = RTA_NEXT(req_attr, buf_avail);
                     req_attr->rta_type = IFA_ADDRESS;
-                    req_attr->rta_len = RTA_LENGTH(sizeof(in_addr));
+                    req_attr->rta_len = RTA_LENGTH(sizeof(in6_addr));
                     request.header.nlmsg_len += req_attr->rta_len;
                     addr_data = static_cast<char*>(RTA_DATA(req_attr));
                     oxenc::write_host_as_big(n6.ip.hi, addr_data);
