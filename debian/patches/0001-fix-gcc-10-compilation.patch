@@ -1,0 +1,26 @@
+From: Jason Rhinelander <jason@imaginary.ca>
+Date: Tue, 25 Nov 2025 22:16:09 -0400
+Subject: fix gcc-10 compilation
+
+---
+ src/dns/encode.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/dns/encode.cpp b/src/dns/encode.cpp
+index eb5c3bc..2ead795 100644
+--- a/src/dns/encode.cpp
++++ b/src/dns/encode.cpp
+@@ -129,7 +129,13 @@ namespace srouter::dns
+ 
+         for (size_t pos = name.empty() ? std::string::npos : 0; pos != std::string_view::npos;)
+         {
++#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 11
++            // Workaround for gcc bug (fixed in gcc 11) which doesn't allow us to pass a string_view
++            // to unordered_map `find()` with a std::string key.
++            std::string check{name.substr(pos)};
++#else
+             std::string_view check = name.substr(pos);
++#endif
+             if (prev_names)
+                 if (auto it = prev_names->find(check); it != prev_names->end())
+                 {
