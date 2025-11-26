@@ -1,3 +1,94 @@
+session-router (1.0.2-1~deb12) unstable; urgency=medium
+
+  [ Jason Rhinelander ]
+  * Make internal IPv6 work
+  * Auto-adjust ifaddr= if set to the network address
+  * Improve mapaddr config
+  * Internalize internal code
+  * Implement ICMPv6 unreachable for unmapped tun IPs
+  * Fix embedded random port assignment
+  * Preserve IP mappings; persistent UDP tunnels; IPv6 tunnels
+  * Create data-dir if it doesn't pre-exist
+  * Fix interface name description
+  * Fix CC "not found" response handling
+  * Replace "llarp" usage in thread name, endpoints
+  * Only IPv6 by default; pubkey-based IPv6 addrs; fix A/AAAA DNS responses
+  * Fix on_established being called multiple times if it throws
+  * version bump
+  * formatting
+  * update submodules to session-foundation repo
+  * Drop address/utils; simplify NetworkAddress
+  * Disconnect from deregged SNs after a delay
+  * Properly close connections, and stop using close_quietly
+  * Use .sesh instead of .loki for client pubkeys
+  * Fix CC fetch issues; add CC fetch cooldown; session init throws
+  * Unbreak SNS; Add SNS response confirmations
+  * Ongoing ONS DNS work
+  * Update default private IPv6 range
+  * Improve RR name override; increase default TTL to 10s
+  * Add SNS lookup cache with 5min ttl
+  * DNS fixes
+  * Overhaul DNS with many fixes
+  * Query all CC publish locations
+  * NO MORE BUFFER_T!!!
+  * Allow IPv4 for snodes, and on outbound paths
+  * Improve CC storage debugging
+  * Disable CC cache when forcibly refreshing
+  * Initiate CC refresh after remote close & re-add stale CC detection
+  * OutboundClientSession: use _prefix for private member variables
+  * Fix ClientContact signed_at timestamp
+  * Get rid of AlignedHasher
+  * Fix CC-down-sessions returning early
+  * Drop EncryptedClientContact
+  * Fix relays to not require find_cc index
+  * Avoid warning from attempting to build a path too early
+  * Implement DNS name compression
+  * fix empty name encoding
+  * EDNS query and cookie support
+  * CI: make sure libunwind-NN-dev installed in llvm builds
+  * Remove dead code
+  * Internal DNS handling overhaul
+  * Fix deadlock or crash during shutdown
+  * Add path info via DNS TXT; calculate jitter
+  * Fix deadlock or crash during shutdown
+  * CI: make sure libunwind-NN-dev installed in llvm builds
+  * Make upstream DNS work (nicely)
+  * fix libcrypt default
+  * Move config & keygen to a dedicated binary
+  * libsession SNS resolution; add different "connected" states
+  * CI: install updates before oxen packages
+  * Fix listen address assignment
+
+  [ Thomas Winget ]
+  * Add some path info getters for embedded clients
+  * fix segfault from container autovivify, catch exception too
+  * don't assign ip address if session creation fails...
+  * update tun traffic session init code
+  * fix session close on idle timeout, make inbound sessions do it too
+  * update tun traffic session init code
+  * Fix usages of time points to actually be time points
+  * that one actually *is* a duration though...
+  * Add rc fetch hashes to nodedb
+  * bit of cleanup
+  * fix (technically probably working) use-after-move
+  * update client fetch_rcs path message and usage
+  * fix inverted condition, change throw to assert
+  * bt_dict_consumer::next_thing consumes the thing
+  * store rc bucket hashes as if hash gave big-endian
+  * rework when clients refresh RouterIDs and RCs
+  * use std array instead of uint64_t for rc bucket hash
+  * make sure bt list producer concludes
+  * ignore signature on rc bucket hash as well
+  * lots of minor TODO and dead code cleanup
+  * delete unused decaying thing, fix some clock choices
+  * remove messages/ folder (save for common, for now)
+  * remove more dead code, fixup a comment
+  * missed a couple 'TESTNET' (TODO) comments
+  * PathHandler cannot have nullptr paths
+  * triggered ipv4 mapping (as it is no longer done by default)
+
+ -- Jason Rhinelander <jason@session.foundation>  Tue, 25 Nov 2025 20:35:59 -0400
+
 session-router (1.0.1-1~deb12) unstable; urgency=medium
 
   * Fix and simplify version display
