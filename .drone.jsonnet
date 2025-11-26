@@ -417,11 +417,21 @@ local docs_pipeline(name, image, extra_cmds=[], allow_fail=false) = {
                   oxen_repo=[],
                   cmake_extra='-DBUILD_STATIC_DEPS=ON -DBUILD_SHARED_LIBS=OFF -DSTATIC_LINK=ON'),
 
-  // Static debian 12 armhf (upload to builds.lokinet.dev)
-  debian_pipeline('Debian 12/bookworm static [armhf]',
-                  docker_base + 'debian-bookworm/arm32v7',
+  debian_pipeline('Debian 11/bullseye',
+                  docker_base + 'debian-bullseye',
+                  deps=default_deps(remove='libcli11-dev')),
+
+  // Static builds (uploaded to builds.lokinet.dev).  In general:
+  // - armhf and arm64 build on the oldest debian distro we support.  Technically there is some
+  //   arm64 ubuntu support, but the arm linux ecosystem seems to much more built on top of debian
+  //   rather than ubuntu.
+  // - amd64 we build on the oldest Debian *or* Ubuntu distro, so that it should work on that or
+  //   anything newer.
+  debian_pipeline('Static armhf (Debian 11/bullseye)',
+                  docker_base + 'debian-bullseye/arm32v7',
                   arch='arm64',
                   deps=static_deps,
+                  tests=false,
                   oxen_repo=[],
                   cmake_extra='-DBUILD_STATIC_DEPS=ON -DBUILD_SHARED_LIBS=OFF -DSTATIC_LINK=ON ' +
                               '-DCMAKE_CXX_FLAGS="-march=armv7-a+fp -Wno-psabi" -DCMAKE_C_FLAGS="-march=armv7-a+fp" ' +
@@ -431,15 +441,22 @@ local docs_pipeline(name, image, extra_cmds=[], allow_fail=false) = {
                     'UPLOAD_OS=linux-armhf ./contrib/ci/drone-static-upload.sh',
                   ],
                   jobs=4),
-
-  // Ubuntu
-  debian_pipeline('Ubuntu latest', docker_base + 'ubuntu-rolling'),
-  debian_pipeline('Ubuntu 24.04', docker_base + 'ubuntu-noble'),
-  debian_pipeline('Ubuntu 22.04', docker_base + 'ubuntu-jammy'),
-
-  // Static ubuntu jammy amd64 build (upload to builds.lokinet.dev)
-  debian_pipeline('Ubuntu 22.04 static',
-                  docker_base + 'ubuntu-jammy',
+  debian_pipeline('Static arm64 (Debian 11/bullseye)',
+                  docker_base + 'debian-bullseye',
+                  arch='arm64',
+                  deps=static_deps,
+                  tests=false,
+                  oxen_repo=[],
+                  cmake_extra='-DBUILD_STATIC_DEPS=ON -DBUILD_SHARED_LIBS=OFF -DSTATIC_LINK=ON ' +
+                              '-DCMAKE_CXX_FLAGS="-march=armv8-a" -DCMAKE_C_FLAGS="-march=armv8-a" ' +
+                              '-DNATIVE_BUILD=OFF -DWITH_SYSTEMD=OFF -DWITH_BOOTSTRAP=OFF',
+                  extra_cmds=[
+                    './contrib/ci/drone-check-static-libs.sh',
+                    'UPLOAD_OS=linux-armhf ./contrib/ci/drone-static-upload.sh',
+                  ],
+                  jobs=4),
+  debian_pipeline('Static AMD64 (Debian 11/bullseye)',
+                  docker_base + 'debian-bullseye',
                   deps=static_deps,
                   lto=true,
                   tests=false,
@@ -453,6 +470,11 @@ local docs_pipeline(name, image, extra_cmds=[], allow_fail=false) = {
                     './contrib/ci/drone-static-upload.sh',
                   ]),
 
+
+  // Ubuntu
+  debian_pipeline('Ubuntu latest', docker_base + 'ubuntu-rolling'),
+  debian_pipeline('Ubuntu 24.04', docker_base + 'ubuntu-noble'),
+  debian_pipeline('Ubuntu 22.04', docker_base + 'ubuntu-jammy'),
 
   // cross compile targets
   // Aug 11: these are exhibiting some dumb failures in libsodium and external deps, TOFIX later
