@@ -32,9 +32,6 @@ session_router_add_library(session-router-core-utils
   handlers/session.cpp
 
   messages/common.cpp
-  messages/dht.cpp
-  messages/fetch.cpp
-  messages/path.cpp
 )
 
 if (SROUTER_FULL)
@@ -74,10 +71,8 @@ endif()
 # config, crypto, timeplace, nodedb, net, router
 session_router_add_library(session-router-utils
   ${CMAKE_CURRENT_BINARY_DIR}/constants/version.cpp
-  util/buffer.cpp
   util/file.cpp
   util/logging.cpp
-  util/mem.cpp
   util/str.cpp
   util/thread/queue_manager.cpp  
   util/thread/threading.cpp
@@ -100,7 +95,6 @@ session_router_add_library(session-router-contact
 session_router_add_library(session-router-ip
   net/ip_packet.cpp
   net/policy.cpp
-  net/utils.cpp
 )
 
 # Addressing and event loop files used by session-router-core and other libraries
@@ -108,7 +102,6 @@ session_router_add_library(session-router-ip
 session_router_add_library(session-router-addressing
   address/address.cpp
   address/ip_range.cpp
-  address/utils.cpp
 
   ev/fd_poller.cpp
   ev/tcp.cpp
@@ -162,13 +155,14 @@ if (SROUTER_FULL)
   # session-router-dns is the dns parsing and hooking library that we use to
   # parse modify and reconstitute dns wire proto, dns queries and RR
   target_sources(session-router-dns PRIVATE
-    dns/message.cpp   # dns/server
-    dns/name.cpp      # srv_data, question, rr
+    dns/encode.cpp
+    dns/handler.cpp
+    dns/listener.cpp
+    dns/message.cpp
     dns/platform.cpp
-    dns/question.cpp  # message
+    dns/question.cpp
     dns/rr.cpp
-    dns/serialize.cpp
-    dns/server.cpp
+    dns/unbound.cpp
   )
 
   # platform specific bits and bobs for setting dns
@@ -196,8 +190,8 @@ endforeach()
 configure_file("nodedb-bootstraps.cpp.in" "${CMAKE_CURRENT_BINARY_DIR}/nodedb-bootstraps.cpp" @ONLY)
 target_sources(session-router-nodedb PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nodedb-bootstraps.cpp")
 
-# session-router-config is for all configuration types and parsers
-session_router_add_library(session-router-config
+# session-router-conf is for all configuration types and parsers
+session_router_add_library(session-router-conf
   config/config.cpp
   config/definition.cpp
   config/ini.cpp
@@ -215,7 +209,7 @@ session_router_add_library(session-router-path
 
 if(SROUTER_DEBUG_PATH_SEED)
   target_compile_definitions(session-router-nodedb PRIVATE SROUTER_DEBUG_PATH_SEED)
-  target_compile_definitions(session-router-config PRIVATE SROUTER_DEBUG_PATH_SEED)
+  target_compile_definitions(session-router-conf PRIVATE SROUTER_DEBUG_PATH_SEED)
   target_compile_definitions(session-router-path PRIVATE SROUTER_DEBUG_PATH_SEED)
 endif()
 
@@ -223,18 +217,18 @@ endif()
 target_link_libraries(session-router-nodedb PUBLIC session-router-addressing session-router-cryptography)
 target_link_libraries(session-router-contact PUBLIC session-router-dns)
 if(SROUTER_FULL)
-  target_link_libraries(session-router-rpc PUBLIC session-router-contact session-router-config)
+  target_link_libraries(session-router-rpc PUBLIC session-router-contact session-router-conf)
 endif()
 target_link_libraries(session-router-addressing PUBLIC session-router-utils session-router-cryptography session-router-contact session-router-ip)
-target_link_libraries(session-router-config PUBLIC session-router-cryptography session-router-addressing)
+target_link_libraries(session-router-conf PUBLIC session-router-cryptography session-router-addressing)
 if(SROUTER_FULL)
   target_link_libraries(session-router-platform PUBLIC session-router-cryptography session-router-ip)
-  target_link_libraries(session-router-config PUBLIC session-router-exit-auth)
+  target_link_libraries(session-router-conf PUBLIC session-router-exit-auth)
 endif()
 target_link_libraries(session-router-dns
   PUBLIC
   session-router-cryptography
-  session-router-config
+  session-router-conf
 )
 if(SROUTER_FULL)
   target_link_libraries(session-router-dns PUBLIC session-router-platform)
@@ -247,7 +241,7 @@ target_link_libraries(session-router-path
 
 target_link_libraries(session-router-core-utils 
   PUBLIC 
-  session-router-config
+  session-router-conf
   session-router-dns
 )
 

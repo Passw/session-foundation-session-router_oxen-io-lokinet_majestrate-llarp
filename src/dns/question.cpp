@@ -1,7 +1,9 @@
 #include "question.hpp"
 
-#include "dns.hpp"
-#include "name.hpp"
+#include "address/address.hpp"
+#include "encode.hpp"
+#include "util/logging.hpp"
+#include "util/logging/buffer.hpp"
 #include "util/str.hpp"
 
 #include <nlohmann/json.hpp>
@@ -10,45 +12,37 @@ namespace srouter::dns
 {
     static auto logcat = log::Cat("dns");
 
-    Question::Question(Question&& other)
-        : qname(std::move(other.qname)), qtype(std::move(other.qtype)), qclass(std::move(other.qclass))
-    {}
-    Question::Question(const Question& other) : qname(other.qname), qtype(other.qtype), qclass(other.qclass) {}
-
-    Question::Question(std::string name, QType_t type) : qname{std::move(name)}, qtype{type}, qclass{qClassIN}
+    Question::Question(std::string name, RRType type) : qname{std::move(name)}, qtype{type}, qclass{RRClass::IN}
     {
         if (qname.empty())
             throw std::invalid_argument{"qname cannot be empty"};
     }
 
-    bool Question::Encode(buffer_t* buf) const
+    void Question::encode(std::span<std::byte>& buf, prev_names_t& prev_names, uint16_t& buf_offset) const
     {
-        if (!EncodeNameTo(buf, qname))
-            return false;
-        if (!buf->put_uint16(qtype))
-            return false;
-        return buf->put_uint16(qclass);
+        encode_name(buf, qname, &prev_names, &buf_offset);
+        buf_offset += write_ints_into(buf, static_cast<uint16_t>(qtype), static_cast<uint16_t>(qclass));
     }
 
-    bool Question::Decode(buffer_t* buf)
+    bool Question::extract(std::span<const std::byte>& buf)
     {
-        if (auto name = DecodeName(buf))
-            qname = *std::move(name);
-        else
+        auto name = extract_name(buf);
+        if (!name)
         {
-            log::error(logcat, "failed to decode name");
+            log::warning(logcat, "Failed to decode name from dns query");
             return false;
         }
-        if (!buf->read_uint16(qtype))
+
+        uint16_t qtype_code, qclass_code;
+        if (!extract_ints(buf, qtype_code, qclass_code))
         {
-            log::error(logcat, "failed to decode type");
+            log::warning(logcat, "Failed to decode type and class from dns query");
             return false;
         }
-        if (!buf->read_uint16(qclass))
-        {
-            log::error(logcat, "failed to decode class");
-            return false;
-        }
+
+        qname = std::move(*name);
+        qtype = static_cast<RRType>(qtype_code);
+        qclass = static_cast<RRClass>(qclass_code);
         return true;
     }
 
@@ -57,53 +51,25 @@ namespace srouter::dns
         return nlohmann::json{{"qname", qname}, {"qtype", qtype}, {"qclass", qclass}};
     }
 
-    bool Question::IsName(const std::string& other) const
+    std::string_view Question::name() const
     {
-        // does other have a . at the end?
-        if (other.find_last_of('.') == (other.size() - 1))
-            return other == qname;
-        // no, add it and retry
-        return IsName(other + ".");
+        std::string_view name{qname};
+        if (name.ends_with('.'))
+            name.remove_suffix(1);
+        return name;
     }
 
-    bool Question::IsLocalhost() const
+    bool Question::has_tld(std::string_view tld) const
     {
-        return (qname == "localhost.loki." or srouter::ends_with(qname, ".localhost.loki."));
-    }
-
-    bool Question::HasSubdomains() const
-    {
-        const auto parts = split(qname, ".", true);
-        return parts.size() >= 3;
-    }
-
-    std::string Question::Subdomains() const
-    {
-        if (qname.size() < 2)
-            return "";
-
-        size_t pos;
-
-        pos = qname.rfind('.', qname.size() - 2);
-        if (pos == std::string::npos or pos == 0)
-            return "";
-
-        pos = qname.rfind('.', pos - 1);
-        if (pos == std::string::npos or pos == 0)
-            return "";
-
-        return qname.substr(0, pos);
-    }
-
-    std::string Question::Name() const { return qname.substr(0, qname.find_last_of('.')); }
-
-    bool Question::HasTLD(const std::string& tld) const
-    {
-        return qname.find(tld) != std::string::npos && qname.rfind(tld) == (qname.size() - tld.size()) - 1;
+        if (tld.starts_with('.'))
+            tld.remove_prefix(1);
+        auto qnodot = name();
+        return qnodot.size() > tld.size() && qnodot.ends_with(tld) && qnodot[qnodot.size() - tld.size() - 1] == '.';
     }
 
     std::string Question::to_string() const
     {
-        return "DNSQuestion:[ qname:{} | qtype:{} | qclass:{} ]"_format(qname, qtype, qclass);
+        return "DNSQuestion:[ qname:{} | qtype:{} | qclass:{} ]"_format(
+            qname, static_cast<uint16_t>(qtype), static_cast<uint16_t>(qclass));
     }
 }  // namespace srouter::dns

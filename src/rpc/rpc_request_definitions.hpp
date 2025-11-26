@@ -244,28 +244,6 @@ namespace srouter::rpc
     };
 #endif
 
-    //  RPC: config
-    //    Runs Session Router router using .ini config file passed as path
-    //
-    //  Inputs:
-    //    "filename" : name of .ini file to either save or delete
-    //    "ini" : .ini chunk to save in new file
-    //    "del" : boolean specifying whether to delete file "filename" or save it
-    //
-    //  Returns:
-    //
-    struct Config : Immediate
-    {
-        static constexpr auto name = "config"sv;
-
-        struct request_parameters
-        {
-            bool del;
-            std::string filename;
-            std::string ini;
-        } request;
-    };
-
     //  RPC: find_cc
     //    Lookup client contact via path request
     //
@@ -288,7 +266,7 @@ namespace srouter::rpc
     //    Initiate session to remote instance
     //
     //  Inputs:
-    //    "pk" : remote pubkey terminating with `.loki` or `.snode`
+    //    "pk" : remote pubkey (with .sesh or .snode on the end)
     //
     //  Returns:
     //    "ip" : mapped IP address, or error string
@@ -335,8 +313,6 @@ namespace srouter::rpc
         MapExit,
         ListExits,
         SwapExits,
-        UnmapExit,
-        // DNSQuery,
-        Config>;
+        UnmapExit>;
 
 }  // namespace srouter::rpc

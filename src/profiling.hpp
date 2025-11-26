@@ -3,6 +3,7 @@
 #include "constants/proto.hpp"
 #include "contact/router_id.hpp"
 #include "util/thread/threading.hpp"
+#include "util/time.hpp"
 
 #include <filesystem>
 #include <map>
@@ -36,8 +37,8 @@ namespace srouter
         uint64_t path_success{};
         uint64_t path_fail{};
         uint64_t path_timeout{};
-        std::chrono::milliseconds last_update{0s};
-        std::chrono::milliseconds last_decay{0s};
+        sys_ms last_update{sys_ms::min()};
+        sys_ms last_decay{sys_ms::min()};
         uint64_t version = srouter::constants::proto_version;
 
         RouterProfile() = default;
@@ -101,7 +102,7 @@ namespace srouter
 
         bool save_to_disk();
 
-        bool should_save(std::chrono::milliseconds now) const;
+        bool should_save(sys_ms now) const;
 
         void disable();
 
@@ -123,7 +124,7 @@ namespace srouter
         mutable util::Mutex _m;
         std::filesystem::path _profile_file;
         std::map<RouterID, RouterProfile> _profiles;
-        std::chrono::milliseconds _last_save{0s};
+        sys_ms _last_save{sys_ms::min()};
         std::atomic<bool> _profiling_disabled{false};
     };
 

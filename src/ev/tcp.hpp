@@ -1,6 +1,5 @@
 #pragma once
 
-#include "util/buffer.hpp"
 #include "util/logging.hpp"
 
 #include <oxen/quic/loop.hpp>

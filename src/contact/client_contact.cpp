@@ -1,6 +1,7 @@
 #include "client_contact.hpp"
 
 #include "constants/path.hpp"
+#include "crypto/crypto.hpp"
 #include "util/bspan.hpp"
 #include "util/logging.hpp"
 #include "util/logging/buffer.hpp"
@@ -17,13 +18,18 @@ namespace srouter
 
     ClientContact::ClientContact(
         PubKey pk,
-        std::unordered_set<dns::SRVData> srvs,
+        std::vector<dns::SRVData> srvs,
         protocol_flag protocols,
+        sys_ms signed_at,
         std::optional<net::ExitPolicy> policy)
-        : _pubkey{std::move(pk)}, _srv{std::move(srvs)}, _protos{protocols}, _exit_policy{std::move(policy)}
+        : _pubkey{std::move(pk)},
+          _srv{std::move(srvs)},
+          _protos{protocols},
+          _signed_at{signed_at},
+          _exit_policy{std::move(policy)}
     {}
 
-    ClientContact::ClientContact(std::span<const std::byte> buf)
+    ClientContact::ClientContact(std::span<const std::byte> buf, sys_ms signed_at) : _signed_at{signed_at}
     {
         oxenc::bt_dict_consumer btdc{buf};
 
@@ -48,7 +54,7 @@ namespace srouter
 
         if (auto sublist = btdc.maybe<oxenc::bt_list_consumer>("s"))
             while (not sublist->is_finished())
-                _srv.emplace(sublist->consume_dict_consumer());
+                _srv.emplace_back(sublist->consume_dict_consumer());
 
         btdc.finish();
     }
@@ -104,38 +110,75 @@ namespace srouter
         return ret;
     }
 
-    bool ClientContact::is_expired(std::chrono::milliseconds now) const
+    std::chrono::sys_seconds ClientContact::expiry() const
+    {
+        if (_intros.empty())
+            return {};
+        return _intros.front().expiry;
+    }
+
+    bool ClientContact::is_expired(sys_ms now) const
     {
         // We only need to check the first one, because this is sorted newest-to-oldest and so if
         // the first is expired they all are.
         return _intros.empty() || _intros.front().is_expired(now);
     }
 
-    EncryptedClientContact ClientContact::encrypt_and_sign(const Ed25519BlindedKey& blinded) const
+    std::string ClientContact::encrypt_and_sign(const Ed25519BlindedKey& blinded)
     {
-        EncryptedClientContact enc{};
+        auto nonce = SymmNonce::make_random();
+        auto encrypted = bt_encode();
+        crypto::xchacha20(encrypted, SharedSecret{_pubkey}, nonce);
+        _signed_at = srouter::time_now_ms();
 
+        /** Encrypted client contact values:
+                "i" blinded pubkey
+                "n" nonce
+                "t" signing time
+                "x" encrypted payload
+                "~" signature (verifiable with "i")
+        */
+        oxenc::bt_dict_producer btdp;
+        btdp.append("i", blinded.pubkey.to_view());
+        btdp.append("n", nonce.to_view());
+        btdp.append("t", _signed_at.time_since_epoch().count());
+        btdp.append("x", std::span{encrypted});
+        btdp.append_signature("~", [&blinded](std::span<const std::byte> to_sign) { return blinded.sign(to_sign); });
+
+        return std::move(btdp).str();
+    }
+
+    ClientContact ClientContact::decrypt(std::span<const std::byte> enccc, const PubKey& root)
+    {
         try
         {
-            enc.blinded_pubkey.assign(blinded.pubkey);
-            enc.encrypted = bt_encode();
+            PubKey blinded;
+            oxenc::bt_dict_consumer btdc{enccc};
+            blinded.assign(btdc.require_span<std::byte, PubKey::SIZE>("i"));
+            SymmNonce nonce;
+            nonce.assign(btdc.require_span<std::byte, SymmNonce::SIZE>("n"));
+            auto signed_at = sys_ms{std::chrono::milliseconds{btdc.require<int64_t>("t")}};
+            auto enc = btdc.require_span<std::byte>("x");
 
-            crypto::xchacha20(enc.encrypted, SharedSecret{_pubkey}, enc.nonce);
-            enc.signed_at = srouter::time_now_ms();
+            btdc.require_signature("~", [&blinded](std::span<const std::byte> m, std::span<const std::byte> s) {
+                if (s.size() != 64)
+                    throw std::runtime_error{"Invalid signature: not 64 bytes"};
 
-            auto btdp = enc.bt_encode_for_signing();
-            btdp.append_signature(
-                "~", [&blinded](std::span<const std::byte> to_sign) { return blinded.sign(to_sign); });
+                if (not crypto::verify(blinded, m, s.first<64>()))
+                    throw std::runtime_error{"Encrypted client contact signature verification failed"};
+            });
 
-            enc._bt_payload = std::move(btdp).str();
+            std::vector<std::byte> decrypted{enc.begin(), enc.end()};
+            crypto::xchacha20(decrypted, SharedSecret{root}, nonce);
+
+            return ClientContact{decrypted, signed_at};
         }
         catch (const std::exception& e)
         {
-            log::warning(logcat, "Exception encrypting and signing client contact: {}", e.what());
+            log::warning(logcat, "ClientContact decryption/deserialization failed: {}", e.what());
+            log::trace(logcat, "Failing Encrypted CC data: {}", buffer_printer{enccc});
             throw;
         }
-
-        return enc;
     }
 
     std::string ClientContact::to_string() const
@@ -144,77 +187,4 @@ namespace srouter
             _pubkey.short_string(), _exit_policy ? ", exit" : "", _intros.size(), srouter::to_string(_protos));
     }
 
-    EncryptedClientContact::EncryptedClientContact(std::span<const std::byte> buf)
-        : EncryptedClientContact{std::string{reinterpret_cast<const char*>(buf.data()), buf.size()}}
-    {}
-    EncryptedClientContact::EncryptedClientContact(std::string buf) : _bt_payload{std::move(buf)}
-    {
-        bt_decode(oxenc::bt_dict_consumer{_bt_payload});
-    }
-
-    oxenc::bt_dict_producer EncryptedClientContact::bt_encode_for_signing() const
-    {
-        oxenc::bt_dict_producer btdp;
-        btdp.append("i", blinded_pubkey.to_view());
-        btdp.append("n", nonce.to_view());
-        btdp.append("t", signed_at.count());
-        btdp.append("x", std::span{encrypted});
-        return btdp;
-    }
-
-    /** EncryptedClientContact
-            "i" blinded pubkey
-            "n" nonce
-            "t" signing time
-            "x" encrypted payload
-            "~" signature
-    */
-    void EncryptedClientContact::bt_decode(oxenc::bt_dict_consumer&& btdc)
-    {
-        try
-        {
-            blinded_pubkey.assign(btdc.require_span<std::byte, PubKey::SIZE>("i"));
-            nonce.assign(btdc.require_span<std::byte, SymmNonce::SIZE>("n"));
-            signed_at = std::chrono::milliseconds{btdc.require<int64_t>("t")};
-
-            auto enc = btdc.require_span<std::byte>("x");
-            encrypted.assign(enc.begin(), enc.end());
-
-            btdc.require_signature("~", [this](std::span<const std::byte> m, std::span<const std::byte> s) {
-                if (s.size() != 64)
-                    throw std::runtime_error{"Invalid signature: not 64 bytes"};
-
-                if (not crypto::verify(blinded_pubkey, m, s.first<64>()))
-                    throw std::runtime_error{"EncryptedClientContact signature verification failed"};
-            });
-        }
-        catch (const std::exception& e)
-        {
-            log::warning(logcat, "EncryptedClientContact deserialization failed: {}", e.what());
-            log::trace(logcat, "Failing Encrypted CC data: {}", buffer_printer{_bt_payload});
-            throw;
-        }
-    }
-
-    std::optional<ClientContact> EncryptedClientContact::decrypt(const PubKey& root) const
-    {
-        std::optional<ClientContact> cc;
-        auto plaintext = encrypted;
-        crypto::xchacha20(plaintext, SharedSecret{root}, nonce);
-        try
-        {
-            cc.emplace(plaintext);
-        }
-        catch (const std::exception& e)
-        {
-            log::warning(logcat, "Client contact decryption failed for {}", root);
-        }
-
-        return cc;
-    }
-
-    bool EncryptedClientContact::is_expired(std::chrono::milliseconds now) const
-    {
-        return now >= signed_at + path::MAX_LIFETIME_ACCEPTED;
-    }
 }  //  namespace srouter

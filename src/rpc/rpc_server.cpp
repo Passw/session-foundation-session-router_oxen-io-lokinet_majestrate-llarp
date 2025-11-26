@@ -4,9 +4,6 @@
 #include "config/ini.hpp"
 #include "constants/version.hpp"
 #include "contact/client_contact.hpp"
-#include "dns/dns.hpp"
-#include "dns/server.hpp"
-#include "messages/common.hpp"
 #include "router/router.hpp"
 #include "rpc/rpc_request_definitions.hpp"
 #include "rpc_request.hpp"
@@ -29,6 +26,7 @@ namespace srouter::rpc
         log::info(logcat, "RPC Server received request for endpoint `{}`", req.name);
     }
 
+#if 0
     // Fake packet source that serializes repsonses back into dns
     class DummyPacketSource final : public dns::PacketSource
     {
@@ -42,12 +40,13 @@ namespace srouter::rpc
         /// send packet with src and dst address containing buf on this packet source
         void send_udp(const quic::Address&, const quic::Address&, std::span<const std::byte> payload) const override
         {
-            func(dns::maybe_parse_dns_msg(payload));
+            func(dns::Message::extract(payload));
         }
 
         /// returns the sockaddr we are bound on if applicable
         std::optional<quic::Address> bound_on() const override { return std::nullopt; }
     };
+#endif
 
     bool check_path(std::string path)
     {
@@ -136,9 +135,7 @@ namespace srouter::rpc
         log_print_rpc(version);
 
         nlohmann::json result{
-            {"version", srouter::VERSION},
-            {"version_full", srouter::VERSION_FULL},
-            {"uptime", to_json(_router.Uptime())}};
+            {"version", srouter::VERSION}, {"version_full", srouter::VERSION_FULL}, {"uptime", to_json(uptime())}};
 
         SetJSONResponse(result, version.response);
     }
@@ -147,15 +144,14 @@ namespace srouter::rpc
     {
         log_print_rpc(status);
 
-        (_router.is_running()) ? SetJSONResponse(_router.ExtractStatus(), status.response)
-                               : SetJSONError("Router is not yet ready", status.response);
+        // TODO: this
     }
 
     void RPCServer::invoke(GetStatus& getstatus)
     {
         log_print_rpc(getstatus);
 
-        SetJSONResponse(_router.ExtractSummaryStatus(), getstatus.response);
+        // TODO: this
     }
 
     void RPCServer::invoke(QuicConnect& quicconnect)
@@ -330,7 +326,7 @@ namespace srouter::rpc
 
         _router.loop.call([this, netaddr = *maybe_netaddr, replier = findcc.move()]() mutable {
             _router.session_endpoint().lookup_client_intro(
-                netaddr.router_id(), [&replier](std::optional<srouter::ClientContact> cc) {
+                netaddr.pubkey, [&replier](std::optional<srouter::ClientContact> cc) {
                     nlohmann::json result;
                     if (cc)
                     {
@@ -437,7 +433,7 @@ namespace srouter::rpc
                         {
                             oxenc::bt_dict_consumer btdc{m.body()};
 
-                            if (auto s = btdc.maybe<std::string>(messages::STATUS_KEY))
+                            if (auto s = btdc.maybe<std::string>("!"sv))
                                 status = std::move(*s);
                         }
                         catch (const std::exception& e)
@@ -536,16 +532,7 @@ namespace srouter::rpc
     {
         log_print_rpc(listexits);
 
-        (void)listexits;
-        // if (not _router.hidden_service_context().hasEndpoints())
-        // {
-        //   SetJSONError("No mapped endpoints found", listexits.response);
-        //   return;
-        // }
-
-        // auto status = _router.hidden_service_context().GetDefault()->ExtractStatus()["exitMap"];
-
-        // SetJSONResponse((status.empty()) ? "No exits" : status, listexits.response);
+        // TODO: this
     }
 
     void RPCServer::invoke(UnmapExit& unmapexit)
@@ -575,77 +562,7 @@ namespace srouter::rpc
     {
         log_print_rpc(swapexits);
 
-        (void)swapexits;
-        // MapExit map_request;
-        // UnmapExit unmap_request;
-        // auto endpoint = _router.hidden_service_context().GetDefault();
-        // auto current_exits = endpoint->ExtractStatus()["exitMap"];
-
-        // if (current_exits.empty())
-        // {
-        //   SetJSONError("Cannot swap to new exit: no exits currently mapped", swapexits.response);
-        //   return;
-        // }
-
-        // if (swapexits.request.exit_addresses.size() < 2)
-        // {
-        //   SetJSONError("Exit addresses not passed", swapexits.response);
-        //   return;
-        // }
-
-        // // steal replier from swapexit RPC endpoint
-        // unmap_request.replier.emplace(swapexits.move());
-
-        // // set map_exit request to new address
-        // map_request.request.address = swapexits.request.exit_addresses[1];
-
-        // // set token for new exit node mapping
-        // if (not swapexits.request.token.empty())
-        //   map_request.request.token = swapexits.request.token;
-
-        // // populate map_exit request with old IP ranges
-        // for (auto& [range, exit] : current_exits.items())
-        // {
-        //   if (exit.get<std::string>() == swapexits.request.exit_addresses[0])
-        //   {
-        //     map_request.request.ip_range.emplace_back(range);
-        //     unmap_request.request.ip_range.emplace_back(range);
-        //   }
-        // }
-
-        // if (map_request.request.ip_range.empty() or unmap_request.request.ip_range.empty())
-        // {
-        //   SetJSONError("No mapped ranges found matching requested swap", swapexits.response);
-        //   return;
-        // }
-
-        // endpoint->map_exit(
-        //     map_request.request.address,
-        //     map_request.request.token,
-        //     map_request.request.ip_range,
-        //     [unmap = std::move(unmap_request),
-        //      ep = endpoint,
-        //      old_exit = swapexits.request.exit_addresses[0]](bool success, std::string result)
-        //      mutable {
-        //       if (not success)
-        //         unmap.send_response({{"error"}, std::move(result)});
-        //       else
-        //       {
-        //         try
-        //         {
-        //           for (auto& ip : unmap.request.ip_range)
-        //             ep->UnmapRangeByExit(ip, old_exit);
-        //         }
-        //         catch (std::exception& e)
-        //         {
-        //           SetJSONError("Unable to unmap to given range", unmap.response);
-        //           return;
-        //         }
-
-        //         SetJSONResponse("OK", unmap.response);
-        //         unmap.send_response();
-        //       }
-        //     });
+        // TODO: this
     }
 
 #if 0
@@ -684,70 +601,6 @@ namespace srouter::rpc
         return;
     }
 #endif
-
-    void RPCServer::invoke(Config& config)
-    {
-        log_print_rpc(config);
-
-        if (config.request.filename.empty() and not config.request.ini.empty())
-        {
-            SetJSONError("No filename specified for .ini file", config.response);
-            return;
-        }
-        if (config.request.ini.empty() and not config.request.filename.empty())
-        {
-            SetJSONError("No .ini chunk provided", config.response);
-            return;
-        }
-
-        if (config.request.filename.ends_with(".ini"))
-        {
-            SetJSONError("Must append '.ini' to filename", config.response);
-            return;
-        }
-
-        if (not check_path(config.request.filename))
-        {
-            SetJSONError("Bad filename passed", config.response);
-            return;
-        }
-
-        std::filesystem::path conf_d{"conf.d"};
-
-        if (config.request.del and not config.request.filename.empty())
-        {
-            try
-            {
-                if (exists(conf_d / config.request.filename))
-                    remove(conf_d / config.request.filename);
-            }
-            catch (std::exception& e)
-            {
-                SetJSONError(e.what(), config.response);
-                return;
-            }
-        }
-        else
-        {
-            try
-            {
-                if (not exists(conf_d))
-                    create_directory(conf_d);
-
-                auto parser = ConfigParser();
-                parser.load_new_from_str(config.request.ini);
-                parser.set_filename(conf_d / config.request.filename);
-                parser.save_new();
-            }
-            catch (std::exception& e)
-            {
-                SetJSONError(e.what(), config.response);
-                return;
-            }
-        }
-
-        SetJSONResponse("OK", config.response);
-    }
 
     void RPCServer::HandleLogsSubRequest(oxenmq::Message& m)
     {

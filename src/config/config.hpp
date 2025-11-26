@@ -35,25 +35,12 @@ namespace srouter
     inline constexpr uint16_t DEFAULT_DNS_PORT{53};
     inline constexpr int CLIENT_ROUTER_CONNECTIONS{4};
 
-    // TODO: don't use these maps. they're sloppy and difficult to follow
-    /// Small struct to gather all parameters needed for config generation to reduce the number of
-    /// parameters that need to be passed around.
-    struct ConfigGenParameters
+    struct ConfigBase
     {
-        ConfigGenParameters() = default;
-        virtual ~ConfigGenParameters() = default;
-
-        ConfigGenParameters(const ConfigGenParameters&) = delete;
-        ConfigGenParameters(ConfigGenParameters&&) = delete;
-
-        config::Type type;
-        std::filesystem::path default_data_dir;
-
-        /// get network platform (virtual for unit test mocks)
-        virtual const srouter::net::Platform* net_ptr();
+        virtual void define_config_options(ConfigDefinition& conf) = 0;
     };
 
-    struct RouterConfig
+    struct RouterConfig : ConfigBase
     {
         NetID net_id = NetID::MAINNET;
 
@@ -61,22 +48,15 @@ namespace srouter
 
         bool block_bogons = false;
 
-        int worker_threads = -1;
-        int net_threads = -1;
-
-        size_t job_que_size = 0;
-
-        std::optional<std::filesystem::path> rc_file;
-
         bool is_relay = false;
 
         std::optional<quic::Address> public_addr;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
     /// config for path hop selection
-    struct PathConfig
+    struct PathConfig : ConfigBase
     {
         int edge_connections{CLIENT_ROUTER_CONNECTIONS};
 
@@ -122,8 +102,8 @@ namespace srouter
         /// i.e. 32 for every hop unique ip, 24 unique /24 per hop, etc
         uint8_t unique_hop_netmask{0};
 
-        // TODO: some day, if we ever support routers using IPv6, there would need to be a different
-        // ipv6 netmask value.
+        // TODO: some day, if we ever support routers using public IPv6 addresses, there would need
+        // to be a different ipv6 netmask value.
 
         std::chrono::seconds min_expiry = 1min;
         std::chrono::seconds acceptable_expiry = 5min;
@@ -137,7 +117,7 @@ namespace srouter
         // -DSROUTER_DEBUG_PATH_SEED=ON (which is disabled by default).
         std::optional<uint64_t> debug_path_seed;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
     /** TODO:
@@ -145,11 +125,15 @@ namespace srouter
      */
 
     /// Config options related to exit node services
-    struct ExitConfig
+    struct ExitConfig : ConfigBase
     {
         bool exit_enabled{false};
 
         // Used by RemoteHandler to provide auth tokens for remote exits
+        //
+        // The actual config puts everything in `sns_auth_tokens`, but then in config
+        // post-processing we extract all the ones that are full pubkeys into `auth_tokens` and
+        // leave the ones that need an sns lookup in `sns_auth_tokens`.
         std::unordered_map<NetworkAddress, std::string> auth_tokens;
         std::unordered_map<std::string, std::string> sns_auth_tokens;
 
@@ -162,17 +146,16 @@ namespace srouter
         // Reserved local IP ranges mapped to remote client exit addresses
         std::unordered_map<NetworkAddress, std::vector<std::variant<ipv4_range, ipv6_range>>> ranges;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
-    struct NetworkConfig
+    struct NetworkConfig : ConfigBase
     {
         bool enable_profiling{false};
         bool save_profiles{false};
 
         std::optional<std::filesystem::path> keyfile;
 
-        bool enable_ipv6{false};
         bool is_reachable{false};
 
         /*   Auth specific config   */
@@ -188,18 +171,19 @@ namespace srouter
 
         std::vector<std::filesystem::path> auth_files;
 
-        std::unordered_set<srouter::dns::SRVData> srv_records;
-
-        /* TESTNET: Under modification */
+        std::vector<srouter::dns::SRVData> srv_records;
 
         // Contents of this file are read directly into ::_reserved_local_addrs
-        std::optional<std::filesystem::path> addr_map_persist_file;
+        // TODO.  Perhaps this should be in a sqlite db, though?
+        // std::optional<std::filesystem::path> addr_map_persist_file;
 
-        // the only member that refers to an actual interface
+        int expired_address_cache = 100;
+
         std::optional<std::string> _if_name;
 
-        std::optional<ipv4_net> _local_ip_net;    // [network]:ifaddr
-        std::optional<ipv6_net> _local_ipv6_net;  // [network]:ipv6
+        // [network]:ifaddr:
+        std::optional<ipv4_net> _local_ip_net;
+        std::optional<ipv6_net> _local_ipv6_net;
 
         // Remote exit or hidden service addresses mapped to fixed local IP addresses
         // TODO:
@@ -208,77 +192,66 @@ namespace srouter
         std::unordered_map<NetworkAddress, ipv4> _reserved_local_ipv4;
         std::unordered_map<NetworkAddress, ipv6> _reserved_local_ipv6;
 
-        // TESTNET: moved into ExitConfig!
-        bool allow_exit{false};
         // Used by RemoteHandler to provide auth tokens for remote exits
         std::unordered_map<NetworkAddress, std::string> exit_auths;
         std::unordered_map<std::string, std::string> sns_exit_auths;
         std::optional<net::ExitPolicy> traffic_policy;
 
-        // TESTNET: move into ExitConfig!
+        // FIXME: move into ExitConfig!
         bool enable_route_poker{false};
         bool blackhole_routes{false};
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
-    struct DnsConfig
+    struct DnsConfig : ConfigBase
     {
-        bool l3_intercept{false};
-
-        std::vector<std::filesystem::path> hostfiles;
-
-        /* TESTNET: Under modification */
         std::vector<quic::Address> _upstream_dns;
-        quic::Address _default_dns{"9.9.9.10", DEFAULT_DNS_PORT};
-        std::optional<quic::Address> _query_bind;
-        std::vector<quic::Address> _bind_addrs;
+        std::vector<quic::Address> _listen_addrs;
 
-        // Deprecated
-        // std::vector<SockAddr_deprecated> upstream_dns;
-        // std::optional<SockAddr_deprecated> query_bind;
-        // std::vector<SockAddr_deprecated> bind_addr;
-        /*************************************/
+        // {"name:", "value"} pairs that we pass through to unbound to configure upstream DNS
+        // requests:
+        std::vector<std::pair<std::string, std::string>> unbound_opts;
 
-        std::unordered_multimap<std::string, std::string> extra_opts;
+        // Unbound config doesn't support specifying a hosts file for some reason but has to be done
+        // via a different call.  We allow a magic "SYSTEM" value here to instruct unbound to use
+        // the system default (by passing nullptr).
+        std::optional<std::filesystem::path> unbound_hosts;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
-    struct LinksConfig
+    struct LinksConfig : ConfigBase
     {
-        // DEPRECATED -- use [router]:public_addr/port instead
-        std::optional<quic::Address> public_addr;
-
         std::optional<quic::Address> listen_addr;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
-    struct ApiConfig
+    struct ApiConfig : ConfigBase
     {
         bool enable_rpc_server = false;
         std::vector<std::string> rpc_bind_addrs;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
-    struct OxendConfig
+    struct OxendConfig : ConfigBase
     {
         std::string rpc_addr;
         bool disable_testing = false;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
-    struct BootstrapConfig
+    struct BootstrapConfig : ConfigBase
     {
         std::vector<std::filesystem::path> files;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
-    struct LoggingConfig
+    struct LoggingConfig : ConfigBase
     {
         // Log type.  If nullopt then Session Router will not set up logging sinks at all (this is
         // primarily aimed at embedded clients that have already set up logging).
@@ -291,34 +264,38 @@ namespace srouter
 
         std::string file;
 
-        void define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params);
+        void define_config_options(ConfigDefinition& conf) override;
     };
 
     struct Config
     {
         // Creates a config for the given Session Router instance type (relay, full client, or embedded
-        // client), loading configuration data from the given string, if given (all default config
-        // otherwise).  The default data directory (if not explicit set in the given config string)
-        // can optionally be provided.  If omitted (and not set in the string) it defaults to cwd.
-        Config(
+        // client), loading configuration data from the given string, if non-empty (all default config
+        // otherwise).
+        //
+        // The config_dir argument (defaulting to cwd) has two effects:
+        // - any relative paths for config options taking a path will resolve relative to it
+        // - it is used as the default data directory if not explicit data directory is set in the
+        //   config file.
+        explicit Config(
             config::Type type,
             std::string config = "",
-            std::filesystem::path default_data_dir = std::filesystem::current_path());
+            std::filesystem::path config_dir = std::filesystem::current_path(),
+            std::string config_for_debug = "config-string");
 
         // Creates a config for the given Session Router instance type (relay, full client, or embedded
-        // client), loading configuration data from an existing file.  The default data directory
-        // (if not set in the config itself) will be the directory containing the given config file.
+        // client), loading configuration data from an existing file.
+        //
+        // Relative paths in the config will be relative to the directory containing the config
+        // file.  The data directory, if not specified in the config file, will also default to that
+        // directory.
         Config(config::Type type, std::filesystem::path config_file);
 
         Config(Config&&) = default;
-        Config(const Config&) = default;
-        Config& operator=(Config&&) = default;
-        Config& operator=(const Config&) = default;
 
         virtual ~Config() = default;
 
-        /// create generation params (virtual for unit test mock)
-        virtual std::unique_ptr<ConfigGenParameters> make_gen_params() const;
+        const config::Type type;
 
         RouterConfig router;
         ExitConfig exit;
@@ -331,41 +308,14 @@ namespace srouter
         BootstrapConfig bootstrap;
         LoggingConfig logging;
 
-        // Initialize config definition
-        void init_config(ConfigDefinition& conf, const ConfigGenParameters& params);
-
-        /// Insert config entries for backwards-compatibility (e.g. so that the config system will
-        /// tolerate old values that are no longer accepted)
-        ///
-        /// @param conf is the config to modify
-        void add_backcompat_opts(ConfigDefinition& conf);
-
-        std::string generate_config_base();
-
-        void save();
-
-        void override(std::string section, std::string key, std::string value);
-
-        void add_default(std::string section, std::string key, std::string value);
-
-        bool relay() const { return type == config::Type::Relay; }
-        bool embedded() const { return type == config::Type::EmbeddedClient; }
-        bool client() const { return !relay(); }
+        // The config definitions for this config object that defines how config file options become
+        // config settings.  This internally references all of the above config structs.
+        ConfigDefinition defs;
 
       private:
         void load_config_data(std::string ini, std::optional<std::filesystem::path> fname = std::nullopt);
 
-        void load_overrides(ConfigDefinition& conf) const;
-
-        std::vector<std::array<std::string, 3>> additional;
         ConfigParser parser;
-        std::filesystem::path data_dir{std::filesystem::current_path()};
-        config::Type type;
     };
-
-    // Ensures that a conf file exists, writing a default one if not present.  Only for full
-    // clients/routers (i.e. not embedded clients).
-    void ensure_config(
-        std::filesystem::path dataDir, std::filesystem::path confFile, bool overwrite, config::Type type);
 
 }  // namespace srouter
