@@ -1,5 +1,17 @@
 session-router (1.0.2-1~deb11) unstable; urgency=medium
 
+  * Update deb with session-router-config
+  * add session-router-config to static upload
+  * fix gcc-10 compilation
+  * Add bullseye ci job & use it for amd64 static build
+  * fix gcc-10 compilation
+  * static builds: use bullseye + add arm64 static build
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@session.foundation>  Wed, 26 Nov 2025 17:38:55 -0400
+
+session-router (1.0.2-1~rc~deb11) unstable; urgency=medium
+
   [ Jason Rhinelander ]
   * Make internal IPv6 work
   * Auto-adjust ifaddr= if set to the network address
