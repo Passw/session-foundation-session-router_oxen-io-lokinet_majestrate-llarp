@@ -58,7 +58,8 @@ namespace srouter::crypto
         return true;
     }
 
-    std::optional<RouterID> maybe_decrypt_name(std::string_view ciphertext, SymmNonce nonce, std::string_view namestr)
+    std::optional<NetworkAddress> maybe_decrypt_name(
+        std::string_view ciphertext, const SymmNonce& nonce, std::string_view namestr)
     {
         const auto payloadsize = ciphertext.size() - MAC_SIZE;
         if (payloadsize != 32)
@@ -80,9 +81,11 @@ namespace srouter::crypto
             namehash.data(),
             namehash.size());
 
-        auto result = std::make_optional<RouterID>();
+        auto result = std::make_optional<NetworkAddress>();
+        result->is_client = true;
+
         if (crypto_aead_xchacha20poly1305_ietf_decrypt(
-                result->data(),
+                result->pubkey.data(),
                 nullptr,
                 nullptr,
                 reinterpret_cast<const uint8_t*>(ciphertext.data()),
@@ -201,47 +204,6 @@ namespace srouter::crypto
         return crypto_sign_verify_detached(
                    as_uspan(sig).data(), as_uspan(data).data(), data.size(), as_uspan(pub).data())
             != -1;
-    }
-
-    // FIXME: the following two functions are nearly identical, but different in stupid ways
-    void derive_encrypt_outer_wrapping(
-        const Ed25519SecretKey& shared_key,
-        SharedSecret& secret,
-        const SymmNonce& nonce,
-        const RouterID& remote,
-        std::span<std::byte> payload)
-    {
-        // derive shared key
-        if (!dh_client(secret, remote, shared_key, nonce))
-        {
-            auto err = "DH client failed during shared key derivation!"s;
-            log::warning(logcat, "{}", err);
-            throw std::runtime_error{"err"};
-        }
-
-        // encrypt hop_info (mutates in-place)
-        xchacha20(payload, secret, nonce);
-    }
-
-    void derive_decrypt_outer_wrapping(
-        const Ed25519SecretKey& local_sk,
-        SharedSecret& shared,
-        const PubKey& remote,
-        const SymmNonce& nonce,
-        std::span<std::byte> encrypted)
-    {
-        // derive shared secret using shared secret and our secret key (and nonce)
-        if (!dh_server(shared, remote, local_sk, nonce))
-        {
-            auto err = "DH server failed during shared key derivation!"s;
-            log::warning(logcat, "{}", err);
-            throw std::runtime_error{err};
-        }
-
-        // decrypt hop_info (mutates in-place)
-        xchacha20(encrypted, shared, nonce);
-
-        log::trace(logcat, "Shared secret: {}", shared.to_string());
     }
 
     std::array<unsigned char, 32> blinding_scalar(std::span<const std::byte, 32> pubkey, std::string_view blind_domain)

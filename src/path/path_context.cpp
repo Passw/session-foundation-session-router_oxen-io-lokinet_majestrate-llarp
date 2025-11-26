@@ -15,7 +15,7 @@ namespace srouter::path
 
     void PathContext::add_path(std::shared_ptr<Path> path) { _path_map.emplace(path->edge().rxid, std::move(path)); }
 
-    void PathContext::expire_hops(std::chrono::milliseconds now)
+    void PathContext::expire_hops(sys_ms now)
     {
         assert(_r.loop.inside());
         int n = 0;

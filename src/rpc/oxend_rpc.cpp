@@ -3,6 +3,7 @@
 #include "nodedb.hpp"
 #include "router/router.hpp"
 #include "util/logging.hpp"
+#include "util/logging/buffer.hpp"
 
 #include <nlohmann/json.hpp>
 #include <oxenc/hex.h>
@@ -287,40 +288,37 @@ namespace srouter::rpc
     }
 
     void OxendRPC::lookup_sns_hash(
-        std::string namehash, std::function<void(std::optional<EncryptedSNSRecord>)> resultHandler)
+        std::string_view namehash, std::function<void(std::optional<std::pair<std::string, SymmNonce>>)> resultHandler)
     {
-        log::debug(logcat, "Looking Up ONS NameHash {}", namehash);
-        const nlohmann::json req{{"type", 2}, {"name_hash", oxenc::to_hex(namehash)}};
+        log::debug(logcat, "Looking up ONS name with hash: {}", hex_printer(namehash));
+        oxenc::bt_dict_producer req;
+        req.append("name_hash", namehash);
+        req.append("type", 2);
         request(
-            "rpc.sns_resolve",
+            "rpc.ons_resolve",
             [this, resultHandler](bool success, std::vector<std::string> data) {
-                std::optional<EncryptedSNSRecord> maybe = std::nullopt;
-                if (success)
+                std::optional<std::pair<std::string, SymmNonce>> result;
+
+                if (success && data.size() == 2 && data[0] == "200")
                 {
                     try
                     {
-                        EncryptedSNSRecord result;
-                        const auto j = nlohmann::json::parse(data[1]);
-                        j.dump();
-                        result.ciphertext = oxenc::from_hex(j["encrypted_value"].get<std::string>());
-                        const auto nonce = oxenc::from_hex(j["nonce"].get<std::string>());
-                        if (nonce.size() != result.nonce.size())
-                        {
-                            throw std::invalid_argument{
-                                fmt::format("nonce size mismatch: {} != {}", nonce.size(), result.nonce.size())};
-                        }
-
-                        std::copy_n(nonce.data(), nonce.size(), result.nonce.data());
-                        maybe = result;
+                        result = std::make_optional<std::pair<std::string, SymmNonce>>();
+                        oxenc::bt_dict_consumer resp{data[1]};
+                        result->first = resp.require<std::string>("encrypted_value");
+                        result->second.assign(resp.require_span<std::byte, SymmNonce::SIZE>("nonce"));
+                        resp.finish();
                     }
                     catch (std::exception& ex)
                     {
                         log::error(logcat, "Failed to parse response from ONS lookup: {}", ex.what());
+                        result.reset();
                     }
                 }
-                _router.loop.call([resultHandler, maybe = std::move(maybe)]() { resultHandler(std::move(maybe)); });
+                _router.loop.call(
+                    [resultHandler, result = std::move(result)]() mutable { resultHandler(std::move(result)); });
             },
-            req.dump());
+            std::move(req).str());
     }
 
 }  // namespace srouter::rpc

@@ -17,15 +17,10 @@ namespace srouter
     inline std::filesystem::path GetDefaultDataDir()
     {
 #ifndef _WIN32
-        std::filesystem::path datadir{"/var/lib/session-router"};
         if (auto uid = geteuid())
-        {
             if (auto* pw = getpwuid(uid))
-            {
-                datadir = std::filesystem::path{pw->pw_dir} / ".session-router";
-            }
-        }
-        return datadir;
+                return std::filesystem::path{pw->pw_dir} / ".session-router";
+        return std::filesystem::current_path();
 #else
         return std::filesystem::path{"C:\\ProgramData\\Session-Router"};
 #endif

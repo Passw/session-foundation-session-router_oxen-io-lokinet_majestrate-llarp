@@ -56,11 +56,7 @@ namespace srouter::path
     class Path final : public std::enable_shared_from_this<Path>
     {
       public:
-        Path(
-            Router& rtr,
-            std::span<const RelayContact> hop_rcs,
-            PathHandler& handler,
-            std::chrono::milliseconds expiry_ts);
+        Path(Router& rtr, std::span<const RelayContact> hop_rcs, PathHandler& handler, sys_ms expiry_ts);
 
         // hops on constructed path
         std::vector<TransitHop> hops;
@@ -74,36 +70,43 @@ namespace srouter::path
         // Constructs a ClientInfo from this path, i.e. for including in a client contact.
         ClientIntro make_intro() const;
 
-        nlohmann::json ExtractStatus() const;
-
         path_hop_stringifier hop_string() const;
 
-        std::chrono::milliseconds LastRemoteActivityAt() const { return last_recv_msg; }
+        struct Info
+        {
+            // relay pubkeys and IPv4 addresses, from edge -> pivot (or final relay)
+            std::vector<std::pair<RouterID, ipv4>> relays;
+            sys_ms expiry = {};
+            std::chrono::milliseconds ping_mean;
+            std::chrono::microseconds ping_jitter;
+            int ping_responses, ping_timeouts, ping_recent_timeouts;
+        };
+        Info get_info() const;
 
-        void do_ping(std::chrono::milliseconds start_time);
+        sys_ms LastRemoteActivityAt() const { return last_recv_msg; }
+
+        void do_ping(steady_ms start_time);
 
         size_t num_hops() const { return hops.size(); }
 
-        const std::chrono::milliseconds& expiry() const { return _expiry; }
+        const sys_ms& expiry() const { return _expiry; }
 
-        std::chrono::milliseconds expires_in(std::chrono::milliseconds now = srouter::time_now_ms()) const
-        {
-            return _expiry - now;
-        }
+        std::chrono::milliseconds expires_in(sys_ms now = srouter::time_now_ms()) const { return _expiry - now; }
 
-        bool is_expired(std::chrono::milliseconds now = srouter::time_now_ms()) const { return _expiry < now; }
+        bool is_expired(sys_ms now = srouter::time_now_ms()) const { return _expiry < now; }
 
         void resolve_sns(
             std::span<const std::byte, SHORTHASHSIZE> name_hash, std::function<void(path_control_response)> func);
 
         void fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func);
 
-        void fetch_relay_contacts(std::span<const RouterID> needed, std::function<void(path_control_response)> func);
+        void fetch_relay_contacts(std::span<const std::byte> body, std::function<void(path_control_response)> func);
 
-        void find_client_contact(const PubKey& blinded_pk, std::function<void(path_control_response)> func);
+        void find_client_contact(
+            const PubKey& blinded_pk, int lookup_index, std::function<void(path_control_response)> func);
 
         void publish_client_contact(
-            const EncryptedClientContact& ecc, int location, std::function<void(path_control_response)> func);
+            std::string_view enc_cc, int location, std::function<void(path_control_response)> func);
 
         // The constant "type" values that we put on the end of control (stream) and data
         // (datagram) messages.  Data message can overlap since it comes on a different channel
@@ -150,10 +153,7 @@ namespace srouter::path
 
         std::string decrypt_path_message(std::string_view payload);
 
-        bool is_active(std::chrono::milliseconds now = srouter::time_now_ms()) const
-        {
-            return _is_established && !is_expired(now);
-        }
+        bool is_active(sys_ms now = srouter::time_now_ms()) const { return _is_established && !is_expired(now); }
 
         const TransitHop& edge() const { return hops.front(); }
         const TransitHop& terminus() const { return hops.back(); }
@@ -219,18 +219,22 @@ namespace srouter::path
 
         Router& _router;
 
-        std::chrono::milliseconds _expiry{0s};
-        std::chrono::milliseconds last_recv_msg{0s};
+        sys_ms _expiry{sys_ms::min()};
+        sys_ms last_recv_msg{sys_ms::min()};
 
         static size_t next_path_log_id;
         const size_t path_log_id;  // Only used for log output
 
-        std::chrono::milliseconds next_ping{0s};
+        steady_ms next_ping{};
         int ping_responses{0}, ping_timeouts{0};
         int ping_recent_timeouts{0};
+        std::chrono::milliseconds ping_last{0ms};
         // Cumulative time of all `ping_responses` pings (divide by ping_responses for an average).
-        std::chrono::milliseconds ping_cumulative{0s};
-        int64_t ping_sq_cumulative{0};
+        std::chrono::milliseconds ping_cumulative{0ms};
+        // This is the cumulative absolute differences of all received sequential pings.  E.g. if we
+        // have 4 pings [100, 101, 98, 98] then this equals (|100-101| + |101-98| + |98-98|).
+        // Dividing this by `ping_responses - 1` gives jitter.
+        std::chrono::milliseconds ping_abs_diffs{0ms};
     };
 
 }  // namespace srouter::path
