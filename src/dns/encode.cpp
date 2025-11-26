@@ -129,7 +129,13 @@ namespace srouter::dns
 
         for (size_t pos = name.empty() ? std::string::npos : 0; pos != std::string_view::npos;)
         {
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 11
+            // Workaround for gcc bug (fixed in gcc 11) which doesn't allow us to pass a string_view
+            // to unordered_map `find()` with a std::string key.
+            std::string check{name.substr(pos)};
+#else
             std::string_view check = name.substr(pos);
+#endif
             if (prev_names)
                 if (auto it = prev_names->find(check); it != prev_names->end())
                 {
