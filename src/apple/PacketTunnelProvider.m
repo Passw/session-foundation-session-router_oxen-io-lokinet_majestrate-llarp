@@ -229,7 +229,7 @@ static void del_default_route(void* ctx)
 #endif
     NSLog(@"setting dns to %@", dns_ip);
     NEDNSSettings* dns = [[NEDNSSettings alloc] initWithServers:@[dns_ip]];
-    dns.domainName = @"localhost.loki";
+    dns.domainName = @"localhost.sesh";
     dns.matchDomains = @[@""];
     // In theory, matchDomains is supposed to be set to DNS suffixes that we resolve.  This seems
     // highly unreliable, though: often it just doesn't work at all (perhaps only if we make
@@ -240,7 +240,7 @@ static void del_default_route(void* ctx)
     // https://developer.apple.com/forums/thread/685410).
     //
     // So the documentation sucks and the feature doesn't appear to work, so as much as it would be
-    // nice to capture only .loki and .snode when not in exit mode, we can't, so capture everything
+    // nice to capture only .sesh/.loki/.snode when not in exit mode, we can't, so capture everything
     // and use our default upstream.
     dns.matchDomains = @[@""];
     dns.matchDomainsNoSearch = true;

@@ -161,7 +161,6 @@ namespace srouter::win32
 
         auto filter = "outbound and ( " + udp_filter + " or tcp.DstPort == 53 )";
 
-        // TESTNET:
         return WinDivert::make_interceptor(filter, [router = _ctx->router] { /* router->TriggerPump(); */ });
     }
 }  // namespace srouter::win32

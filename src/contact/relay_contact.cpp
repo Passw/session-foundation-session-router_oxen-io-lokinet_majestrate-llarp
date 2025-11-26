@@ -124,17 +124,6 @@ namespace srouter
         return true;
     }
 
-    nlohmann::json RelayContact::extract_status() const
-    {
-        nlohmann::json obj{
-            {"lastUpdated", _timestamp.time_since_epoch().count()},
-            {"publicRouter", _addr.is_public()},
-            {"identity", _router_id.to_string()},
-            {"address", _addr.to_string()}};
-
-        return obj;
-    }
-
     std::string RelayContact::to_string() const
     {
         return "RCv{}[{} @ {}, t={}]"_format(VERSION, _router_id, _addr, _timestamp.time_since_epoch().count());
@@ -145,29 +134,23 @@ namespace srouter
         return (_addr.to_ipv4() / netmask).contains(other._addr.to_ipv4());
     }
 
-    bool RelayContact::is_outdated(std::chrono::milliseconds now) const
-    {
-        return now >= _timestamp.time_since_epoch() + OUTDATED_AGE;
-    }
+    bool RelayContact::is_outdated(sys_ms now) const { return now >= _timestamp + OUTDATED_AGE; }
 
-    bool RelayContact::is_expired(std::chrono::milliseconds now) const
-    {
-        return now >= _timestamp.time_since_epoch() + LIFETIME;
-    }
+    bool RelayContact::is_expired(sys_ms now) const { return now >= _timestamp + LIFETIME; }
 
-    std::chrono::milliseconds RelayContact::time_to_expiry(std::chrono::milliseconds now) const
+    std::chrono::milliseconds RelayContact::time_to_expiry(sys_ms now) const
     {
-        const auto expiry = _timestamp.time_since_epoch() + LIFETIME;
+        const auto expiry = _timestamp + LIFETIME;
         return now < expiry ? expiry - now : 0s;
     }
 
-    std::chrono::milliseconds RelayContact::age(std::chrono::milliseconds now) const
+    std::chrono::milliseconds RelayContact::age(sys_ms now) const
     {
-        auto delta = now - _timestamp.time_since_epoch();
+        auto delta = now - _timestamp;
         return delta > 0s ? delta : 0s;
     }
 
-    bool RelayContact::expires_within_delta(std::chrono::milliseconds now, std::chrono::milliseconds dlt) const
+    bool RelayContact::expires_within_delta(sys_ms now, std::chrono::milliseconds dlt) const
     {
         return time_to_expiry(now) <= dlt;
     }

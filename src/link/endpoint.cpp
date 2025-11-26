@@ -10,6 +10,8 @@
 #include <oxen/quic/opt.hpp>
 #include <sodium/crypto_generichash_blake2b.h>
 
+#include <chrono>
+
 namespace srouter::link
 {
     static auto logcat = log::Cat("link.endpoint");
@@ -18,20 +20,20 @@ namespace srouter::link
     {
         auto& ptr = is_inbound ? inbound : outbound;
         if (ptr)
-            ptr->close_quietly();
+            ptr->close();
         ptr = std::move(c);
 
         if (is_inbound ? not outbound or inbound_wins : not inbound or not inbound_wins)
             conn = ptr.get();
     }
 
-    void relay_conn::close_quietly(bool direction_inbound)
+    void relay_conn::close(bool direction_inbound, uint64_t errcode)
     {
         auto& to_close = direction_inbound ? inbound : outbound;
         if (not to_close)
             return;
 
-        to_close->close_quietly();
+        to_close->close(errcode);
         to_close.reset();
 
         // Switch preferred conn to the other direction (will be nullptr if the other direction
@@ -39,17 +41,17 @@ namespace srouter::link
         conn = (direction_inbound ? outbound : inbound).get();
     }
 
-    void relay_conn::close_all_quietly()
+    void relay_conn::close_all(uint64_t errcode)
     {
         if (inbound)
-            inbound->close_quietly();
+            inbound->close(errcode);
         if (outbound)
-            outbound->close_quietly();
+            outbound->close(errcode);
         inbound = outbound = nullptr;
         conn = nullptr;
     }
 
-    void relay_conn::close_redundant() { close_quietly(not inbound_wins); }
+    void relay_conn::close_redundant() { close(not inbound_wins, CONN_CLOSE_REDUNDANT); }
 
     static std::vector<uint8_t> make_static_secret(
         const Ed25519SecretKey& sk, std::string_view static_secret_key = "Session Router static shared secret key"sv)
@@ -186,7 +188,10 @@ namespace srouter::link
     void Endpoint::start_tickers()
     {
         if (router.is_service_node)
+        {
             redundancy_ticker = router.loop.call_every(REDUNDANT_LINGER, [this] { close_redundant(); });
+            dereg_conn_ticker = router.loop.call_every(1min, [this] { check_deregged_conns(); });
+        }
     }
 
     link::Connection* Endpoint::get_relay_conn(const RouterID& relay) const
@@ -204,7 +209,7 @@ namespace srouter::link
         });
     }
 
-    void Endpoint::close_redundant(std::chrono::milliseconds now)
+    void Endpoint::close_redundant(sys_ms now)
     {
         for (auto it = relay_bidir.begin(); it != relay_bidir.end();)
         {
@@ -220,6 +225,63 @@ namespace srouter::link
             else
                 ++it;
         }
+    }
+
+    void Endpoint::check_deregged_conns()
+    {
+        assert(router.is_service_node);
+
+        auto now = std::chrono::steady_clock::now();
+
+        auto registered = router.node_db().get_registered_relay_set();
+
+        // Look for any pending dead that have been dead long enough to disconnect from:
+        for (auto it = pending_dead.begin(); it != pending_dead.end();)
+        {
+            const auto& [rid, dead_since] = *it;
+
+            // -1s because this only fires every 1min and the -1s prevents tiny variations in the
+            // clock from "missing" the threshold and pushing to 31min instead of 30min.
+            if (dead_since + DEREGGED_LINGER > now - 1s)
+            {
+                // Not dead long enough
+                ++it;
+                continue;
+            }
+
+            if (registered.contains(rid))
+            {
+                // Became registered again somehow
+                log::debug(logcat, "Not disconnecting from previously de-regged {}.snode: it is registered again", rid);
+                it = pending_dead.erase(it);
+                continue;
+            }
+
+            if (auto rcit = relay_conns.find(rid); rcit != relay_conns.end())
+            {
+                rcit->second.close_all();
+                relay_conns.erase(rcit);
+                if (auto pit = pending_outbound.find(rid); pit != pending_outbound.end())
+                {
+                    if (pit->second)
+                        pit->second->close();
+                    pending_outbound.erase(pit);
+                }
+                relay_bidir.erase(rid);
+                log::debug(logcat, "Dropped connection to deregistered node {}", rid);
+            }
+            else
+                log::debug(logcat, "Connection to deregged node {} is already dropped", rid);
+
+            it = pending_dead.erase(it);
+        }
+
+        // Record timestamps for any newly unregistered nodes so that, when the timer expires, we
+        // drop the connection.
+        for (const auto& [rid, rconn] : relay_conns)
+            if (!registered.contains(rid) && pending_dead.emplace(rid, now).second)
+                log::debug(
+                    logcat, "Relay {} is no longer registered; scheduling disconnect in {}", rid, DEREGGED_LINGER);
     }
 
     link::Connection* Endpoint::get_client_conn(const RouterID& remote) const
@@ -315,20 +377,20 @@ namespace srouter::link
     {
         log::debug(logcat, "Closing all connections");
         for (auto& [rid, conn] : relay_conns)
-            conn.close_all_quietly();
+            conn.close_all();
         relay_conns.clear();
         relay_bidir.clear();
 
         for (auto& conn : pending_outbound | std::views::values)
-            conn->close_quietly();
+            conn->close();
         pending_outbound.clear();
 
         for (auto& conn : client_conns | std::views::values)
-            conn->close_quietly();
+            conn->close();
         client_conns.clear();
 
         for (auto& conn : inbound_clients | std::views::values)
-            conn->close_quietly();
+            conn->close();
         inbound_clients.clear();
 
         log::debug(logcat, "Closing quic endpoint");
@@ -690,7 +752,7 @@ namespace srouter::link
             {
                 log::error(
                     logcat, "Internal error: duplicate outbound connection established, but that shouldn't happen");
-                cc->close_quietly();
+                cc->close();
             }
             cc = std::move(pit->second);
             log::debug(
@@ -735,6 +797,8 @@ namespace srouter::link
         });
     }
 
+    Endpoint::~Endpoint() { *canary = false; }
+
     void Endpoint::on_conn_closed(quic::Connection& conn, uint64_t ec)
     {
         auto alpn = conn.selected_alpn();
@@ -753,13 +817,26 @@ namespace srouter::link
             return;
         }
 
-        router.loop.call([this, connptr = conn.shared_from_this(), ec] {
-            auto& conn = *connptr;
-            auto alpn = conn.selected_alpn();
+        std::optional<RouterID> rid;
+        if (conn.remote_key().size() == RouterID::SIZE)
+            rid.emplace(conn.remote_key().first<RouterID::SIZE>());
 
-            std::optional<RouterID> rid;
-            if (conn.remote_key().size() == RouterID::SIZE)
-                rid.emplace(conn.remote_key().first<RouterID::SIZE>());
+        // NB: we must not capture a shared_ptr to conn here, because this lambda could outlive
+        // `this`; the canary lets us early-return if that happens, but the Connection destruction
+        // relies on `this.loop` to destroy: thus if we capture it we could delay that destruction
+        // attempt beyond the end of `this.loop`.  Thus we capture everything we need into the
+        // lambda here, while we are still in the network loop.
+
+        router.loop.call([this,
+                          alive = canary,
+                          conn_refid = conn.reference_id(),
+                          alpn,
+                          rid = std::move(rid),
+                          remote_addr = conn.remote(),
+                          ec,
+                          was_inbound = conn.is_inbound()] {
+            if (!*alive)
+                return;
 
             bool found = false;
 
@@ -771,16 +848,16 @@ namespace srouter::link
                 {
                     assert(router.is_service_node);
                     auto& relcon = it->second;
-                    if (relcon.inbound && connptr == relcon.inbound->conn)
+                    if (relcon.inbound && relcon.inbound->conn && relcon.inbound->conn->reference_id() == conn_refid)
                     {
-                        relcon.close_quietly(true);
+                        relcon.close(true);
                         found = true;
                         log::debug(
                             logcat, "Inbound connection from {} closed (ec={})", rid->to_network_address(true), ec);
                     }
-                    if (relcon.outbound && connptr == relcon.outbound->conn)
+                    if (relcon.outbound && relcon.outbound->conn && relcon.outbound->conn->reference_id() == conn_refid)
                     {
-                        relcon.close_quietly(false);
+                        relcon.close(false);
                         found = true;
                         log::debug(
                             logcat, "Outbound connection to {} closed (ec={})", rid->to_network_address(true), ec);
@@ -807,26 +884,39 @@ namespace srouter::link
                     pending_outbound.erase(it);
                     found = true;
                 }
+
+                if (!found && ec == CONN_CLOSE_REDUNDANT)
+                {
+                    log::debug(
+                        logcat,
+                        "Closed redundant connection {} {} @ {} (cid={})",
+                        was_inbound ? "from" : "to",
+                        rid->to_network_address(true),
+                        remote_addr,
+                        conn_refid);
+                    found = true;
+                }
             }
             else if (alpn == CLIENT_ALPN)
             {
                 if (router.is_service_node)
                 {
-                    assert(conn.is_inbound());  // Relays do make outbound client conns for testing,
-                                                // but they do not use this close callback.
-                    if (auto it = inbound_clients.find(conn.reference_id()); it != inbound_clients.end())
+                    assert(was_inbound);  // Relays do make outbound client conns for testing,
+                                          // but they do not use this close callback.
+                    if (auto it = inbound_clients.find(conn_refid); it != inbound_clients.end())
                     {
-                        log::debug(logcat, "Client connection from {} closed (ec={})", conn.remote(), ec);
-                        it->second->close_quietly();
+                        log::debug(logcat, "Client connection from {} closed (ec={})", remote_addr, ec);
+                        it->second->close();
                         inbound_clients.erase(it);
                         found = true;
                     }
                 }
                 else
                 {
-                    assert(conn.is_outbound());
+                    assert(!was_inbound);
 
-                    if (auto it = client_conns.find(*rid); it != client_conns.end() and connptr == it->second->conn)
+                    if (auto it = client_conns.find(*rid); it != client_conns.end() && it->second && it->second->conn
+                        && it->second->conn->reference_id() == conn_refid)
                     {
                         log::debug(
                             logcat,
@@ -838,12 +928,13 @@ namespace srouter::link
                     }
                 }
             }
-            else if (conn.is_outbound())
+            else if (!was_inbound)
             {
                 // Unknown or empty ALPN -- this is an outbound conn that didn't establish (and thus
                 // didn't negotiate the ALPN):
                 assert(rid);  // Outbound conns start out with the target pubkey known
-                if (auto it = pending_outbound.find(*rid); it != pending_outbound.end() and connptr == it->second->conn)
+                if (auto it = pending_outbound.find(*rid); it != pending_outbound.end() && it->second
+                    && it->second->conn && it->second->conn->reference_id() == conn_refid)
                 {
                     pending_outbound.erase(it);
                     found = true;
@@ -856,11 +947,11 @@ namespace srouter::link
             if (!found)
                 log::warning(
                     logcat,
-                    "Closed untracked connection {} {} @ {} (cid={}, ec={})",
-                    conn.is_inbound() ? "from" : "to",
-                    rid ? rid->to_network_address(true /* don't know! */).to_string() : "",
-                    conn.remote(),
-                    conn.reference_id(),
+                    "Closed connection {} {} @ {} (cid={}, ec={})",
+                    was_inbound ? "from" : "to",
+                    rid ? rid->to_string() : "",
+                    remote_addr,
+                    conn_refid,
                     ec);
 
             if (not router.is_service_node)

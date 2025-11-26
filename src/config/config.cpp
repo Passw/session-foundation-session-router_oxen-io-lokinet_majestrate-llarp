@@ -22,43 +22,11 @@ namespace srouter
 {
     static auto logcat = log::Cat("config");
 
-    static bool check_path_op(std::optional<std::filesystem::path>& path)
-    {
-        if (not path.has_value())
-        {
-            log::info(logcat, "Path input failed to parse...");
-        }
-        else if (path->empty())
-        {
-            log::warning(logcat, "Path contents ({}) empty...", path->c_str());
-            path.reset();
-        }
-        else
-        {
-            log::debug(logcat, "Valid path parsed ({})", path->c_str());
-            return true;
-        }
-
-        return false;
-    }
-
     using namespace config;
 
-    const srouter::net::Platform* ConfigGenParameters::net_ptr()
+    static auto public_ip_loader(std::optional<quic::Address>& into, std::string conf_name)
     {
-#ifndef SROUTER_EMBEDDED_ONLY
-        if (type != config::Type::EmbeddedClient)
-            return srouter::net::Platform::Default_ptr();
-#endif
-        return nullptr;
-    }
-
-    static auto public_ip_loader(
-        std::optional<quic::Address>& into, std::string conf_name, std::string deprecated_for = ""s)
-    {
-        return [&into, conf_name = std::move(conf_name), deprecated_for = std::move(deprecated_for)](std::string ip) {
-            if (!deprecated_for.empty())
-                log::warning(logcat, "{} is deprecated; use {} instead", conf_name, deprecated_for);
+        return [&into, conf_name = std::move(conf_name)](std::string ip) {
             try
             {
                 quic::Address a{ip, into ? into->port() : uint16_t{0}};
@@ -76,12 +44,9 @@ namespace srouter
             }
         };
     }
-    static auto public_port_loader(
-        std::optional<quic::Address>& into, std::string conf_name, std::string deprecated_for = ""s)
+    static auto public_port_loader(std::optional<quic::Address>& into, std::string conf_name)
     {
-        return [&into, conf_name = std::move(conf_name), deprecated_for = std::move(deprecated_for)](uint16_t port) {
-            if (!deprecated_for.empty())
-                log::warning(logcat, "{} is deprecated; use {} instead", conf_name, deprecated_for);
+        return [&into, conf_name = std::move(conf_name)](uint16_t port) {
             if (port == 0)
                 throw std::invalid_argument{"{} cannot be 0"_format(conf_name)};
             if (!into)
@@ -90,20 +55,15 @@ namespace srouter
         };
     }
 
-    void RouterConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void RouterConfig::define_config_options(ConfigDefinition& conf)
     {
+        is_relay = conf.type == config::Type::Relay;
+
         conf.add_section_comments(
             "router",
             {
                 "Configuration for routing activity.",
             });
-
-        conf.define_option<int>("router", "job-queue-size", Default{1024 * 8}, Hidden, [this](int arg) {
-            if (arg < 1024)
-                throw std::invalid_argument("job-queue-size must be 1024 or greater");
-
-            job_que_size = arg;
-        });
 
         conf.define_option<std::string>(
             "router",
@@ -112,27 +72,22 @@ namespace srouter
             Comment{"Network ID; this is '{}' for mainnet, '{}' for testnet."_format(NetID::MAINNET, NetID::TESTNET)},
             [this](std::string arg) { net_id = netid_from_string(arg); });
 
-        conf.define_option<int>("router", "relay-connections", Deprecated);
-
-        conf.define_option<int>("router", "min-connections", Deprecated);
-
-        conf.define_option<int>("router", "max-connections", Deprecated);
-
-        conf.define_option<std::string>("router", "nickname", Deprecated);
-
         conf.define_option<std::filesystem::path>(
             "router",
             "data-dir",
-            Default{params.default_data_dir},
             Comment{
-                "Optional directory for containing Session Router runtime data. This includes generated",
-                "private keys.",
+                "Directory in which to store Session Router runtime data such as router contact info",
+                "and connection data.  If not specified, the default is to use the directory containing",
+                "the config file specified when starting Session Router.",
             },
             [this](std::filesystem::path arg) {
                 if (arg.empty())
                     arg = std::filesystem::path{"."};
                 if (not exists(arg))
-                    throw std::runtime_error{"Specified [router]:data-dir {} does not exist"_format(arg)};
+                    if (std::error_code ec; not create_directories(arg, ec))
+                        throw std::runtime_error{
+                            "Specified [router]:data-dir {} does not exist, and could not be created ({})"_format(
+                                arg, ec.message())};
 
                 data_dir = std::move(arg);
             });
@@ -168,50 +123,12 @@ namespace srouter
                 throw std::invalid_argument{"[router]:public-ip is required when specifying [router]:public-port"};
         });
 
-        // FIXME: this option isn't currently used!
-        conf.define_option<int>(
-            "router",
-            "worker-threads",
-            Default{0},
-            Comment{
-                "The number of threads available for performing cryptographic functions.",
-                "The minimum is one thread, but network performance may increase with more.",
-                "threads. Should not exceed the number of logical CPU cores.",
-                "0 means use the number of logical CPU cores detected at startup.",
-            },
-            [this](int arg) {
-                if (arg < 0)
-                    throw std::invalid_argument("worker-threads must be >= 0");
-
-                worker_threads = arg;
-            });
-
         // Hidden option because this isn't something that should ever be turned off occasionally
         // when doing dev/testing work.
         conf.define_option<bool>("router", "block-bogons", Default{true}, Hidden, assignment_acceptor(block_bogons));
-
-        conf.define_option<std::string>("router", "contact-file", Deprecated);
-
-        conf.define_option<std::string>("router", "encryption-privkey", Deprecated);
-
-        conf.define_option<std::string>("router", "ident-privkey", Deprecated);
-
-        conf.define_option<std::string>("router", "transport-privkey", RelayOnly, Deprecated);
-
-        // Deprecated options:
-
-        // these weren't even ever used!
-        conf.define_option<std::string>("router", "max-routers", Deprecated);
-        conf.define_option<std::string>("router", "min-routers", Deprecated);
-
-        // TODO: this may have been a synonym for [router]worker-threads
-        conf.define_option<std::string>("router", "threads", Deprecated);
-        conf.define_option<std::string>("router", "net-threads", Deprecated);
-
-        is_relay = params.type == config::Type::Relay;
     }
 
-    void ExitConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void ExitConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.define_option<std::string>(
             "exit",
@@ -221,20 +138,25 @@ namespace srouter
             Comment{
                 "Specify an optional authentication token required to use a non-public exit node.",
                 "For example:",
-                "    auth=myfavouriteexit.loki:abc",
-                "uses the authentication code `abc` whenever myfavouriteexit.loki is accessed.",
-                "Can be specified multiple times to store codes for different exit nodes.",
+                "    auth=myfavouriteexit.{}:abc"_format(CLIENT_TLD),
+                "uses the authentication code `abc` whenever myfavouriteexit.{} is accessed."_format(CLIENT_TLD),
+                "Can be specified multiple times to store codes for different exit nodes.  The",
+                ".{} name may also be replaced with a .loki ONS name."_format(CLIENT_TLD),
             },
             [this](std::string arg) {
                 if (arg.empty())
-                    throw std::invalid_argument{"Empty argument passed to '[exit]:auth'"};
+                {
+                    sns_auth_tokens.clear();
+                    auth_tokens.clear();
+                    return;
+                }
 
                 const auto pos = arg.find(":");
 
                 if (pos == std::string::npos)
                 {
-                    throw std::invalid_argument(
-                        "[exit]:auth invalid format, expects exit-address.loki:auth-token-goes-here");
+                    throw std::invalid_argument{
+                        "[exit]:auth invalid format, expects exit-address.{}:auth-token-goes-here"_format(CLIENT_TLD)};
                 }
 
                 const auto addr = arg.substr(0, pos);
@@ -249,7 +171,8 @@ namespace srouter
                 {
                     NetworkAddress exit{addr};
                     if (!exit.client())
-                        throw std::invalid_argument{"only .loki addresses can be used for exits"};
+                        throw std::invalid_argument{
+                            "only .{}/.loki addresses can be used for exits"_format(CLIENT_TLD)};
                     auth_tokens.emplace(std::move(exit), std::move(auth));
                 }
                 catch (const std::exception& e)
@@ -287,6 +210,11 @@ namespace srouter
                 "would allow TCP traffic on the standard smtp port (21).",
             },
             [this](std::string arg) {
+                if (arg.empty())
+                {
+                    exit_policy.protocols.clear();
+                    return;
+                }
                 // this will throw on error
                 exit_policy.protocols.insert(net::ProtocolInfo::from_config(arg));
             });
@@ -297,13 +225,13 @@ namespace srouter
             FullClientOnly,
             MultiValue,
             Comment{
-                "Reserve an ip range to use as an exit broker for a `.loki` address",
-                "Specify a `.loki` address and a reserved ip range to use as an exit broker.",
+                "Reserve an ip range to use as an exit broker for a `.{}` address"_format(CLIENT_TLD),
+                "Specify a `.{}` address and a reserved ip range to use as an exit broker."_format(CLIENT_TLD),
                 "Examples:",
-                "    reserved-range=whatever.loki",
-                "would route all exit traffic through whatever.loki; and",
-                "    reserved-range=stuff.loki:100.0.0.0/24",
-                "would route the IP range 100.0.0.0/24 through stuff.loki.",
+                "    reserved-range=whatever.{}"_format(CLIENT_TLD),
+                "would route all exit traffic through whatever.{}; and"_format(CLIENT_TLD),
+                "    reserved-range=stuff.{}:100.0.0.0/24"_format(CLIENT_TLD),
+                "would route the IP range 100.0.0.0/24 through stuff.{}."_format(CLIENT_TLD),
                 "This option can be specified multiple times (to map different IP ranges).",
             },
             [this](std::string arg) {
@@ -387,7 +315,7 @@ namespace srouter
             });
     }
 
-    void NetworkConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void NetworkConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "network",
@@ -398,32 +326,34 @@ namespace srouter
         conf.define_option<bool>(
             "network",
             "save-profiles",
-            Default{params.type != config::Type::EmbeddedClient},
+            Default{conf.type != config::Type::EmbeddedClient},
             Hidden,
             assignment_acceptor(save_profiles));
 
         conf.define_option<bool>("network", "profiling", Default{true}, Hidden, assignment_acceptor(enable_profiling));
 
-        conf.define_option<std::string>("network", "profiles", Deprecated);
-
-        conf.define_option<std::string>(
+        conf.define_option<std::filesystem::path>(
             "network",
             "keyfile",
             ClientOnly,
-            [this](std::string arg) {
+            [this, rel_base = conf.conf_dir](std::filesystem::path arg) {
                 if (arg.empty())
+                {
+                    keyfile.reset();
                     return;
-
-                keyfile = arg;
-
-                if (check_path_op(keyfile))
-                    log::info(logcat, "Client configured to try private key file at path: {}", keyfile->c_str());
-                else
-                    log::warning(logcat, "Bad input for client private key file ({}); using ephemeral...", arg);
+                }
+                if (arg.is_relative())
+                    arg = rel_base / arg;
+                if (!exists(arg))
+                    throw std::invalid_argument{"cannot load key file {}: file not found"_format(arg)};
+                log::info(logcat, "Client configured to use private key file {}", arg);
+                keyfile.emplace(std::move(arg));
             },
             Comment{
-                "The private key to persist address with. If not specified the address will be",
-                "ephemerally generated.",
+                "Filename of a persistent, private key to use on the network.  If not specified a",
+                "different random address will be used each time Session Router restarts.",
+                "",
+                "The session-router-config program can be used to generate such a key file.",
             });
 
         conf.define_option<std::string>(
@@ -479,7 +409,7 @@ namespace srouter
             FullClientOnly,
             MultiValue,
             Comment{
-                "manually add a remote endpoint by .loki address to the access whitelist",
+                "Manually add a remote endpoint by PUBKEY.{} address to the access whitelist."_format(CLIENT_TLD),
             },
             [this](std::string arg) {
                 try
@@ -489,7 +419,7 @@ namespace srouter
                 catch (const std::exception& e)
                 {
                     throw std::invalid_argument{
-                        "[network]:auth-whitelist: invalid .loki address '{}': {}"_format(arg, e.what())};
+                        "[network]:auth-whitelist: invalid .{} address '{}': {}"_format(CLIENT_TLD, arg, e.what())};
                 }
             });
 
@@ -502,7 +432,7 @@ namespace srouter
                 "Read auth tokens from file to accept endpoint auth",
                 "Can be provided multiple times",
             },
-            [this, rel_base = params.default_data_dir](std::filesystem::path arg) {
+            [this, rel_base = conf.conf_dir](std::filesystem::path arg) {
                 if (!arg.empty() && arg.is_relative())
                     arg = rel_base / arg;
                 if (not exists(arg))
@@ -557,20 +487,6 @@ namespace srouter
                 "Determines whether we will pubish our service's ClientContact to the network (client default: TRUE)",
             });
 
-        conf.define_option<int>("network", "hops", ClientOnly, Hidden, [](int) {
-            log::warning(
-                logcat,
-                "[network]:hops is no longer supported; default path lengths applied. See the path options in the "
-                "[paths] section instead");
-        });
-
-        conf.define_option<int>("network", "paths", ClientOnly, Hidden, [](int) {
-            log::error(
-                logcat,
-                "[network]:paths is no longer supported; default path numbers applied. See the path options in the "
-                "[paths] section instead");
-        });
-
         conf.define_option<bool>(
             "network",
             "auto-routing",
@@ -602,7 +518,8 @@ namespace srouter
             NotEmbedded,
             Comment{
                 "Interface name for Session Router traffic. If unset Session Router will look for a free name",
-                "matching 'sr-tunN', starting at N=0 (e.g. sr-tun0, sr-tun1, ...).",
+                "matching 'sr-tunN', starting at N=0 (e.g. sr-tun0, sr-tun1, ...) for clients; relays default",
+                "to sr-tun@XXXXXXXX where XXXXXXXX is the first 8 hex digits of the Session node pubkey.",
 #ifdef __linux__
                 "",
                 "On Linux, you can use '%d' in the name as a pattern to have the OS automatically choose",
@@ -615,17 +532,81 @@ namespace srouter
             "network",
             "ifaddr",
             NotEmbedded,
+            MultiValue,
             Comment{
-                "Local IP and netmask for Session Router traffic. For example, 172.16.0.1/16 to use",
-                "172.16.0.1 for this Session Router instance and 172.16.x.y for remote peers. If omitted",
-                "then Session Router will attempt to automatically select an unused private range.",
-                "If you specify an all-0 address with range (e.g. 0.0.0.0/12) then Session Router will",
-                "auto-select a private range of the given size.",
+                "Private IP and netmask to use to map Session Router traffic to local addresses.",
+                "",
+                "The IPs (one IPv4, one IPv6) given here will be the IPs that remote Session",
+                "Router clients will access if attempting to establish connections to this",
+                "Session Router instance, and the remainder of the IP range will be the addresses",
+                "that this Session Router uses to send traffic to remote relay and client peers.",
+                "That is, a remote client attempting to connect to you through Session Router",
+                "will be tunneled to the IPv4 or IPv6 address specified here.",
+                "",
+                "For example, 172.16.0.1/16 will use 172.16.0.1 for this Session Router",
+                "instance's IPv4 address and 172.16.x.y will be used to map connections to remote",
+                "peer addresses.  For IPv6, fd2e:7365:7368::1/64 will use fd2e:7365:7368::1 for",
+                "this Session Router instance, and will map other remotes to addresses in",
+                "fd2e:7365:7368:0:w:x:y:z.  (These two ranges are the defaults if not specified",
+                "*and* they are not already in use on the system).",
+                "",
+                "This option can be given twice: once to set an IPv4 address and range, and once",
+                "to set an IPv6 address and range.  If one or the other is omitted then an unused",
+                "private range (/16 for IPv4, and /64 for IPv6) will be automatically detected",
+                "and used.",
+                "",
+                "An \"all-zero\" address can be used with a custom netmask to use auto-detection",
+                "with a custom size: for instance \"0.0.0.0/10\" will auto-detect an unused /10",
+                "IPv4 private address range, and \"::/56\" would look for an unused /56 IPv6",
+                "address range.",
+                "",
+                "If you intend to run network daemons for others to connect to (for example",
+                "HTTP), then it is recommended that you specify explicit IPv4 and IPv6 addresses",
+                "here and set up network servers (such as nginx to serve HTTP traffic) to listen",
+                "on those two addresses.  If you are only using Session Router to connect to",
+                "remote instances then you can typically leave this blank to auto-select an",
+                "unused network range.",
             },
             [this](std::string arg) {
                 try
                 {
-                    _local_ip_net = parse_ipv4_net(arg);
+                    auto ip_net = parse_ip_net(arg, 16, 64);
+
+                    std::visit(
+                        []<typename IPNet>(IPNet& in) {
+                            if (in.ip != IPNet{}.ip && in.ip == in.to_range().ip)
+                            {
+                                if (auto next = in.ip.next_ip(); next and in.contains(*next))
+                                {
+                                    log::warning(
+                                        logcat,
+                                        "Invalid host IP '{}' in [network]:ifaddr (the network zero address is "
+                                        "invalid); using '{}' instead",
+                                        in.ip,
+                                        *next);
+                                    in.ip = std::move(*next);
+                                }
+                            }
+                        },
+                        ip_net);
+
+                    if (auto* in4 = std::get_if<ipv4_net>(&ip_net))
+                    {
+                        if (_local_ip_net)
+                            throw std::runtime_error{"cannot specify multiple IPv4 addresses"};
+                        if (in4->ip == in4->broadcast())
+                            throw std::runtime_error{"Cannot bind to the IPv4 network broadcast address"};
+                        _local_ip_net = std::move(*in4);
+                    }
+                    else
+                    {
+                        if (_local_ipv6_net)
+                            throw std::runtime_error{"cannot specify multiple IPv6 addresses"};
+                        auto& n = std::get<ipv6_net>(ip_net);
+                        if (n.mask > 64)
+                            throw std::runtime_error{"local address IPv6 net mask must be /64 or smaller"};
+                        _local_ipv6_net = std::move(n);
+                    }
                 }
                 catch (const std::exception& e)
                 {
@@ -635,81 +616,77 @@ namespace srouter
 
         conf.define_option<std::string>(
             "network",
-            "ipv6-network",
-            NotEmbedded,
-            Hidden,
-            Comment{
-                "Enables internal IPv6 traffic for session_router.  Can be set to:",
-                "  - false to disable IPv6 support.  This is the default if omitted",
-                "  - true to enable IPv6 support and auto-detect a free private /64 network range",
-                "  - ::/80 to auto-detect a free private range of netmask 80 (change as needed) ",
-                "    instead of the default 64",
-                "  - An explicit private address and range to use, such as: fd00:abcd:1234::1/56",
-                "",
-                "Currently experimental and not supported.",
-            },
-            [this](std::string arg) {
-                if (arg.empty())
-                {
-                    enable_ipv6 = false;
-                    return;
-                }
-                if (auto b = parse_boolean(arg))
-                {
-                    enable_ipv6 = *b;
-                    return;
-                }
-                try
-                {
-                    _local_ipv6_net = parse_ipv6_net(arg);
-                    enable_ipv6 = true;
-                }
-                catch (const std::exception& e)
-                {
-                    throw std::invalid_argument{"[network]:ipv6-addr invalid value '{}': {}"_format(arg, e.what())};
-                }
-            });
-
-        conf.define_option<std::string>(
-            "network",
             "mapaddr",
             FullClientOnly,
             MultiValue,
             Comment{
-                "Map a remote `.loki` address to always use a fixed local IP. For example:",
-                "    mapaddr=<pubkey>.loki:172.16.0.10",
-                "maps `<pubkey>.loki` to `172.16.0.10` instead of using the next available IP.",
-                "The given IP address must be inside the range configured by ifaddr=, and the",
-                "remote `.loki` cannot be an ONS address"},
+                "Map a remote `.{}` or `.{}` address to always use a fixed local IPv4, IPv6, or both"_format(
+                    CLIENT_TLD, RELAY_TLD),
+                "(separated by a comma). For example:",
+                "    mapaddr=kcpyawm9se7trdbzncimdi5t7st4p5mh9i1mg7gkpuubi4k4ku1y.{}:172.16.0.42,fd2e:7365:7368::42"_format(
+                    RELAY_TLD),
+                "    mapaddr=55fxrybf3jtausbnmxpgwcsz9t8qkf5pr8t5f4xyto4omjrkorpy.{}:fd2e:7365:7368::deca:f20"_format(
+                    RELAY_TLD),
+                "reserves the given IPv4/IPv6 address for the indicated pubkeys.",
+                "",
+                "Session Router addresses that are *not* explicitly mapped will use the next available unused IP",
+                "(for IPv4), or a pubkey-derived address with fallback to next available address for IPv6.",
+                "",
+                "The given IP address(es) must be inside the ranges configured by ifaddr=, and ONS addresses",
+                "cannot be used."},
             [this](std::string arg) {
                 if (arg.empty())
                     return;
 
                 const auto pos = arg.find(":");
-
                 if (pos == std::string::npos)
                     throw std::invalid_argument{
-                        "[endpoint]:mapaddr invalid entry '{}'; expected 'ADDR:IP'"_format(arg)};
+                        "[network]:mapaddr invalid entry '{}': expected 'ADDR:IP' or 'ADDR:IP,IP'"_format(arg)};
 
                 auto addr_arg = std::string_view{arg}.substr(0, pos);
-                auto ip_arg = arg.substr(pos + 1);
+                auto ips = split(std::string_view{arg}.substr(pos + 1), ",", true);
+                if (ips.size() < 1 || ips.size() > 2)
+                    throw std::invalid_argument{
+                        "[network]:mapaddr invalid entry '{}': expected single IPv4, IPv6, or both with comma-separators"_format(
+                            arg)};
 
                 try
                 {
                     NetworkAddress raddr{addr_arg};
-                    // ipv6
-                    if (ip_arg.find(':') != std::string_view::npos)
-                        _reserved_local_ipv6.emplace(raddr, ip_arg);
-                    else
-                        _reserved_local_ipv4.emplace(raddr, ip_arg);
+                    for (const auto& ip : ips)
+                    {
+                        std::string ip_arg{ip};
+                        bool inserted;
+                        if (ip_arg.find(':') != std::string_view::npos)
+                            inserted = _reserved_local_ipv6.emplace(raddr, ip_arg).second;
+                        else
+                            inserted = _reserved_local_ipv4.emplace(raddr, ip_arg).second;
+
+                        if (!inserted)
+                            throw std::invalid_argument{"Duplicate entry for pubkey"};
+                    }
                 }
                 catch (const std::exception& e)
                 {
-                    throw std::invalid_argument{"[endpoint]:mapaddr invalid entry '{}': {}"_format(arg, e.what())};
+                    throw std::invalid_argument{"[network]:mapaddr invalid entry '{}': {}"_format(arg, e.what())};
                 }
             });
 
-        // TODO: support SRV records for routers, but for now client only
+        conf.define_option<int>(
+            "network",
+            "expired-address-cache",
+            NotEmbedded,
+            Default{conf.type == config::Type::Relay ? 100 : 1000},
+            Comment{
+                "This controls how many recently expired connection addresses to remember: if a connection",
+                "closed or expires then the assigned addresses are remembered in this cache and will be reserved",
+                "and reused if the connection is reestablished while still in the cache.  This setting controls",
+                "the maximum number of such addresses Session Router will remember.",
+                "",
+                "This cache does not persist across restarts: if you want a particular client to have a persistent",
+                "address, use the mapaddr= setting instead.",
+            });
+
         conf.define_option<std::string>(
             "network",
             "srv",
@@ -718,8 +695,10 @@ namespace srouter
             Comment{
                 "Specify SRV Records for services hosted on the SNApp for protocols that use SRV",
                 "records for service discovery. Each line specifies a single SRV record as:",
-                "    srv=_service._protocol priority weight port target.loki",
-                "and can be specified multiple times as needed.",
+                "    srv=_service._protocol priority weight port target.{}"_format(CLIENT_TLD),
+                "and can be specified multiple times as needed.  If `target.sesh` is set to",
+                "`localhost.sesh` it will be replaced with this Session Router's address.",
+                "",
                 "For more info see",
                 "https://docs.oxen.io/products-built-on-oxen/session-router/snapps/hosting-snapps",
                 "and general description of DNS SRV record configuration.",
@@ -730,11 +709,10 @@ namespace srouter
                 if (not maybe_srv)
                     throw std::invalid_argument{"Invalid SRV Record string: {}"_format(arg)};
 
-                srv_records.emplace(std::move(*maybe_srv));
+                srv_records.push_back(std::move(*maybe_srv));
             });
 
-        conf.define_option<int>("network", "path-alignment-timeout", Deprecated);
-
+#if 0
         conf.define_option<std::filesystem::path>(
             "network",
             "persist-addrmap-file",
@@ -874,12 +852,10 @@ namespace srouter
 
                 addr_map_persist_file = file;
             });
-
-        // Deprecated options:
-        conf.define_option<std::string>("network", "enabled", Deprecated);
+#endif
     }
 
-    void DnsConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void DnsConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "dns",
@@ -897,117 +873,120 @@ namespace srouter
             // see https://github.com/oxen-io/lokinet/issues/1887#issuecomment-1091897282
             Default{"127.0.0.1:0"},
 #endif
-            Default{"127.3.2.1:53"},
+            Default{"127.3.2.1"},
 #else
-            Default{"127.0.0.1:53"},
+            Default{"127.0.0.1"},
 #endif
         };
 
-        auto parse_addr_for_dns = [](const std::string& arg) {
-            std::optional<quic::Address> addr = std::nullopt;
-            std::string_view arg_v{arg}, port;
-            std::string host;
-            uint16_t p{DEFAULT_DNS_PORT};
-
-            if (auto pos = arg_v.find(':'); pos != arg_v.npos)
-            {
-                host = arg_v.substr(0, pos);
-                port = arg_v.substr(pos + 1);
-
-                if (not srouter::parse_int<uint16_t>(port, p))
-                    log::info(logcat, "Failed to parse port in arg:{}, defaulting to DNS port 53", port);
-
-                addr = quic::Address{host, p};
-            }
-
-            return addr;
-        };
+        conf.define_option<std::string>(
+            "dns",
+            "listen",
+            FullClientOnly,
+            DefaultDNSBind,
+            MultiValue,
+            Comment{
+                "Address(es) on which to listen for DNS requests.  This can either be an IP address",
+                "(to use the default DNS port 53) or an IP followed by `:port' to listen on a custom",
+                "port.  To specify an IPv6 address, surround the address with '[' and ']'.",
+                "",
+                "This option can be specified multiple times to bind to multiple addresses.",
+                "",
+                "If this Session Router instance has no need to establish outbound connection (for example,",
+                "for a hidden service) then this can be set to an empty string to disable the DNS listener",
+                "entirely.  WARNING: disabling this makes it impossible to make new outbound connections!",
+            },
+            [this](const std::string& arg) {
+                if (not arg.empty())
+                    _listen_addrs.push_back(quic::Address::parse(arg, DEFAULT_DNS_PORT));
+            });
 
         conf.define_option<std::string>(
             "dns",
             "upstream",
             FullClientOnly,
             MultiValue,
+            std::array{
+                Default{"9.9.9.9"}, Default{"149.112.112.112"}, Default{"[2620:fe::fe]"}, Default{"[2620:fe::9]"}},
             Comment{
-                "Upstream resolver(s) to use as fallback for non-loki addresses.",
-                "Multiple values accepted.",
+                "Upstream resolver(s) to use as fallback for non-Session Router addresses.",
+                "Multiple values accepted.  Can be set to empty to disable upstream DNS resolution",
+                "for advanced setups.",
+                "",
+                "If not specified, the default is to use Quad9 public DNS servers (https://quad9.net).",
             },
-            [this, parse_addr_for_dns](std::string arg) {
+            [this](const std::string& arg) {
                 if (not arg.empty())
-                {
-                    if (auto maybe_addr = parse_addr_for_dns(arg))
-                        _upstream_dns.push_back(std::move(*maybe_addr));
-                    else
-                        log::warning(logcat, "Failed to parse upstream DNS resolver address:{}", arg);
-                }
-            });
-
-        conf.define_option<bool>(
-            "dns",
-            "l3-intercept",
-            FullClientOnly,
-            Default{
-                platform::is_windows or platform::is_android or (platform::is_macos and not platform::is_apple_sysex)},
-            Comment{"Intercept all dns traffic (udp/53) going into our Session Router network interface "
-                    "instead of binding a local udp socket"},
-            assignment_acceptor(l3_intercept));
-
-        conf.define_option<std::string>(
-            "dns",
-            "query-bind",
-            FullClientOnly,
-#if defined(_WIN32)
-            Default{"0.0.0.0:0"},
-#else
-            Hidden,
-#endif
-            Comment{
-                "Address to bind to for sending upstream DNS requests.",
-            },
-            [this, parse_addr_for_dns](std::string arg) {
-                if (not arg.empty())
-                {
-                    if (auto maybe_addr = parse_addr_for_dns(arg))
-                        _query_bind = std::move(*maybe_addr);
-                    else
-                        log::warning(logcat, "Failed to parse bind address for DNS queries:{}", arg);
-                }
+                    _upstream_dns.push_back(quic::Address::parse(arg, DEFAULT_DNS_PORT));
             });
 
         conf.define_option<std::string>(
             "dns",
-            "bind",
+            "unbound",
             FullClientOnly,
-            DefaultDNSBind,
             MultiValue,
             Comment{
-                "Address to bind to for handling DNS requests.",
+                "This option can be used to supply custom options to libunbound, which is used",
+                "internally when DNS requests are made that are not for a .sesh/.snode address.",
+                "",
+                "To add a custom option specify this option with a value of `unbound-option-name: value`;",
+                "for example, to limit the maximum record cache time:",
+                "    unbound=cache-max-ttl: 3600",
+                "Or to enable DNSSEC validation:",
+                "    unbound=trust-anchor-file: /path/to/dns/root.key",
+                "",
+                "You can use this option multiple times to specify more unbound options.",
+                "",
+                "See https://unbound.docs.nlnetlabs.nl/en/latest/manpages/unbound.conf.html",
+                "for all supported unbound options.",
             },
-            [this, parse_addr_for_dns](std::string arg) {
-                if (not arg.empty())
+            [this](std::string option) {
+                auto pos = option.find(':');
+                if (pos == std::string::npos)
+                    throw std::invalid_argument{
+                        "Invalid unbound option '{}': options must be formatted as `option: value`"_format(option)};
+                auto key = std::string_view{option}.substr(0, pos);
+                auto value = std::string_view{option}.substr(pos + 1);
+
+                for (auto* s : {&key, &value})
                 {
-                    if (auto maybe_addr = parse_addr_for_dns(arg))
-                    {
-                        _bind_addrs.push_back(std::move(*maybe_addr));
-                    }
-                    else
-                        log::warning(logcat, "Failed to parse bind address for handling DNS requests:{}", arg);
+                    while (s->starts_with(' '))
+                        s->remove_prefix(1);
+                    while (s->ends_with(' '))
+                        s->remove_suffix(1);
                 }
+                if (key.empty() || value.empty())
+                    throw std::invalid_argument{
+                        "Invalid unbound option '{}': key and/or value cannot be empty"_format(option)};
+
+                unbound_opts.emplace_back("{}:"_format(key), std::string{value});
             });
 
-        conf.define_option<std::filesystem::path>(
+        conf.define_option<std::string>(
             "dns",
-            "add-hosts",
+            "unbound-hosts",
             FullClientOnly,
-            Comment{"Add a hosts file to the dns resolver", "For use with client side dns filtering"},
-            [this, rel_base = params.default_data_dir](std::filesystem::path path) {
-                if (path.empty())
-                    return;
-                if (path.is_relative())
-                    path = rel_base / path;
-                if (not exists(path))
-                    throw std::invalid_argument{"cannot add hosts file {} as it does not exist"_format(path)};
-                hostfiles.emplace_back(std::move(path));
+            Default{"SYSTEM"s},
+            Comment{
+                "Configures unbound to use the given `hosts' files when resolving addresses.  Can be",
+                "used to add custom addresses or perform client-side DNS filtering.  If omitted or set",
+                "to the string 'SYSTEM' then the system default (/etc/hosts, or WINDIR/etc/hosts on",
+                "Windows) will be used.  Can be set to an empty string to not add any hosts file.",
+            },
+            [this, rel_base = conf.conf_dir](std::string p) {
+                if (p.empty())
+                    unbound_hosts.reset();
+                else if (p == "SYSTEM")
+                    unbound_hosts.emplace("SYSTEM");
+                else
+                {
+                    std::filesystem::path path{p};
+                    if (path.is_relative())
+                        path = rel_base / path;
+                    if (!exists(path))
+                        throw std::invalid_argument{"[dns]:unbound-hosts file '{}' does not exist"_format(path)};
+                    unbound_hosts = std::move(path);
+                }
             });
 
         // Ignored option (used by the systemd service file to disable resolvconf configuration).
@@ -1021,37 +1000,18 @@ namespace srouter
                 "(This is not used directly by Session Router itself, but by the Session Router init scripts",
                 "on systems which use resolveconf)",
             });
-
-        // forward the rest to libunbound
-        conf.add_undeclared_handler(
-            "dns", [this](auto, std::string_view key, std::string_view val) { extra_opts.emplace(key, val); });
     }
 
-    void LinksConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void LinksConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "bind",
             {
-                "This section allows specifying the IPs that Session Router uses for incoming and outgoing",
+                "This section allows specifying the IP that Session Router uses for incoming and outgoing",
                 "connections.  For simple setups it can usually be left blank, but may be required",
-                "for routers with multiple IPs, or routers that must listen on a private IP with",
-                "forwarded public traffic.  It can also be useful for clients that want to use a",
-                "consistent outgoing port for which firewall rules can be configured.",
+                "for relays with multiple IP address, or relays that listen on a private IP with",
+                "forwarded public traffic.",
             });
-
-        conf.define_option<std::string>(
-            "bind",
-            "public-ip",
-            Hidden,
-            RelayOnly,
-            public_ip_loader(public_addr, "[bind]:public-ip", "[router]:public-ip"));
-
-        conf.define_option<uint16_t>(
-            "bind",
-            "public-port",
-            Hidden,
-            RelayOnly,
-            public_port_loader(public_addr, "[bind]:public-port", "[router]:public-port"));
 
         auto parse_addr_for_link = [](std::string_view arg) {
             quic::Address a = quic::Address::parse(arg, 0);
@@ -1069,23 +1029,33 @@ namespace srouter
         conf.define_option<std::string>(
             "bind",
             "listen",
-            Comment{
+            conf.type == config::Type::Relay
+              ? Comment{
                 "IP and/or port for Session Router to bind to for inbound/outbound connections.",
                 "",
                 "If IP is omitted then Session Router will search for a local network interface with a",
                 "public IP address and use that IP (and will exit with an error if no such IP is found",
-                "on the system).  If port is omitted then Session Router defaults to 1190 (routers) or",
-                "1191 (clients).",
+                "on the system).  If port is omitted then Session Router defaults to 1190.",
                 "",
                 "Examples:",
-                "    listen=15.5.29.5:443",
+                "    listen=15.5.29.5:1099",
                 "    listen=10.0.2.2",
                 "    listen=:1234",
                 "",
-                "Note that, when running as a relay, a private range IP address (like the second example",
-                "above) requires also using [router]:public-ip/-port to specify the public IP address at",
-                "which this router can be reached, and requires that traffic on that port is redirected to",
-                "the listening internal address.",
+                "Note that a private range IP address (as in the second example above) requires also using",
+                "[router]:public-ip/-port to specify the public IP address at which this router can be",
+                "reached, and requires that traffic on that port is redirected to the listening internal",
+                "address.",
+                }
+              : Comment{
+                "IP and/or port for Session Router to use for connections to relays.",
+                "",
+                "Defaults to ':1091', which means to use port 1091 on any available address.",
+                "",
+                "Examples:",
+                "    listen=15.5.29.5:1099 -- uses a specific IP and port",
+                "    listen=10.0.2.2 -- uses a specific IP, default port (1191)",
+                "    listen=:1234 -- uses any IP, port 1234",
             },
             [this, parse_addr_for_link](const std::string& arg) {
                 if (listen_addr)
@@ -1094,70 +1064,9 @@ namespace srouter
                         "[bind]:inbound and [bind]:IP and use only one [bind]:listen"};
                 listen_addr = parse_addr_for_link(arg);
             });
-
-        conf.define_option<std::string>(
-            "bind", "inbound", RelayOnly, MultiValue, Hidden, [this, parse_addr_for_link](const std::string& arg) {
-                if (listen_addr)
-                    throw std::runtime_error{
-                        "Multiple listen addresses found.  If upgrading from an older Session Router, delete extra "
-                        "[bind]:inbound and [bind]:IP and use only one [bind]:listen"};
-                listen_addr = parse_addr_for_link(arg);
-                log::warning(
-                    logcat,
-                    "Loaded listen address {} from deprecated [bind]:inbound option; please update your config to "
-                    "use [bind]:listen instead",
-                    *listen_addr);
-            });
-
-        conf.define_option<std::string>("bind", "outbound", MultiValue, Deprecated, Hidden);
-
-        conf.add_undeclared_handler("bind", [this](std::string_view, std::string_view key, std::string_view val) {
-            // special case: old Session Router used '*' for outbound port, which now does nothing
-            if (key == "*")
-            {
-                log::warning(
-                    logcat,
-                    "[bind]:*=PORT is deprecated and no longer does anything in this version of Session Router");
-                return;
-            }
-
-            log::warning(
-                logcat, "[bind]:{} is deprecated: Please update your config to use [bind]:listen instead", key);
-
-            // Otherwise you could have either `A.B.C.D=PORT` or `IFNAME=port`.  The latter was
-            // almost never used, and so we only look for the format and error on the latter.
-            if (listen_addr)
-                throw std::runtime_error{
-                    "Multiple listen addresses found.  If upgrading from an older Session Router, replace extra "
-                    "[bind]:inbound=/IP= settings with a single [bind]:listen="};
-
-            uint16_t port{0};
-
-            quic::Address temp;
-            try
-            {
-                if (!srouter::parse_int<uint16_t>(val, port))
-                    throw std::runtime_error{"Could not parse port"};
-                temp = quic::Address{std::string{key}, port};
-            }
-            catch (const std::exception&)
-            {
-                throw std::runtime_error{
-                    "Invalid [bind] deprecated config item: {}={}. "
-                    "Please replace with a [bind]:listen=... directive"_format(key, val)};
-            }
-
-            listen_addr = std::move(temp);
-
-            log::warning(
-                logcat,
-                "[bind]:{0}={1} is deprecated; please replace with [bind] config entry: listen={0}:{1}",
-                key,
-                val);
-        });
     }
 
-    void ApiConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void ApiConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "api",
@@ -1176,7 +1085,7 @@ namespace srouter
             "api",
             "enabled",
             NotEmbedded,
-            Default{params.type == config::Type::FullClient},
+            Default{conf.type == config::Type::FullClient},
             assignment_acceptor(enable_rpc_server),
             Comment{
                 "Determines whether or not the OMQ JSON API is enabled. By default this is enabled for clients, "
@@ -1206,13 +1115,11 @@ namespace srouter
                 "Recommend localhost-only for security purposes.",
             });
 
-        conf.define_option<std::string>("api", "authkey", Deprecated);
-
         // TODO: this was from pre-refactor:
         // TODO: add pubkey to whitelist
     }
 
-    void OxendConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void OxendConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "oxend",
@@ -1251,7 +1158,7 @@ namespace srouter
             });
     }
 
-    void BootstrapConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void BootstrapConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "bootstrap",
@@ -1279,7 +1186,7 @@ namespace srouter
             });
     }
 
-    void LoggingConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters& params)
+    void LoggingConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "logging",
@@ -1291,7 +1198,7 @@ namespace srouter
             "logging",
             "type",
             Default{
-                params.type == config::Type::EmbeddedClient      ? "none"
+                conf.type == config::Type::EmbeddedClient        ? "none"
                     : platform::is_android or platform::is_apple ? "system"
                                                                  : "print"},
             [this](std::string arg) {
@@ -1305,18 +1212,18 @@ namespace srouter
                 "  print - print logs to standard output",
                 "  system - logs directed to the system logger (syslog/eventlog/etc.)",
                 "  file - plaintext formatting to a file",
-                (params.type == config::Type::EmbeddedClient ? "  none - do not reset the logging system (for embedded "
-                                                               "use with external oxen::logging)"
-                                                             : ""),
+                (conf.type == config::Type::EmbeddedClient ? "  none - do not reset the logging system (for embedded "
+                                                             "use with external oxen::logging)"
+                                                           : ""),
             });
 
         conf.define_option<std::string>(
             "logging",
             "level",
             Default{
-                params.type == config::Type::Relay            ? "warn"
-                    : params.type == config::Type::FullClient ? "info"
-                                                              : ""},
+                conf.type == config::Type::Relay            ? "warn"
+                    : conf.type == config::Type::FullClient ? "info"
+                                                            : ""},
             [this](std::string arg) { levels = std::move(arg); },
             Comment{
                 "Minimum log severity level to print. Logging below this level will be ignored.",
@@ -1337,7 +1244,7 @@ namespace srouter
             });
     }
 
-    void PathConfig::define_config_options(ConfigDefinition& conf, const ConfigGenParameters&)
+    void PathConfig::define_config_options(ConfigDefinition& conf)
     {
         conf.add_section_comments(
             "paths",
@@ -1369,8 +1276,8 @@ namespace srouter
                 "and as a fallback for path failure.",
                 "",
                 "Note that this value applies to EACH outbound connection separately: if you have active",
-                "connections to 5 clients and 3 snodes, Session Router will maintain 16 outbound paths (at the",
-                "default setting of 2).",
+                "connections to 5 clients and 3 snodes, Session Router will maintain 16 outbound paths (at",
+                "the default setting of 2).",
                 "",
                 "Setting this value to 1 is allowed, but will result in brief periods of packet loss",
                 "whenever paths expire due to the lack of allowed backup path.",
@@ -1412,7 +1319,7 @@ namespace srouter
                 "If not set, this default to one greater than the value of [paths]:client-hops.",
                 "",
                 "Setting this value to 1 puts Session Router into single-hop mode for the connection from this",
-                "client to service node (i.e. `.snode` addresses) which potentially weakens connection",
+                "client to service node (i.e. `.{}` addresses) which potentially weakens connection"_format(RELAY_TLD),
                 "privacy as any service nodes you connect to will be able to observe your public IP."},
             bounded_assignment_acceptor(relay_hops_, 1, path::BUILD_LENGTH, "[paths]:relay-hops"));
 
@@ -1566,11 +1473,11 @@ namespace srouter
                 if (value.size() == 64 && oxenc::is_hex(value))
                     oxenc::from_hex(value.begin(), value.end(), router.begin());
                 else if (not router.from_relay_address(value))
-                    throw std::invalid_argument{"[paths]:strict-edge: Invalid .snode pubkey: {}"_format(value)};
+                    throw std::invalid_argument{"[paths]:strict-edge: Invalid .{} pubkey: {}"_format(RELAY_TLD, value)};
 
                 if (not strict_edges.insert(router).second)
                     throw std::invalid_argument{
-                        "[paths]:strict-edge: Duplicate strict connect .snode value: {}"_format(value)};
+                        "[paths]:strict-edge: Duplicate strict connect .{} value: {}"_format(RELAY_TLD, value)};
             },
             Comment{
                 R"(List of service node public keys of "edge" nodes (also known as "first hops") that)",
@@ -1578,7 +1485,8 @@ namespace srouter
                 "this to always use closer (i.e. lower latency) first hops, or to limit which network",
                 "nodes see connections from your IP address.",
                 "",
-                "Public keys can be provided either in native Session Router address format (ADDR.snode), or using",
+                "Public keys can be provided either in native Session Router address format (ADDR.{}), or using"_format(
+                    RELAY_TLD),
                 "the 64-character hexademical pubkey notation common used for Session service nodes.",
                 "Specify this option multiple times to specify multiple allowed edge nodes.",
                 "",
@@ -1609,7 +1517,7 @@ namespace srouter
             ClientOnly,
             MultiValue,
             Comment{
-                "Adds a Session Router relay `.snode` address to the list of relays to avoid when",
+                "Adds a Session Router relay `.{}` address to the list of relays to avoid when"_format(RELAY_TLD),
                 "connecting to edges or building paths. Can be specified multiple times.",
             },
             [this](std::string arg) {
@@ -1640,181 +1548,31 @@ namespace srouter
 #endif
     }
 
-    std::unique_ptr<ConfigGenParameters> Config::make_gen_params() const
-    {
-        auto cgp = std::make_unique<ConfigGenParameters>();
-        cgp->default_data_dir = data_dir;
-        cgp->type = type;
-        return cgp;
-    }
+    Config::Config(config::Type type, std::filesystem::path conf_file)
+        : Config{type, util::file_to_string(conf_file), conf_file.parent_path(), util::path_as_str(conf_file)}
+    {}
 
-    Config::Config(config::Type type, std::filesystem::path conf_file) : data_dir{conf_file.parent_path()}, type{type}
-    {
-        auto ini = util::file_to_string(conf_file);
-        load_config_data(std::move(ini), std::move(conf_file));
-    }
-
-    Config::Config(config::Type type, std::string ini, std::filesystem::path default_data_dir)
-        : data_dir{std::move(default_data_dir)}, type{type}
-    {
-        load_config_data(std::move(ini));
-    }
-
-    static std::filesystem::path overrides_dir(const std::filesystem::path& datadir) { return datadir / "conf.d"; }
-
-    void Config::save()
-    {
-        const auto overridesDir = overrides_dir(data_dir);
-        if (not exists(overridesDir))
-            create_directories(overridesDir);
-        parser.save();
-    }
-
-    void Config::override(std::string section, std::string key, std::string value)
-    {
-        parser.add_override(overrides_dir(data_dir) / "overrides.ini", section, key, value);
-    }
-
-    void Config::load_overrides(ConfigDefinition& conf) const
-    {
-        ConfigParser parser;
-        const auto overridesDir = overrides_dir(data_dir);
-        if (exists(overridesDir))
-        {
-            for (const auto& f : std::filesystem::directory_iterator{overridesDir})
-            {
-                if (not f.is_regular_file() or f.path().extension() != ".ini")
-                    continue;
-                ConfigParser parser;
-                try
-                {
-                    parser.load_file(f.path());
-                }
-                catch (const std::exception& e)
-                {
-                    throw std::runtime_error{"Failed to load config file {}: {}"_format(f.path().string(), e.what())};
-                }
-
-                parser.iter_all_sections([&](std::string_view section, const SectionValues& values) {
-                    for (const auto& [k, v] : values)
-                        conf.add_config_value(section, k, v);
-                });
-            }
-        }
-    }
-
-    void Config::add_default(std::string section, std::string key, std::string val)
-    {
-        additional.emplace_back(std::array<std::string, 3>{section, key, val});
-    }
-
-    void Config::load_config_data(std::string ini, std::optional<std::filesystem::path> filename)
+    Config::Config(config::Type type, std::string ini, std::filesystem::path conf_dir, std::string config_for_debug)
+        : type{type}, defs{type, std::move(conf_dir)}, parser{std::move(config_for_debug)}
     {
 #ifdef SROUTER_EMBEDDED_ONLY
         if (type != Type::EmbeddedClient)
             throw std::runtime_error{
                 "This Session Router build only supports embedded clients, not {}"_format(to_string(type))};
 #endif
-        auto params = make_gen_params();
-        ConfigDefinition conf{type};
-        add_backcompat_opts(conf);
-        init_config(conf, *params);
-
-        for (const auto& item : additional)
-        {
-            conf.add_config_value(item[0], item[1], item[2]);
-        }
-
-        parser.clear();
-
-        if (filename)
-            parser.set_filename(*filename);
-        else
-            parser.set_filename(std::filesystem::path{});
+        for (ConfigBase* c : std::initializer_list<ConfigBase*>{
+                 &router, &exit, &network, &paths, &dns, &links, &api, &oxend, &bootstrap, &logging})
+            c->define_config_options(defs);
 
         parser.load_from_str(std::move(ini));
 
-        parser.iter_all_sections([&](std::string_view section, const SectionValues& values) {
-            for (const auto& pair : values)
-            {
-                conf.add_config_value(section, pair.first, pair.second);
-            }
+        parser.iter_all_sections([this](std::string_view section, const SectionValues& values) {
+            for (const auto& [k, vs] : values)
+                for (const auto& v : vs)
+                    defs.add_config_value(section, k, v);
         });
 
-        load_overrides(conf);
-
-        conf.process();
-    }
-
-    void Config::init_config(ConfigDefinition& conf, const ConfigGenParameters& params)
-    {
-        router.define_config_options(conf, params);
-        exit.define_config_options(conf, params);
-        network.define_config_options(conf, params);
-        paths.define_config_options(conf, params);
-        dns.define_config_options(conf, params);
-        links.define_config_options(conf, params);
-        api.define_config_options(conf, params);
-        oxend.define_config_options(conf, params);
-        bootstrap.define_config_options(conf, params);
-        logging.define_config_options(conf, params);
-    }
-
-    void Config::add_backcompat_opts(ConfigDefinition& conf)
-    {
-        // These config sections don't exist anymore:
-
-        conf.define_option<std::string>("system", "user", Deprecated);
-        conf.define_option<std::string>("system", "group", Deprecated);
-        conf.define_option<std::string>("system", "pidfile", Deprecated);
-
-        conf.define_option<std::string>("netdb", "dir", Deprecated);
-
-        conf.define_option<std::string>("metrics", "json-metrics-path", Deprecated);
-    }
-
-    void ensure_config(std::filesystem::path dataDir, std::filesystem::path confFile, bool overwrite, config::Type type)
-    {
-        // fail to overwrite if not instructed to do so
-        if (exists(confFile) && !overwrite)
-        {
-            log::info(logcat, "Config file already exists; NOT creating new config");
-            return;
-        }
-
-        const auto parent = confFile.parent_path();
-
-        // create parent dir if it doesn't exist
-        if ((not parent.empty()) and (not exists(parent)))
-        {
-            create_directory(parent);
-        }
-
-        log::info(logcat, "Attempting to create config file for {} at file path:{}", to_string(type), confFile);
-
-        srouter::Config config{type, "", dataDir};
-        auto confStr = config.generate_config_base();
-
-        try
-        {
-            util::buffer_to_file(confFile, confStr);
-        }
-        catch (const std::exception& e)
-        {
-            throw std::runtime_error{"Failed to write config data to {}: {}"_format(confFile, e.what())};
-        }
-
-        log::info(logcat, "Generated new config (path: {})", confFile);
-    }
-
-    std::string Config::generate_config_base()
-    {
-        auto params = make_gen_params();
-
-        srouter::ConfigDefinition def{type};
-        init_config(def, *params);
-
-        return def.generate_ini_config(true);
+        defs.process();
     }
 
 }  // namespace srouter
