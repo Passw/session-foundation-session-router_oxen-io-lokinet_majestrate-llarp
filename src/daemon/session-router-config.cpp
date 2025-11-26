@@ -109,7 +109,7 @@ int main(int argc, char* argv[])
         data_dir,
         "Specify an explicit data dir to use in the config file.  If not specified, data files will be stored in "
         "$HOME/.session-router");
-    cli.add_option("-t,--testnet", testnet, "Configure to use testnet instead of the main session-router network");
+    cli.add_flag("-t,--testnet", testnet, "Configure to use testnet instead of the main session-router network");
 
     cli.add_option(
            "filename",
