@@ -10,8 +10,7 @@ if [ "$1" = configure ]; then
         chown _session:_session $datadir
 
     tmpdir=$(mktemp --tmpdir -d session-router.XXXXXXXXXX)
-    /usr/bin/session-router -g $tmpdir/client.ini
-    sed -i -e "s!#data-dir=.*!data-dir=$datadir!" $tmpdir/client.ini
+    /usr/bin/session-router-config --client --data-dir $datadir $tmpdir/client.ini
     chmod 640 $tmpdir/client.ini
     chgrp _session $tmpdir/client.ini
     ucf $tmpdir/client.ini /etc/session-router/client.ini
