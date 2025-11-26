@@ -432,14 +432,13 @@ local docs_pipeline(name, image, extra_cmds=[], allow_fail=false) = {
                   ],
                   jobs=4),
 
-  // Ubuntu
-  debian_pipeline('Ubuntu latest', docker_base + 'ubuntu-rolling'),
-  debian_pipeline('Ubuntu 24.04', docker_base + 'ubuntu-noble'),
-  debian_pipeline('Ubuntu 22.04', docker_base + 'ubuntu-jammy'),
+  debian_pipeline('Debian 11/bullseye',
+                  docker_base + 'debian-bullseye',
+                  deps=default_deps(remove='libcli11-dev')),
 
-  // Static ubuntu jammy amd64 build (upload to builds.lokinet.dev)
-  debian_pipeline('Ubuntu 22.04 static',
-                  docker_base + 'ubuntu-jammy',
+  // Static debian bullseye amd64 build (upload to builds.lokinet.dev)
+  debian_pipeline('Debian 11/bullseye static',
+                  docker_base + 'debian-bullseye',
                   deps=static_deps,
                   lto=true,
                   tests=false,
@@ -453,6 +452,11 @@ local docs_pipeline(name, image, extra_cmds=[], allow_fail=false) = {
                     './contrib/ci/drone-static-upload.sh',
                   ]),
 
+
+  // Ubuntu
+  debian_pipeline('Ubuntu latest', docker_base + 'ubuntu-rolling'),
+  debian_pipeline('Ubuntu 24.04', docker_base + 'ubuntu-noble'),
+  debian_pipeline('Ubuntu 22.04', docker_base + 'ubuntu-jammy'),
 
   // cross compile targets
   // Aug 11: these are exhibiting some dumb failures in libsodium and external deps, TOFIX later
