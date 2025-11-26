@@ -33,24 +33,23 @@ namespace srouter
     ConfigDefinition& ConfigDefinition::define_option(std::unique_ptr<OptionDefinitionBase> def)
     {
         using namespace config;
-        // If explicitly deprecated or is a {client,relay} option in a {relay,client} config then
-        // add a dummy, warning option instead of this one.
-        bool bad = def->deprecated || (type == config::Type::Relay && def->client_only)
+        // If explicitly obsolete or is a not allowed in the particular config type then add a
+        // dummy, warning option instead of this one.
+        bool bad = def->obsolete || (type == config::Type::Relay && def->client_only)
             || (type != config::Type::Relay && def->relay_only)
             || (type == config::Type::EmbeddedClient && def->no_embedded);
         if (bad)
             return define_option<std::string>(
                 def->section,
                 def->name,
-                MultiValue,
                 Hidden,
-                [deprecated = def->deprecated, type = type, opt = "[{}]:{}"_format(def->section, def->name)](
+                [obsolete = def->obsolete, type = type, opt = "[{}]:{}"_format(def->section, def->name)](
                     std::string_view) {
                     log::warning(
                         logcat,
                         "*** WARNING: The config option {} is {} and has been ignored",
                         opt,
-                        (deprecated ? "deprecated" : "invalid in {} configuration files"_format(to_string(type))));
+                        (obsolete ? "obsolete" : "invalid in {} configuration files"_format(to_string(type))));
                 });
 
         auto [sectionItr, newSect] = definitions.try_emplace(def->section);
@@ -73,56 +72,18 @@ namespace srouter
     ConfigDefinition& ConfigDefinition::add_config_value(
         std::string_view section, std::string_view name, std::string_view value)
     {
-        // see if we have an undeclared handler to fall back to in case section or section:name is
-        // absent
-        auto undItr = undeclared_handlers.find(std::string(section));
-        bool haveUndeclaredHandler = (undItr != undeclared_handlers.end());
-
-        // get section, falling back to undeclared handler if needed
         auto secItr = definitions.find(std::string(section));
         if (secItr == definitions.end())
-        {
-            // fallback to undeclared handler if available
-            if (not haveUndeclaredHandler)
-                throw std::invalid_argument{"unrecognized section [{}]"_format(section)};
-            auto& handler = undItr->second;
-            handler(section, name, value);
-            return *this;
-        }
+            throw std::invalid_argument{"unrecognized section [{}]"_format(section)};
 
         // section was valid, get definition by name
-        // fall back to undeclared handler if needed
         auto& sectionDefinitions = secItr->second;
         auto defItr = sectionDefinitions.find(std::string(name));
-        if (defItr != sectionDefinitions.end())
-        {
-            std::unique_ptr<OptionDefinitionBase>& definition = defItr->second;
-            definition->parse_value(std::string(value));
-            return *this;
-        }
-
-        if (not haveUndeclaredHandler)
+        if (defItr == sectionDefinitions.end())
             throw std::invalid_argument{"unrecognized option [{}]: {}"_format(section, name)};
 
-        auto& handler = undItr->second;
-        handler(section, name, value);
+        defItr->second->parse_value(std::string(value));
         return *this;
-    }
-
-    void ConfigDefinition::add_undeclared_handler(const std::string& section, UndeclaredValueHandler handler)
-    {
-        auto itr = undeclared_handlers.find(section);
-        if (itr != undeclared_handlers.end())
-            throw std::logic_error{"section {} already has a handler"_format(section)};
-
-        undeclared_handlers[section] = std::move(handler);
-    }
-
-    void ConfigDefinition::remove_undeclared_handler(const std::string& section)
-    {
-        auto itr = undeclared_handlers.find(section);
-        if (itr != undeclared_handlers.end())
-            undeclared_handlers.erase(itr);
     }
 
     void ConfigDefinition::add_options_validator(std::function<void()> validator)
@@ -191,15 +152,12 @@ namespace srouter
 
             visit_definitions(section, [&](const std::string& name, const std::unique_ptr<OptionDefinitionBase>& def) {
                 bool has_comment = false;
-                // TODO: as above, this will create empty objects
-                // TODO: as above (but more important): this won't handle definitions with no
-                // entries
-                //       (i.e. those handled by UndeclaredValueHandler's)
-                for (const std::string& comment : definition_comments[section][name])
-                {
-                    fmt::format_to(sect_append, "\n# {}", comment);
-                    has_comment = true;
-                }
+                if (!def->hidden)
+                    for (const std::string& comment : definition_comments[section][name])
+                    {
+                        fmt::format_to(sect_append, "\n# {}", comment);
+                        has_comment = true;
+                    }
 
                 if (useValues and def->get_number_found() > 0)
                 {

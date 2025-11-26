@@ -38,7 +38,7 @@ namespace srouter
         btdp.append("q", path_timeout);
         btdp.append("s", path_fail);
         btdp.append("t", conn_timeout);
-        btdp.append("u", last_update.count());
+        btdp.append("u", last_update.time_since_epoch().count());
         btdp.append("v", version);
     }
 
@@ -51,7 +51,7 @@ namespace srouter
             path_timeout = btdc.require<uint64_t>("q");
             path_fail = btdc.require<uint64_t>("s");
             conn_timeout = btdc.require<uint64_t>("t");
-            last_update = std::chrono::milliseconds{btdc.require<uint64_t>("u")};
+            last_update = sys_ms{std::chrono::milliseconds{btdc.require<uint64_t>("u")}};
             version = btdc.require<uint64_t>("v");
         }
         catch (...)
@@ -346,7 +346,7 @@ namespace srouter
         return true;
     }
 
-    bool Profiling::should_save(std::chrono::milliseconds now) const
+    bool Profiling::should_save(sys_ms now) const
     {
         auto dlt = now - _last_save;
         return dlt > 1min;

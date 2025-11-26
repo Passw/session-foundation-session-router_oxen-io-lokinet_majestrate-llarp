@@ -1,5 +1,7 @@
 #include "common.hpp"
 
+#include <oxenc/bt_producer.h>
+
 namespace srouter::messages
 {
 
@@ -10,8 +12,11 @@ namespace srouter::messages
         return std::move(p).str();
     }
 
-    const std::string TIMEOUT_RESPONSE = serialize_status_response("TIMEOUT");
-    const std::string ERROR_RESPONSE = serialize_status_response("ERROR");
-    const std::string OK_RESPONSE = serialize_status_response("OK");
+    const std::string OK_RESPONSE = serialize_status_response(STATUS_OK);
+    const std::string TIMEOUT_RESPONSE = serialize_status_response(STATUS_TIMEOUT);
+    const std::string ERROR_RESPONSE = serialize_status_response(STATUS_ERROR);
+    const std::string NOT_FOUND_RESPONSE = serialize_status_response(STATUS_NOT_FOUND);
+    const std::string EXPIRED_RESPONSE = serialize_status_response(STATUS_EXPIRED);
+    const std::string FUTURE_RESPONSE = serialize_status_response(STATUS_FUTURE);
 
 }  // namespace srouter::messages

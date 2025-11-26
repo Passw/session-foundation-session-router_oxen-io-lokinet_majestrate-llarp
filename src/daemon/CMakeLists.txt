@@ -1,7 +1,3 @@
-set(exetargets session-router)
-
-add_library(session_router_daemon STATIC utils.cpp)
-target_link_libraries(session_router_daemon PUBLIC libsessionrouter)
 
 if(APPLE)
   add_executable(session-router session_router.swift)
@@ -9,10 +5,19 @@ if(APPLE)
 else()
   add_executable(session-router session_router.cpp)
 endif()
+target_link_libraries(session-router PRIVATE libsessionrouter CLI11)
+enable_lto(session-router)
 
-add_executable(session-router-cntrl session-router-cntrl.cpp)
-enable_lto(session-router session-router-cntrl)
-list(APPEND exetargets session-router-cntrl)
+add_executable(session-router-cntrl session-router-cntrl.cpp utils.cpp)
+target_link_libraries(session-router-cntrl PRIVATE session-router-base CLI11)
+enable_lto(session-router-cntrl)
+
+add_executable(session-router-config session-router-config.cpp)
+target_link_libraries(session-router-config PRIVATE session-router-conf CLI11)
+enable_lto(session-router-config)
+
+set(exetargets session-router session-router-cntrl session-router-config)
+enable_lto(${exetargets})
 
 set(should_install ON)
 set(SETCAP)
@@ -43,7 +48,6 @@ foreach(exe ${exetargets})
   elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
     target_link_directories(${exe} PRIVATE /usr/local/lib)
   endif()
-  target_link_libraries(${exe} PRIVATE session_router_daemon)
   if(SROUTER_STRIP)
     add_custom_command(TARGET ${exe}
       POST_BUILD
@@ -62,9 +66,6 @@ foreach(exe ${exetargets})
     endif()
   endif()
 endforeach()
-
-target_link_libraries(session-router PRIVATE CLI11)
-target_link_libraries(session-router-cntrl PRIVATE CLI11)
 
 if(WITH_SETCAP)
   install(CODE "execute_process(COMMAND ${SETCAP} cap_net_admin,cap_net_bind_service=+eip ${CMAKE_INSTALL_PREFIX}/bin/session-router)")

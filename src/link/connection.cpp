@@ -10,10 +10,9 @@ namespace srouter::link
         : conn{std::move(c)}, datagrams{conn->datagrams()}, control_stream{std::move(s)}
     {}
 
-    void Connection::close_quietly()
+    void Connection::close(uint64_t errcode)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
-        conn->set_close_quietly();
-        conn->close_connection();
+        conn->close_connection(errcode);
     }
 }  // namespace srouter::link

@@ -12,22 +12,10 @@
 
 namespace srouter
 {
-    /// Returns true if the first argument begins with the second argument
-    inline constexpr bool starts_with(std::string_view str, std::string_view prefix)
-    {
-        return str.substr(0, prefix.size()) == prefix;
-    }
-
-    /// Returns true if the first argument ends with the second argument
-    inline constexpr bool ends_with(std::string_view str, std::string_view suffix)
-    {
-        return str.size() >= suffix.size() && str.substr(str.size() - suffix.size()) == suffix;
-    }
-
     /// removes a prefix from a string if it exists
     inline constexpr std::string_view strip_prefix(std::string_view str, std::string_view prefix)
     {
-        if (starts_with(str, prefix))
+        if (str.starts_with(prefix))
             return str.substr(prefix.size());
         return str;
     }

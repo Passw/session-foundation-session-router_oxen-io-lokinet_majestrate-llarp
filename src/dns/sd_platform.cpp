@@ -71,17 +71,19 @@ namespace srouter::dns::sd
                 "."      // global DNS root
             );
         else
-            // Only resolve .loki and .snode through Session Router (so you keep using your local DNS
+            // Only resolve .sesh/.loki/.snode through Session Router (so you keep using your local DNS
             // server for everything else, which is nicer than forcing everything though Session Router's
             // upstream DNS).
             _dbus(
                 "SetLinkDomains",
                 "ia(sb)",
                 (int32_t)if_ndx,
-                (int)2,   // array size
-                "loki",   // domain
+                (int)3,   // array size
+                "sesh",   // domain
                 (int)1,   // routing domain = true
                 "snode",  // domain
+                (int)1,   // routing domain = true
+                "loki",   // domain
                 (int)1    // routing domain = true
             );
     }

@@ -207,32 +207,27 @@ namespace srouter
     static_assert(sizeof(AlignedBuffer<24>) == 24, "AlignedBuffer should have no overhead");
     static_assert(sizeof(AlignedBuffer<8>) == 8, "AlignedBuffer should have no overhead");
 
-    struct AlignedHasher
+}  // namespace srouter
+
+namespace std
+{
+    // Hashing implementation that uses the raw data value held in an AlignedBuffer-derived class as
+    // the hash value.  This is only suitable for values that come from hashes or pubkeys where
+    // values are unlikely to be correlated.
+    template <size_t sz>
+    struct hash<srouter::AlignedBuffer<sz>>
     {
-        // Hashing implementation that uses the raw data value held in an AlignedBuffer-derived
-        // class as the hash value.  This is only suitable for values that come from hashes or
-        // pubkeys where values are unlikely to be correlated.
-        template <typename T>
-            requires std::is_base_of_v<AlignedBuffer<sizeof(T)>, T>
-        std::size_t operator()(const T& buf) const noexcept
+        std::size_t operator()(const srouter::AlignedBuffer<sz>& buf) const noexcept
         {
-            if constexpr (alignof(T) >= sizeof(size_t))
+            if constexpr (alignof(srouter::AlignedBuffer<sz>) >= sizeof(size_t))
                 return *reinterpret_cast<const size_t*>(buf.data());
             else
             {
                 std::size_t h;
-                static_assert(T::SIZE >= sizeof(h));
+                static_assert(srouter::AlignedBuffer<sz>::SIZE >= sizeof(h));
                 std::memcpy(&h, buf.data(), sizeof(h));
                 return h;
             }
         }
     };
-
-}  // namespace srouter
-
-namespace std
-{
-    template <size_t sz>
-    struct hash<srouter::AlignedBuffer<sz>> : srouter::AlignedHasher
-    {};
 }  // namespace std
