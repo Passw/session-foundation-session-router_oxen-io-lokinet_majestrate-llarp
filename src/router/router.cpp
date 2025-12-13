@@ -371,44 +371,45 @@ namespace srouter
                 netconf._if_name = net()->find_free_tun(suggest);
             }
 
-            if (!(netconf._local_ip_net && netconf._local_ip_net->ip.addr))
+            if (netconf.ipv4_autoselect())
             {
-                // If we are running as a service node *and* don't have an explicit local ip range
-                // set, then we introduce a small random delay here in startup, to help avoid cases
-                // where multiple session-routers start at the same time (e.g. in a multi-SN setup)
-                // and race to assign the same "free" IP range on the tun device, but end up with
-                // duplicate ranges on multiple tun devices.  We detect (and abort startup) if that
-                // happens, but the extra sleep here spaces them out to lower the chance of hitting
-                // that.
-                if (is_service_node)
-                    std::this_thread::sleep_for(
-                        uniform_duration_distribution<std::chrono::nanoseconds>{0ms, 25ms}(csrng));
+                if (!netconf._reserved_local_ipv4.empty())
+                    throw std::runtime_error{"[network]:mapaddr cannot be used with automatic IPv4 range selection"};
+                log::info(logcat, "Session Router IPv4 local network will be auto-selected");
 
-                if (auto maybe = net()->find_free_ipv4_net(netconf._local_ip_net ? netconf._local_ip_net->mask : 16))
-                    netconf._local_ip_net = std::move(*maybe);
-                else
-                    throw std::runtime_error("cannot find free IPv4 address range!");
+                if (!netconf._local_ip_net)
+                    netconf._local_ip_net.emplace().mask = 16;
             }
-            log::info(logcat, "Session Router IPv4 local network is {}", *netconf._local_ip_net);
-
-            if (!netconf._local_ipv6_net || (!netconf._local_ipv6_net->ip.hi && !netconf._local_ipv6_net->ip.lo))
+            else
             {
-                if (auto maybe =
-                        net()->find_free_ipv6_net(netconf._local_ipv6_net ? netconf._local_ipv6_net->mask : 64))
-                    netconf._local_ipv6_net = std::move(*maybe);
-                else
-                    throw std::runtime_error("cannot find free IPv6 address range!");
-            }
-            log::info(logcat, "Session Router IPv6 local network is {}", *netconf._local_ipv6_net);
+                assert(netconf._local_ip_net);
+                log::info(logcat, "Session Router IPv4 local network is {}", *netconf._local_ip_net);
 
-            // Make sure any reserved addresses are within our local network range:
-            std::erase_if(netconf._reserved_local_ipv4, [&netconf](const auto& addr_ip) {
-                return !netconf._local_ip_net->contains(addr_ip.second);
-            });
-            if (netconf._local_ipv6_net)
+                // Config should have already verified this, but just in case:
+                std::erase_if(netconf._reserved_local_ipv4, [&netconf](const auto& addr_ip) {
+                    return !netconf._local_ip_net->contains(addr_ip.second);
+                });
+            }
+
+            if (netconf.ipv6_autoselect())
+            {
+                if (!netconf._reserved_local_ipv6.empty())
+                    throw std::runtime_error{"[network]:mapaddr cannot be used with automatic IPv4 range selection"};
+                log::info(logcat, "Session Router IPv6 local network will be auto-selected");
+
+                if (!netconf._local_ipv6_net)
+                    netconf._local_ipv6_net.emplace().mask = 64;
+            }
+            else
+            {
+                assert(netconf._local_ipv6_net);
+                log::info(logcat, "Session Router IPv6 local network is {}", *netconf._local_ipv6_net);
+
+                // Config should have already verified this, but just in case:
                 std::erase_if(netconf._reserved_local_ipv6, [&netconf](const auto& addr_ip) {
                     return !netconf._local_ipv6_net->contains(addr_ip.second);
                 });
+            }
         }
 
         if (not is_service_node)
@@ -554,6 +555,9 @@ namespace srouter
 #else
             log::debug(logcat, "Initializing TUN device");
             _tun = _loop->make_shared<handlers::TunEndpoint>(*this);
+
+            log::info(logcat, "Session Router IPv4 local network is {}", _tun->get_ipv4_network());
+            log::info(logcat, "Session Router IPv6 local network is {}", _tun->get_ipv6_network());
 
             // only (full) clients should have DNS, relays have no need for it
             if (!is_service_node)

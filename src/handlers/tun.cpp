@@ -4,6 +4,7 @@
 #include <oxenc/base32z.h>
 #include <oxenc/endian.h>
 
+#include <chrono>
 #include <span>
 #include <variant>
 #ifndef _WIN32
@@ -39,12 +40,32 @@ namespace srouter::handlers
 
         _if_name = net_conf._if_name.value_or("");
 
-        // These should have been assigned by Router before this:
+        // These should have been assigned by Router before this; they might, however, still be
+        // quad-0 or :: to indicate autoselection of an unused range.
         assert(net_conf._local_ip_net);
         assert(net_conf._local_ipv6_net);
 
-        _local_net = *net_conf._local_ip_net;
-        _local_ipv6_net = *net_conf._local_ipv6_net;
+        vpn::InterfaceInfo info;
+        info.ifname = _if_name;
+        info.addrs.emplace_back(*net_conf._local_ip_net);
+        info.addrs.emplace_back(*net_conf._local_ipv6_net);
+
+        log::debug(logcat, "{} setting up network...", name());
+
+        _net_if = router().vpn_platform()->create_interface(std::move(info), &_router);
+        _if_name = _net_if->interface_info().ifname;
+
+        log::info(logcat, "{} got network interface:{}", name(), _if_name);
+
+        // Load the addresses out of the interface, *not* the config, because the interface
+        // construction will have done auto-selection for any 0 addresses:
+        for (auto& addr : _net_if->interface_info().addrs)
+        {
+            if (auto* n4 = std::get_if<ipv4_net>(&addr))
+                _local_net = *n4;
+            else
+                _local_ipv6_net = std::get<ipv6_net>(addr);
+        }
 
 #if 0
         if (net_conf.addr_map_persist_file)
@@ -92,21 +113,6 @@ namespace srouter::handlers
         log::debug(logcat, "Tun constructing IPRange iterator on local networks: {}, {}", _local_net, _local_ipv6_net);
         _local_range_iterator = IPRangeIterator{_local_net};
         _local_ipv6_range_iterator = IPv6RangeIterator{_local_ipv6_net};
-
-        vpn::InterfaceInfo info;
-        info.ifname = _if_name;
-        info.addrs.emplace_back(_local_net);
-        info.addrs.emplace_back(_local_ipv6_net);
-
-        log::debug(logcat, "{} setting up network...", name());
-
-        log::info(logcat, "{} using IPv4 address range {}", name(), _local_net);
-        log::info(logcat, "{} using IPv6 address range {}", name(), _local_ipv6_net);
-
-        _net_if = router().vpn_platform()->create_interface(std::move(info), &_router);
-        _if_name = _net_if->interface_info().ifname;
-
-        log::info(logcat, "{} got network interface:{}", name(), _if_name);
     }
 
     static const auto random_snode = "random.{}"_format(RELAY_TLD);
