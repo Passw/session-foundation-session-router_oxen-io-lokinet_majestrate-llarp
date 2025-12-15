@@ -185,6 +185,9 @@ namespace srouter
         std::optional<ipv4_net> _local_ip_net;
         std::optional<ipv6_net> _local_ipv6_net;
 
+        bool ipv4_autoselect() const { return !_local_ip_net || !_local_ip_net->ip.addr; }
+        bool ipv6_autoselect() const { return !_local_ipv6_net || !(_local_ipv6_net->ip.hi || _local_ipv6_net->ip.lo); }
+
         // Remote exit or hidden service addresses mapped to fixed local IP addresses
         // TODO:
         //  - load directly into TunEndpoint mapping

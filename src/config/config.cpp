@@ -672,6 +672,31 @@ namespace srouter
                 }
             });
 
+        conf.add_options_validator([this] {
+            if (!_reserved_local_ipv4.empty())
+            {
+                if (ipv4_autoselect())
+                    throw std::invalid_argument{"[network]:mapaddr requires an IPv4 range for [network]:ifaddr"};
+
+                for (const auto& [netaddr, ip] : _reserved_local_ipv4)
+                    if (!_local_ip_net->contains(ip))
+                        throw std::invalid_argument{
+                            "Invalid [network]:mapaddr mapping: {} is not within the configured IPv4 range {}"_format(
+                                ip, *_local_ip_net)};
+            }
+            if (!_reserved_local_ipv6.empty())
+            {
+                if (ipv6_autoselect())
+                    throw std::invalid_argument{"[network]:mapaddr requires an IPv6 range for [network]:ifaddr"};
+
+                for (const auto& [netaddr, ip] : _reserved_local_ipv6)
+                    if (!_local_ipv6_net->contains(ip))
+                        throw std::invalid_argument{
+                            "Invalid [network]:mapaddr mapping: {} is not within the configured IPv6 range {}"_format(
+                                ip, *_local_ipv6_net)};
+            }
+        });
+
         conf.define_option<int>(
             "network",
             "expired-address-cache",
