@@ -30,6 +30,7 @@ if(SUBMODULE_CHECK)
     check_submodule(oxen-mq)
     check_submodule(pybind11)
     check_submodule(sqlite_orm)
+    check_submodule(leancrypto)
   endif()
 endif()
 
@@ -134,4 +135,60 @@ if(WITH_LIBCRYPT)
 else()
   # TODO static build lib crypt?
   message(STATUS "not building with libcrypt")
+endif()
+
+
+# Leancrypto is a bit more difficult as it doesn't have a cmake build system (but rather uses
+# meson), and so we need to build it using ExternalProject rather than a submodule.
+#
+# Once libcrypto is commonly packaged this could move into StaticBuild.cmake rather than as a
+# submodule, but currently it needs to be built on most platforms and so we don't want a full static
+# dep build to be necessary to build.
+if(NOT TARGET leancrypto::leancrypto)
+  option(FORCE_LEANCRYPTO_SUBMODULE "force building leancrypto from submodule" OFF)
+  if(NOT BUILD_STATIC_DEPS AND NOT FORCE_LEANCRYPTO_SUBMODULE AND NOT FORCE_ALL_SUBMODULES)
+    pkg_check_modules(LEANCRYPTO leancrypto>=1.4.0 IMPORTED_TARGET)
+  endif()
+  if(LEANCRYPTO_FOUND)
+    add_library(leancrypto INTERFACE)
+    target_link_libraries(leancrypto INTERFACE PkgConfig::LEANCRYPTO)
+    message(STATUS "Found system leancrypto ${LEANCRYPTO_VERSION}")
+  else()
+    message(STATUS "building leancrypto from external/leancrypto")
+
+    set(more_opts)
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.20")
+      list(APPEND more_opts CONFIGURE_HANDLED_BY_BUILD TRUE)
+    endif()
+
+    set(LEANCRYPTO_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/leancrypto)
+    set(LEANCRYPTO_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/leancrypto-build)
+    set(LEANCRYPTO_INST_DIR ${CMAKE_CURRENT_BINARY_DIR}/leancrypto)
+    include(ExternalProject)
+    ExternalProject_Add(
+      leancrypto_pqc
+      SOURCE_DIR ${LEANCRYPTO_SRC_DIR}
+      BINARY_DIR ${LEANCRYPTO_BUILD_DIR}
+      CONFIGURE_COMMAND
+      ${CMAKE_COMMAND} -E env "CC=${CMAKE_C_COMPILER}" "CFLAGS=${CMAKE_C_FLAGS}"
+      ${LEANCRYPTO_SRC_DIR}/build-scripts/pqc-only.sh --default-library=static
+      --buildtype=release
+      --prefix=${LEANCRYPTO_INST_DIR} --libdir=lib
+        ${LEANCRYPTO_SRC_DIR}
+      BUILD_COMMAND
+        meson compile -C build-pqc-only
+      INSTALL_COMMAND
+        meson install -C build-pqc-only
+        BUILD_BYPRODUCTS ${LEANCRYPTO_INST_DIR}/lib/libleancrypto.a
+      ${more_opts}
+    )
+  endif()
+  add_library(leancrypto_static STATIC IMPORTED GLOBAL)
+  add_dependencies(leancrypto_static leancrypto_pqc)
+  set_target_properties(leancrypto_static PROPERTIES
+    IMPORTED_LOCATION ${LEANCRYPTO_INST_DIR}/lib/libleancrypto.a
+    INTERFACE_INCLUDE_DIRECTORIES ${LEANCRYPTO_INST_DIR}/include)
+  add_library(leancrypto INTERFACE)
+  target_link_libraries(leancrypto INTERFACE leancrypto_static)
+  add_library(leancrypto::leancrypto ALIAS leancrypto)
 endif()
