@@ -60,12 +60,12 @@ endmacro()
 system_or_submodule(OXENC oxenc oxenc::oxenc liboxenc>=1.5.0 oxen-libquic/external/oxen-encoding)
 
 # oxen-logging
+add_library(oxen-logging-fmt-spdlog INTERFACE)
 if (NOT TARGET oxen::logging)
     if(BUILD_STATIC_DEPS)
         set(OXEN_LOGGING_FORCE_SUBMODULES ON CACHE INTERNAL "")
     endif()
     system_or_submodule(OXENLOGGING oxen-logging oxen::logging liboxen-logging>=1.2.0 oxen-libquic/external/oxen-logging)
-    add_library(oxen-logging-fmt-spdlog INTERFACE)
     target_link_libraries(oxen-logging-fmt-spdlog INTERFACE oxen::logging)
     if(OXENLOGGING_FOUND)
         # If we load oxen-logging via system lib then we won't necessarily have fmt/spdlog targets,
@@ -73,6 +73,8 @@ if (NOT TARGET oxen::logging)
         include(oxen-libquic/external/oxen-logging/cmake/load_fmt_spdlog.cmake)
         target_link_libraries(oxen-logging-fmt-spdlog INTERFACE ${OXEN_LOGGING_FMT_TARGET} ${OXEN_LOGGING_SPDLOG_TARGET})
     endif()
+else()
+    target_link_libraries(oxen-logging-fmt-spdlog INTERFACE oxen::logging)
 endif()
 
 if(SROUTER_FULL)
