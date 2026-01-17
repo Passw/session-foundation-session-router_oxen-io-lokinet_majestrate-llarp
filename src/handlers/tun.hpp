@@ -7,16 +7,6 @@
 #include "vpn/packet_router.hpp"
 #include "vpn/platform.hpp"
 
-namespace srouter::traffic_type
-{
-    constexpr uint8_t UDP = 0;
-    constexpr uint8_t TCP = 1;
-    constexpr uint8_t RAW = 2;
-    constexpr uint8_t TUNNELED_QUIC = 3;
-
-    inline constexpr bool is_valid(uint8_t t) { return t >= UDP && t <= TUNNELED_QUIC; }
-}  // namespace srouter::traffic_type
-
 namespace srouter::handlers
 {
     inline constexpr auto TUN = "tun"sv;
@@ -87,7 +77,7 @@ namespace srouter::handlers
         void rewrite_and_send_packet(IPPacket&& pkt, const ipv4& src, const ipv4& dest);
         void rewrite_and_send_packet(IPPacket&& pkt, const ipv6& src, const ipv6& dest);
 
-        void handle_inbound_packet(IPPacket pkt, uint8_t type, NetworkAddress remote);
+        void handle_inbound_packet(IPPacket pkt, traffic_type type, NetworkAddress remote);
 
         // Handles an inbound packet coming IN from the network
         // bool handle_inbound_packet(IPPacket pkt, NetworkAddress remote, bool is_exit_session, bool

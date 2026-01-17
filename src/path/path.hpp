@@ -1,13 +1,11 @@
 #pragma once
 
+#include "address/types.hpp"
 #include "constants/path.hpp"
-#include "contact/client_contact.hpp"
+#include "contact/client_intro.hpp"
 #include "contact/relay_contact.hpp"
-#include "crypto/types.hpp"
+#include "crypto/crypto.hpp"
 #include "transit_hop.hpp"
-#include "util/aligned.hpp"
-#include "util/compare_ptr.hpp"
-#include "util/thread/threading.hpp"
 #include "util/time.hpp"
 
 #include <chrono>
@@ -53,6 +51,25 @@ namespace srouter::path
         bool ok() { return !timed_out && !error; }
     };
 
+    // The constant "type" values that we put on the end of control (stream) and data
+    // (datagram) messages.  Data message can overlap since it comes on a different channel
+    enum struct MessageType : unsigned char
+    {
+        Data = 0x01,
+
+        CONTROL_MIN = 0x01,
+        // Regular, session-encrypted control message:
+        Control = 0x01,
+        // Path switch messages, which are essentially a Control and a SessionHandshake session init
+        // message bundled together:
+        PathSwitch = 0x02,
+        // Session handshake control messages, which are exchanged before establishing Session keys
+        // and thus manage their own encryption (see session/session.hpp).  If this arrives with a
+        // session tag of 0 it is a session init, otherwise a session accept.
+        SessionHandshake = 0x03,
+        CONTROL_MAX = 0x03,
+    };
+
     class Path final : public std::enable_shared_from_this<Path>
     {
       public:
@@ -96,7 +113,7 @@ namespace srouter::path
         bool is_expired(sys_ms now = srouter::time_now_ms()) const { return _expiry < now; }
 
         void resolve_sns(
-            std::span<const std::byte, SHORTHASHSIZE> name_hash, std::function<void(path_control_response)> func);
+            std::span<const std::byte, 32> name_hash, std::function<void(path_control_response)> func);
 
         void fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func);
 
@@ -108,19 +125,13 @@ namespace srouter::path
         void publish_client_contact(
             std::string_view enc_cc, int location, std::function<void(path_control_response)> func);
 
-        // The constant "type" values that we put on the end of control (stream) and data
-        // (datagram) messages.  Data message can overlap since it comes on a different channel
-        static constexpr std::byte DATA_MESSAGE_TYPE{0x01};
-        static constexpr std::byte CONTROL_MESSAGE_TYPE{0x01};
-        static constexpr std::byte PATH_SWITCH_MESSAGE_TYPE{0x02};
-
         void send_path_data_message(std::vector<std::byte>&& body, SymmNonce&& nonce = SymmNonce::make_random());
 
         void send_path_control_message(
             std::string_view method, std::span<const std::byte> body, std::function<void(path_control_response)> func);
 
         void send_session_control_message(
-            std::vector<std::byte>&& body, SymmNonce&& nonce, std::byte type = CONTROL_MESSAGE_TYPE);
+            std::vector<std::byte>&& body, SymmNonce&& nonce, MessageType type = MessageType::Control);
 
         // The overhead added to encrypted path messages (either data messages or path control
         // messages) by the `encrypt_path_message` function.  This is the amount that the
@@ -129,7 +140,7 @@ namespace srouter::path
         // allocations.
         inline static constexpr size_t ENCRYPT_PATH_MESSAGE_OVERHEAD = SymmNonce::SIZE + HopID::SIZE + 1;
         inline static constexpr size_t ENCRYPT_PATH_MESSAGE_OVERHEAD_MAC =
-            ENCRYPT_PATH_MESSAGE_OVERHEAD + crypto::MAC_SIZE;
+            ENCRYPT_PATH_MESSAGE_OVERHEAD + crypto::TAG_SIZE;
 
         // Takes a payload and encrypts and extends it in-place to make it suitable for sending
         // down either the datagram channel (carrying traffic) or stream (carrying network
@@ -149,7 +160,7 @@ namespace srouter::path
         // may need to change the fundamental structure of encrypted data, or send different
         // types of data)
         void encrypt_path_message(
-            std::vector<std::byte>& payload, SymmNonce&& nonce, std::byte type, bool with_mac = false);
+            std::vector<std::byte>& payload, SymmNonce&& nonce, MessageType type, bool with_mac = false);
 
         std::string decrypt_path_message(std::string_view payload);
 

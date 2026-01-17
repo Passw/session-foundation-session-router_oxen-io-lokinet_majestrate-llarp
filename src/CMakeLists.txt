@@ -15,7 +15,7 @@ session_router_add_library(session-router-cryptography
   crypto/crypto.cpp
   crypto/key_manager.cpp
   crypto/keys.cpp
-  crypto/types.cpp
+  crypto/session_keys.cpp
 )
 
 if(SROUTER_FULL)
@@ -71,6 +71,7 @@ endif()
 # config, crypto, timeplace, nodedb, net, router
 session_router_add_library(session-router-utils
   ${CMAKE_CURRENT_BINARY_DIR}/constants/version.cpp
+  util/cleared.cpp
   util/file.cpp
   util/logging.cpp
   util/str.cpp
@@ -254,6 +255,8 @@ if(SROUTER_FULL)
 endif()
 
 target_link_libraries(session-router-cryptography
+  PRIVATE
+  leancrypto::leancrypto
   PUBLIC
   session-router-libcrypt
 )

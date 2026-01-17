@@ -5,17 +5,21 @@
 #include "handlers/tun.hpp"
 #include "link/endpoint.hpp"
 #include "net/policy.hpp"
+#include "nodedb.hpp"
+#include "path/path.hpp"
 #include "path/transit_hop.hpp"
 #include "router/router.hpp"
 #include "util/bspan.hpp"
 #include "util/formattable.hpp"
 #include "util/random.hpp"
 #include "util/time.hpp"
+#include "util/underlying.hpp"
 
 #include <nlohmann/json.hpp>
 #include <oxen/quic/context.hpp>
 #include <oxen/quic/gnutls_crypto.hpp>
 #include <oxen/quic/udp.hpp>
+#include <oxenc/bt_serialize.h>
 #include <oxenc/endian.h>
 #include <oxenc/hex.h>
 
@@ -265,25 +269,110 @@ namespace srouter::session
         }
     };
 
-    void InboundSession::init(std::vector<std::byte>&& request)
+    void InboundSession::init(std::span<const std::byte> request)
     {
         oxenc::bt_dict_consumer outer_btdc{request};
+
+        // Pre-1.1.0 Session router: we do basic DH to establish a bidirectional shared secret,
+        // which isn't PFS and doesn't use PQ.
+        //
+        // Starting in 1.1.0 we have a session handshake to establish a PFS, MLKEM+X25519.  For now,
+        // we support either one (so as to not break existing 1.0.x clients), but once the full SN
+        // network is running 1.1.0+ we can drop the old code.
+        //
+        // 1.1.0 is identified by having an "" (empty string) key containing the value 1 (whereas
+        // 1.0.x omits this key).
+        //
+        // A 1.1+ client will only attempt 1.1+ initialization to a router or introset indicating
+        // 1.1+ versioning, so we only have to do fallback for 1.0 containing 1.1, but not 1.1
+        // contacting 1.0.
+
+        if (!outer_btdc.skip_until(""))
+        {
+            init_legacy(outer_btdc);
+            return;
+        }
+
+        auto ver = outer_btdc.consume_integer<int>();
+        if (ver != 1)
+            throw std::runtime_error{"Invalid/unsupported session handshake v{}"_format(ver)};
+
+        auto box = outer_btdc.require_span<std::byte>("B");
+
+        auto inner = _r.secret_key().unseal_box(box);
+        oxenc::bt_dict_consumer inner_btdc{inner};
+
+        X25519PubKey remote_eph_xpk;
+        MLKEM768PubKey remote_eph_mlkem;
+
+        _remote.pubkey.assign(inner_btdc.require_span<std::byte, RouterID::SIZE>("I"));
+        _remote.is_client = true;  // Only clients can initiate sessions
+
+        remote_eph_mlkem.assign(inner_btdc.require_span<std::byte, MLKEM768PubKey::SIZE>("M"));
+        remote_eph_xpk.assign(inner_btdc.require_span<std::byte, X25519PubKey::SIZE>("X"));
+
+        _remote_pivot_txid.assign(inner_btdc.require_span<std::byte, HopID::SIZE>("p"));
+        _outbound_tag = inner_btdc.require<session_tag>("t");
+
+        inner_btdc.require_signature("~", [this](std::span<const std::byte> msg, std::span<const std::byte> sig) {
+            if (sig.size() != Signature::SIZE)
+                throw std::runtime_error{fmt::format("Invalid signature: not {} bytes", Signature::SIZE)};
+
+            if (not _remote.pubkey.verify(msg, SignatureView{sig.first<Signature::SIZE>()}))
+                throw std::runtime_error{"Failed to verify session_init identity signature"};
+        });
+
+        inner_btdc.finish();
+
+        auto local_eph_x = X25519KeyPair::generate();
+
+        auto [mlct, mlss] = remote_eph_mlkem.encapsulate();
+
+        _inbound_tag = _parent.next_tag();
+
+        std::tie(_inbound_key.emplace(), _outbound_key.emplace()) = session_secret(
+            _remote.pubkey,
+            _r.id(),
+            local_eph_x,
+            remote_eph_xpk,
+            /*is_initiator=*/false,
+            mlss,
+            remote_eph_mlkem,
+            _outbound_tag,
+            _inbound_tag);
+
+        // We now have PFSsession keys, but we still need to pass back some data to the initiator
+        // so that it can construct the same keys:
+
+        oxenc::bt_dict_producer accept;
+        accept.append("Y", local_eph_x.pub.span());
+        accept.append("c", mlct.span());
+        accept.append("t", _inbound_tag);
+        accept.append_signature("~", [this](std::span<const std::byte> data) { return _r.secret_key().sign(data); });
+
+        _accept_msg = std::move(accept).str();
+        _old_accept = false;
+    }
+
+    void InboundSession::init_legacy(oxenc::bt_dict_consumer& outer_btdc)
+    {
         PubKey eph_pubkey;
         SymmNonce dh_nonce;
+
         eph_pubkey.assign(outer_btdc.require_span<std::byte, PubKey::SIZE>("k"));
         dh_nonce.assign(outer_btdc.require_span<std::byte, SymmNonce::SIZE>("n"));
-
-        // this is a bit ugly, but bt_dict_consumer only gives const spans/views, and
-        // it is safe here to have non-const and avoid a copy.
-        auto inner_payload_const = outer_btdc.require_span<std::byte>("x");
-        std::span<std::byte> inner_payload{
-            const_cast<std::byte*>(inner_payload_const.data()), inner_payload_const.size()};
+        auto inner_payload = outer_btdc.require_span<std::byte>("x");
         outer_btdc.finish();
 
         crypto::dh_server(_shared_secret, eph_pubkey, _r.secret_key(), dh_nonce);
         auto decrypted = crypto::xchacha20_poly1305_decrypt(inner_payload, _shared_secret, dh_nonce);
+        if (!decrypted)
+            throw std::runtime_error{"Session init decryption failed"};
 
-        oxenc::bt_dict_consumer inner_btdc{decrypted};
+        // Some of this is shared with the non-legacy code above, but just leave it duplicated
+        // because this code is to be deleted soon.
+
+        oxenc::bt_dict_consumer inner_btdc{*decrypted};
         RouterID remote_rid;
         remote_rid.assign(inner_btdc.require_span<std::byte, RouterID::SIZE>("i"));
         _remote = {remote_rid, true};
@@ -291,14 +380,19 @@ namespace srouter::session
         _outbound_tag = inner_btdc.require<session_tag>("t");
 
         inner_btdc.require_signature("~", [remote_rid](std::span<const std::byte> msg, std::span<const std::byte> sig) {
-            if (sig.size() != SIGSIZE)
-                throw std::runtime_error{fmt::format("Invalid signature: not {} bytes", SIGSIZE)};
+            if (sig.size() != Signature::SIZE)
+                throw std::runtime_error{fmt::format("Invalid signature: not {} bytes", Signature::SIZE)};
 
-            if (not crypto::verify(remote_rid, msg, sig.first<SIGSIZE>()))
+            if (not remote_rid.verify(msg, SignatureView{sig.first<Signature::SIZE>()}))
                 throw std::runtime_error{"Failed to verify session_init identity signature"};
         });
         inner_btdc.finish();
         _inbound_tag = _parent.next_tag();
+
+        oxenc::bt_dict_producer btdp;
+        btdp.append("t", _inbound_tag);
+        _accept_msg = std::move(btdp).str();
+        _old_accept = true;
     }
 
     Session::Session(
@@ -333,25 +427,38 @@ namespace srouter::session
 
     void Session::update_active() { last_activity = srouter::time_now_ms(); }
 
-    bool Session::send_session_control_message(std::string_view method, std::span<const std::byte> body)
+    void Session::send_session_control_message(std::string_view method, std::span<const std::byte> body)
     {
         if (!_is_established)
         {
             log::warning(logcat, "Session not yet established: should not send control messages yet.");
-            return false;
+            return;
         }
         if (_dead_path)
         {
             log::warning(logcat, "Dropping session control message: session has no current path");
-            return false;
+            return;
         }
 
         oxenc::bt_dict_producer btdp;
         btdp.append("e", method);
         btdp.append("p", body);
-        send_session_data_message(std::move(btdp).span<std::byte>(), 0, true);
+        if (auto message = make_session_message(btdp.span<std::byte>(), std::nullopt))
+            send_path_control_message(
+                std::move(message->first), std::move(message->second), path::MessageType::Control);
+    }
 
-        return true;
+    void Session::send_session_precontrol_message(std::span<const std::byte> body, path::MessageType mtype)
+    {
+        assert(mtype != path::MessageType::Control);
+        if (_dead_path)
+        {
+            log::warning(logcat, "Dropping session control message: session has no current path");
+            return;
+        }
+
+        if (auto message = make_session_message(body, std::nullopt, /*encrypt=*/false))
+            send_path_control_message(std::move(message->first), std::move(message->second), mtype);
     }
 
     void Session::recv_session_control_message(
@@ -361,20 +468,20 @@ namespace srouter::session
     {
         last_inbound_activity = srouter::time_now_ms();
         update_active();
-        auto decrypted = crypto::xchacha20_poly1305_decrypt(message, _shared_secret, nonce);
-        if (decrypted.size() == 0)
+        auto decrypted = crypto::xchacha20_poly1305_decrypt_inplace(message, _shared_secret, nonce);
+        if (!decrypted)
         {
             log::warning(logcat, "Received unauthenticated session message on session from {}", _remote);
             return;
         }
-        auto btdc = oxenc::bt_dict_consumer{decrypted};
+        auto btdc = oxenc::bt_dict_consumer{*decrypted};
 
         auto method = btdc.require<std::string_view>("e"sv);
         auto params = btdc.require<std::span<const std::byte>>("p"sv);
         log::debug(logcat, "Received session control message for {} of type {}", _remote, method);
 
         if (method == "session_accept"sv)
-            handle_session_accept(params);
+            handle_session_accept_deprecated(params);
         else if (method == "session_close")
             recv_close();
         else if (method == "publish_cc"sv)
@@ -430,37 +537,28 @@ namespace srouter::session
         _remote_pivot_txid = std::move(pivot);
     }
 
-    void Session::send_session_data_message(std::span<const std::byte> data, net::IPProtocol proto)
+    void Session::send_session_data_message(std::span<const std::byte> data, traffic_type type)
     {
-        uint8_t type;
-        if (proto == net::IPProtocol::UDP)
-            type = traffic_type::UDP;
-        else if (proto == net::IPProtocol::TCP)
-            type = traffic_type::TCP;
-        else
-            type = traffic_type::RAW;
-
-        return send_session_data_message(data, type);
+        if (!_is_established)
+        {
+            log::debug(logcat, "Session not yet established: queuing packet for delayed delivery");
+            queue_data_message(data, type);
+        }
+        else if (auto maybe_message = make_session_message(data, type))
+            send_path_data_message(std::move(maybe_message->first), std::move(maybe_message->second));
     }
 
     // TODO FIXME: we could make this take a vector&& as input, and then provide a
     // SESSION_DATA_MESSAGE constant that callers can use to reserve the needed extra storage before
     // moving the vector into here.
-    std::optional<std::pair<std::vector<std::byte>, SymmNonce>> Session::make_session_data_message(
-        std::span<const std::byte> data, uint8_t type, bool control, bool init, SymmNonce nonce)
+    std::optional<std::pair<std::vector<std::byte>, SymmNonce>> Session::make_session_message(
+        std::span<const std::byte> data, std::optional<traffic_type> data_type, bool encrypt)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-        if (!_is_established and !init)
-        {
-            log::debug(logcat, "Session not yet established: queuing packet for delayed delivery");
-            queue_data_message(data, type);
-            return std::nullopt;
-        }
-
         if (_dead_path)
         {
-            log::warning(logcat, "Dropping session data message: session has no current path");
+            log::warning(logcat, "Dropping session message: session has no current path");
             return std::nullopt;
         }
 
@@ -569,45 +667,35 @@ namespace srouter::session
         // closely resembling path data down the "back" path of two aligned paths.
         const bool relay_session_return = !is_outbound && is_relay_session;
 
-        auto tag = init ? 0 : _outbound_tag;
-
         // control messages do not append a "type" byte like datagrams
-        // session init messages are already encrypted and encoded, so no mac here
-        size_t chacha_size_with_mac = data.size() + (control ? 0 : 1) + (init ? 0 : crypto::MAC_SIZE);
+        // session init messages are already encrypted and encoded, so no tag to append
+        size_t chacha_size_with_mac = data.size() + (data_type ? 1 : 0) + (encrypt ? crypto::TAG_SIZE : 0);
         std::vector<std::byte> everything;
-        auto target_size = chacha_size_with_mac + sizeof(tag) + (relay_session_return ? 0 : _remote_pivot_txid.size());
+        auto target_size =
+            chacha_size_with_mac + sizeof(_outbound_tag) + (relay_session_return ? 0 : _remote_pivot_txid.size());
+        // Once we're done with the session part of this message it still gets encrypted at the path
+        // layer, so reserve enough space for the data the path encryption needs to append:
         everything.reserve(target_size + path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD);
         everything.resize(target_size);
-        auto [ciphertext, tag_span, pivot] = split_span(everything, chacha_size_with_mac, sizeof(tag));
+
+        auto [ciphertext, tag_span, pivot] = split_span(everything, chacha_size_with_mac, sizeof(_outbound_tag));
         assert(pivot.size() == (relay_session_return ? 0 : _remote_pivot_txid.size()));
 
         std::memcpy(ciphertext.data(), data.data(), data.size());
-        if (!control)
-            ciphertext[data.size()] = static_cast<std::byte>(type);
-        oxenc::write_host_as_big(tag, tag_span.data());
+        if (data_type)
+            ciphertext[data.size()] = static_cast<std::byte>(*data_type);
+        oxenc::write_host_as_big(_outbound_tag, tag_span.data());
         if (!relay_session_return)
             std::memcpy(pivot.data(), _remote_pivot_txid.data(), pivot.size());
 
-        if (!init)
-            crypto::xchacha20_poly1305_encrypt(ciphertext, _shared_secret, nonce);
-        return std::make_pair(std::move(everything), std::move(nonce));
+        auto result = std::make_optional<std::pair<std::vector<std::byte>, SymmNonce>>(
+            std::move(everything), SymmNonce::make_random());
+        if (encrypt)
+            crypto::xchacha20_poly1305_encrypt_inplace(ciphertext, _shared_secret, result->second);
+        return result;
     }
 
-    void Session::send_session_data_message(std::span<const std::byte> data, uint8_t type, bool control, bool init)
-    {
-        auto maybe_message = make_session_data_message(data, type, control, init);
-        if (!maybe_message)
-            return;
-
-        auto& everything = (*maybe_message).first;
-        auto& nonce = (*maybe_message).second;
-        if (control)
-            send_path_control_message(std::move(everything), std::move(nonce), false);
-        else
-            send_path_data_message(std::move(everything), std::move(nonce));
-    }
-
-    void OutboundSession::queue_data_message(std::span<const std::byte> data, uint8_t type)
+    void OutboundSession::queue_data_message(std::span<const std::byte> data, traffic_type type)
     {
         update_active();
         if (!pre_establish_data_queue)
@@ -628,20 +716,30 @@ namespace srouter::session
         update_active();
         if (data.empty())
         {
-            log::error(logcat, "received empty session data message!");
+            log::warning(logcat, "received empty session data message!");
             return;
         }
 
-        // FIXME: maybe this decrypt should return the size of the now-cleartext part of the
-        //        buffer instead of a span?
-        auto dspan = crypto::xchacha20_poly1305_decrypt(data, _shared_secret, nonce);
-        data.resize(dspan.size());
-
-        uint8_t dgram_type = std::to_integer<uint8_t>(data.back());
-        data.pop_back();
-        if (!traffic_type::is_valid(dgram_type))
+        auto dspan = crypto::xchacha20_poly1305_decrypt_inplace(data, _shared_secret, nonce);
+        if (!dspan)
         {
-            log::warning(logcat, "dropping session data message with unknown traffic type {}", dgram_type);
+            log::warning(logcat, "data message decryption failed");
+            return;
+        }
+        if (dspan->empty())
+        {
+            log::warning(logcat, "ignoring empty decrypted session data message");
+            return;
+        }
+        assert(dspan->data() == data.data());
+        data.resize(dspan->size());
+
+        auto dgram_type = static_cast<traffic_type>(data.back());
+        data.pop_back();
+        if (!is_valid(dgram_type))
+        {
+            log::warning(
+                logcat, "dropping session data message with unknown traffic type {}", to_underlying(dgram_type));
             return;
         }
 
@@ -853,7 +951,9 @@ namespace srouter::session
     {
         if (on_est)
             on_established(std::move(on_est), est_timeout);
+
         std::tie(_shared_secret, dh_pk, dh_nonce) = crypto::dh_client_gen(_remote.pubkey);
+
         // TODO: kick off path builds immediately
     }
 
@@ -957,7 +1057,7 @@ namespace srouter::session
         Session& s,
         std::vector<std::byte>&& data,
         SymmNonce&& nonce,
-        bool path_switch)
+        path::MessageType type)
     {
         if (check_dead(path, s))
         {
@@ -970,10 +1070,7 @@ namespace srouter::session
             return;
         }
 
-        path->send_session_control_message(
-            std::move(data),
-            std::move(nonce),
-            path_switch ? path::Path::PATH_SWITCH_MESSAGE_TYPE : path::Path::CONTROL_MESSAGE_TYPE);
+        path->send_session_control_message(std::move(data), std::move(nonce), type);
     }
 
     void OutboundSession::send_path_data_message(std::vector<std::byte>&& data, SymmNonce&& nonce)
@@ -987,16 +1084,17 @@ namespace srouter::session
         send_path_data_impl(_current_path, *this, std::move(data), std::move(nonce));
     }
 
-    void OutboundSession::send_path_control_message(std::vector<std::byte>&& data, SymmNonce&& nonce, bool path_switch)
+    void OutboundSession::send_path_control_message(
+        std::vector<std::byte>&& data, SymmNonce&& nonce, path::MessageType type)
     {
         update_active();
-        send_path_control_impl(_current_path, *this, std::move(data), std::move(nonce), path_switch);
+        send_path_control_impl(_current_path, *this, std::move(data), std::move(nonce), type);
     }
     void InboundClientSession::send_path_control_message(
-        std::vector<std::byte>&& data, SymmNonce&& nonce, bool path_switch)
+        std::vector<std::byte>&& data, SymmNonce&& nonce, path::MessageType type)
     {
         update_active();
-        send_path_control_impl(_current_path, *this, std::move(data), std::move(nonce), path_switch);
+        send_path_control_impl(_current_path, *this, std::move(data), std::move(nonce), type);
     }
 
     void OutboundSession::close_old_paths(sys_ms now)
@@ -1221,6 +1319,7 @@ namespace srouter::session
         _cc_fetch_fail_count = 0;
         _next_cc_update = now + CC_FETCH_STALE;
         _cc_last_signed = cc.signed_at();
+        _cc_protos = cc.protocols();
         last_inbound_activity = now;  // so we don't just fetch for inactivity again right away
         auto intros = cc.intros();
         _intros.assign(intros.begin(), intros.end());
@@ -1344,27 +1443,47 @@ namespace srouter::session
 
     std::string OutboundSession::make_session_init(path::Path& path)
     {
-        oxenc::bt_dict_producer inner_btdp;
+        oxenc::bt_dict_producer inner_btdp, btdp;
 
-        inner_btdp.append("i"sv, _r.id().span());
-        inner_btdp.append("p"sv, path.terminal_hopid().span());
-        inner_btdp.append("t"sv, _inbound_tag);
+        // TODO: drop this code once we don't support non-PFS session init anymore:
+        if (use_old_init())
+        {
+            // These are probably not set, but be explicit anyway as we use them to identify whether
+            // we are expecting an old or new session accept message in response:
+            _session_mlkem756.reset();
+            _session_x25519.reset();
 
-        inner_btdp.append_signature("~", [this](std::span<const std::byte> to_sign) {
-            std::array<std::byte, SIGSIZE> sig;
-            _r.secret_key().sign(sig, to_sign);
-            return sig;
-        });
+            inner_btdp.append("i"sv, _r.id().span());
+            inner_btdp.append("p"sv, path.terminal_hopid().span());
+            inner_btdp.append("t"sv, _inbound_tag);
 
-        auto inner_payload = std::move(inner_btdp).str();
-        inner_payload.resize(inner_payload.size() + crypto::MAC_SIZE);
-        crypto::xchacha20_poly1305_encrypt(inner_payload, _shared_secret, dh_nonce);
+            inner_btdp.append_signature(
+                "~", [this](std::span<const std::byte> to_sign) { return _r.secret_key().sign(to_sign); });
 
-        oxenc::bt_dict_producer btdp;
+            auto inner_payload = std::move(inner_btdp).str();
+            inner_payload.resize(inner_payload.size() + crypto::TAG_SIZE);
+            crypto::xchacha20_poly1305_encrypt_inplace(inner_payload, _shared_secret, dh_nonce);
 
-        btdp.append("k", dh_pk.span());
-        btdp.append("n", dh_nonce.span());
-        btdp.append("x", inner_payload);
+            btdp.append("k", dh_pk.span());
+            btdp.append("n", dh_nonce.span());
+            btdp.append("x", inner_payload);
+
+            return std::move(btdp).str();
+        }
+
+        _session_mlkem756 = MLKEM768KeyPair::generate();
+        _session_x25519 = X25519KeyPair::generate();
+
+        inner_btdp.append("|", to_underlying(_parent.cc().protocols()));
+        inner_btdp.append("I", _r.id());
+        inner_btdp.append("M", _session_mlkem756->pub);
+        inner_btdp.append("X", _session_x25519->pub);
+        inner_btdp.append("p", _inbound_tag);
+        inner_btdp.append_signature(
+            "~", [this](std::span<const std::byte> to_sign) { return _r.secret_key().sign(to_sign); });
+
+        btdp.append("", 1);  // Session init version; 1 = PFS+PQ, anything else is unsupported.
+        btdp.append("B", _remote.pubkey.seal_box(inner_btdp.span<std::byte>()));
 
         return std::move(btdp).str();
     }
@@ -1386,7 +1505,7 @@ namespace srouter::session
                 _remote);
 
             auto msg = make_session_init(path);
-            send_session_data_message(as_bspan(msg), 0, true, true);
+            send_session_precontrol_message(as_bspan(msg), path::MessageType::PathSwitch);
         }
         else
         {
@@ -1399,20 +1518,31 @@ namespace srouter::session
 
             auto session_init_msg = make_session_init(path);
 
-            auto switch_nonce = dh_nonce ^ switch_xor_factor;
             oxenc::bt_dict_producer btdp;
             btdp.append("p"sv, path.terminal_hopid().span());
             oxenc::bt_dict_producer btdp_path_switch;
             btdp_path_switch.append("e", "path_switch"sv);
             btdp_path_switch.append("p", btdp.span<std::byte>());
-            auto maybe_path_switch_msg =
-                make_session_data_message(btdp_path_switch.span<std::byte>(), 0, true, false, switch_nonce);
+            // Make a full, encrypted session message here, but rather than sending that as a
+            // control message, we instead embed this alongside a session init: thus if the remote
+            // still knows about us it simply treats it as a session message (and discards the
+            // init), but if it doesn't then it can read the session init to start a new one.
+            auto maybe_path_switch_msg = make_session_message(btdp_path_switch.span<std::byte>(), std::nullopt);
             if (!maybe_path_switch_msg)
             {
                 log::warning(logcat, "Failed to create path switch message");
                 return;
             }
-            auto& m = maybe_path_switch_msg->first;
+            auto& [m, nonce] = *maybe_path_switch_msg;
+
+            // With pre-PFS session keys, it was possible for path and session to use the
+            // same keys (e.g. for a relay session), and so there was a fixed nonce mutation to avoid nonce reuse.
+            //
+            // With PFS, we only do that if we are in pre-PFS key mode (and so this can get deleted
+            // when we delete support for pre-PFS session establishing).
+            if (!is_established_pfs())
+                nonce ^= switch_xor_factor;
+
             m.resize(m.size() - (sizeof(session_tag) + HopID::SIZE));  // these go on outer message here
 
             oxenc::bt_list_producer btlp;
@@ -1425,7 +1555,7 @@ namespace srouter::session
             auto [payload_span, tag_span, pivot_span] = split_span(payload, old_size, sizeof(_outbound_tag));
             oxenc::write_host_as_big(_outbound_tag, tag_span.data());
             std::memcpy(pivot_span.data(), _remote_pivot_txid.data(), _remote_pivot_txid.size());
-            send_path_control_message(std::move(payload), SymmNonce{dh_nonce}, /*path_switch=*/true);
+            send_path_control_message(std::move(payload), std::move(nonce), path::MessageType::PathSwitch);
         }
     }
 
@@ -1555,21 +1685,128 @@ namespace srouter::session
             timeout ? "build request timed out" : "path construction failed");
     }
 
+    bool OutboundClientSession::use_old_init() const { return not has_flag(_cc_protos, protocol_flag::PFS_PQ); }
+
+    bool OutboundRelaySession::use_old_init() const
+    {
+        if (auto* maybe_rc = _r.node_db().get_rc(_remote.pubkey))
+            return maybe_rc->version() < std::array<uint8_t, 3>{1, 1, 0};
+        // Else we're in very strange territory: why was this called if we don't know the RC?
+        return false;
+    }
+
     InboundSession::InboundSession(handlers::SessionEndpoint& parent) : Session{parent.router, parent} {}
 
     void InboundSession::session_init_accept()
     {
-        oxenc::bt_dict_producer btdp;
-        btdp.append("t"sv, _inbound_tag);
-        send_session_control_message("session_accept"sv, btdp.span<std::byte>());
+        if (_accept_msg.empty())
+        {
+            log::error(logcat, "Unable to send session init reply: accept message is empty or already sent");
+            return;
+        }
+        if (_old_accept)
+            send_session_control_message(
+                "session_accept"sv,
+                std::span{reinterpret_cast<const std::byte*>(_accept_msg.data()), _accept_msg.size()});
+        else
+            send_session_precontrol_message(
+                {reinterpret_cast<const std::byte*>(_accept_msg.data()), _accept_msg.size()},
+                path::MessageType::SessionHandshake);
+
+        _accept_msg.clear();
     }
 
-    void Session::handle_session_accept(std::span<const std::byte>)
+    void Session::handle_session_accept_deprecated(std::span<const std::byte>)
     {
         log::warning(logcat, "Received session accept message, but not an outbound session.");
     }
 
-    void OutboundSession::handle_session_accept(std::span<const std::byte> params)
+    void OutboundSession::handle_session_accept(std::vector<std::byte>&& payload)
+    {
+        // A PFS+PQ session accept message.  See the comments in the .hpp about how this is
+        // encrypted and structured.
+
+        if (!(_session_mlkem756 && _session_x25519))
+        {
+            log::warning(logcat, "Cannot process PFS session accept: we have no pending session init ephemeral keys");
+            return;
+        }
+        bool was_established = _is_established;
+        if (was_established)
+            log::debug(
+                logcat,
+                "Received session accept message for established session, likely a path switch failed because the "
+                "remote restarted, but it accepted our fallack session init.");
+
+        // reset these so that if this parsing fails we trigger a new session init:
+        _is_established = false;
+        _outbound_tag = 0;
+
+        try
+        {
+            oxenc::bt_dict_consumer outer_btdc{payload};
+            if (int ver = outer_btdc.require<int>(""); ver != 1)
+                throw std::runtime_error{"Invalid/unsupported session handshake v{}"_format(ver)};
+            auto box = outer_btdc.require_span<std::byte>("B");
+            outer_btdc.finish();
+
+            auto inner = _r.secret_key().unseal_box(box);
+
+            oxenc::bt_dict_consumer inner_btdc{inner};
+
+            X25519PubKey remote_eph_xpk;
+            MLKEM768Ciphertext remote_mlct;
+
+            remote_eph_xpk.assign(inner_btdc.require_span<std::byte, X25519PubKey::SIZE>("Y"));
+            remote_mlct.assign(inner_btdc.require_span<std::byte, MLKEM768Ciphertext::SIZE>("c"));
+
+            auto tag = inner_btdc.require<session_tag>("t");
+
+            inner_btdc.require_signature("~", [this](std::span<const std::byte> msg, std::span<const std::byte> sig) {
+                if (sig.size() != Signature::SIZE)
+                    throw std::runtime_error{fmt::format("Invalid signature: not {} bytes", Signature::SIZE)};
+
+                if (not _remote.pubkey.verify(msg, SignatureView{sig.first<Signature::SIZE>()}))
+                    throw std::runtime_error{"Failed to verify session_init identity signature"};
+            });
+
+            inner_btdc.finish();
+
+            auto mlss = _session_mlkem756->sec.decapsulate(remote_mlct);
+
+            std::tie(_inbound_key.emplace(), _outbound_key.emplace()) = session_secret(
+                _r.id(),
+                _remote.pubkey,
+                *_session_x25519,
+                remote_eph_xpk,
+                /*is_initiator=*/true,
+                mlss,
+                _session_mlkem756->pub,
+                _inbound_tag,
+                _outbound_tag);
+            _outbound_tag = tag;
+            _is_established = true;
+
+            _session_mlkem756.reset();
+            _session_x25519.reset();
+        }
+        catch (const std::exception& e)
+        {
+            log::warning(logcat, "Session accept failed: {}", e.what());
+            return;
+        }
+
+        if (pre_establish_data_queue)
+        {
+            for (const auto& d : *pre_establish_data_queue)
+                send_session_data_message(std::span{d.data(), d.size() - 1}, static_cast<traffic_type>(d.back()));
+            pre_establish_data_queue.reset();
+        }
+
+        fire_waiting();
+    }
+
+    void OutboundSession::handle_session_accept_deprecated(std::span<const std::byte> params)
     {
         bool was_established = _is_established;
         if (was_established)
@@ -1579,20 +1816,27 @@ namespace srouter::session
                 "Received session accept message for established session, likely a path switch failed because the "
                 "remote restarted, so it accepted our backup session init.");
         }
-        _is_established = false;  // become unestablished if this parsing fails to trigger a new session init
+
+        // reset these so that if this parsing fails we trigger a new session init:
+        _is_established = false;
+        _outbound_tag = 0;
+
         oxenc::bt_dict_consumer btdc{params};
-        _outbound_tag = btdc.require<session_tag>("t"sv);
+        auto tag = btdc.require<session_tag>("t"sv);
+        btdc.finish();
+
+        _outbound_tag = tag;
+        _is_established = true;
 
         log::debug(logcat, "Remote provided session tag: {}", _outbound_tag);
 
         log::trace(
             logcat, "Outbound session to {} successfully {}established.", remote(), was_established ? "re-"sv : ""sv);
-        _is_established = true;
 
         if (pre_establish_data_queue)
         {
             for (const auto& d : *pre_establish_data_queue)
-                send_session_data_message(std::span{d.data(), d.size() - 1}, static_cast<uint8_t>(d.back()));
+                send_session_data_message(std::span{d.data(), d.size() - 1}, static_cast<traffic_type>(d.back()));
             pre_establish_data_queue.reset();
         }
 
@@ -1600,22 +1844,23 @@ namespace srouter::session
     }
 
     InboundClientSession::InboundClientSession(
-        handlers::SessionEndpoint& parent, std::shared_ptr<path::Path> p, std::vector<std::byte>&& request)
+        handlers::SessionEndpoint& parent, std::shared_ptr<path::Path> p, std::span<const std::byte> request)
         : InboundSession{parent}, _current_path{std::move(p)}
     {
         _dead_path = !_current_path;
-        init(std::move(request));
+        init(request);
     }
 
     InboundRelaySession::InboundRelaySession(
-        handlers::SessionEndpoint& parent, std::shared_ptr<path::TransitHop> thop, std::vector<std::byte>&& request)
+        handlers::SessionEndpoint& parent, std::shared_ptr<path::TransitHop> thop, std::span<const std::byte> request)
         : InboundSession{parent}, _current_thop{std::move(thop)}
     {
         _dead_path = !_current_thop;
-        init(std::move(request));
+        init(request);
     }
 
-    void InboundRelaySession::encrypt_path_message(std::vector<std::byte>& data, SymmNonce&& nonce, std::byte type)
+    void InboundRelaySession::encrypt_path_message(
+        std::vector<std::byte>& data, SymmNonce&& nonce, path::MessageType type)
     {
         // This is similar to Path encrypt, except that we are operating at the far end of a
         // transithop and starting the encrypt backwards (and so don't see the whole path, just our
@@ -1633,7 +1878,7 @@ namespace srouter::session
         crypto::xchacha20(inner_payload, _current_thop->shared_secret, nonce);
         nonce.copy_to(bnonce);
         _current_thop->rxid.copy_to(bhop);
-        msgtype[0] = type;
+        msgtype[0] = static_cast<std::byte>(type);
     }
 
     void InboundRelaySession::send_path_data_message(std::vector<std::byte>&& data, SymmNonce&& nonce)
@@ -1645,12 +1890,12 @@ namespace srouter::session
             return;
         }
 
-        encrypt_path_message(data, std::move(nonce), path::Path::DATA_MESSAGE_TYPE);
+        encrypt_path_message(data, std::move(nonce), path::MessageType::Data);
         _parent.router.link_endpoint().send_datagram(_current_thop->downstream, std::move(data));
     }
 
     void InboundRelaySession::send_path_control_message(
-        std::vector<std::byte>&& data, SymmNonce&& nonce, bool /*path_switch*/)
+        std::vector<std::byte>&& data, SymmNonce&& nonce, path::MessageType type)
     {
         update_active();
         if (check_dead(_current_thop, *this))
@@ -1659,7 +1904,7 @@ namespace srouter::session
             return;
         }
 
-        encrypt_path_message(data, std::move(nonce), path::Path::CONTROL_MESSAGE_TYPE);
+        encrypt_path_message(data, std::move(nonce), type);
         _parent.router.link_endpoint().send_command(
             _current_thop->downstream, "session_control"s, std::move(data), nullptr);
     }

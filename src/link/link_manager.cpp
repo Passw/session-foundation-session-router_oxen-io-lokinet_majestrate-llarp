@@ -22,6 +22,7 @@
 #include <oxen/quic/context.hpp>
 #include <oxen/quic/opt.hpp>
 #include <oxenc/bt_producer.h>
+#include <oxenc/endian.h>
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/randombytes.h>
 
@@ -30,6 +31,7 @@
 #include <cstddef>
 #include <exception>
 #include <ranges>
+#include <variant>
 
 #ifndef SROUTER_EMBEDDED_ONLY
 #include "rpc/oxend_rpc.hpp"
@@ -775,7 +777,7 @@ namespace srouter::link
         payload.assign(body.begin(), body.end());
 
         static_assert(
-            path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD_MAC == crypto::MAC_SIZE + SymmNonce::SIZE + HopID::SIZE + 1);
+            path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD_MAC == crypto::TAG_SIZE + SymmNonce::SIZE + HopID::SIZE + 1);
         auto [inner_payload, bnonce, bhop, msgtype] = split_span_tail<SymmNonce::SIZE, HopID::SIZE, 1>(payload);
         std::byte type = msgtype[0];
         if (type != std::byte{0x01})
@@ -801,7 +803,7 @@ namespace srouter::link
         // if terminal hop, payload should contain a request (e.g. "sns_resolve"); handle and respond.
         if (hop->terminal_hop)
         {
-            auto payload_span = crypto::xchacha20_poly1305_decrypt(inner_payload, hop->shared_secret, nonce);
+            auto payload_span = crypto::xchacha20_poly1305_decrypt_inplace(inner_payload, hop->shared_secret, nonce);
             auto responder = [hop_weak = std::weak_ptr{hop}, msg = std::move(m), type](std::string response) {
                 auto hop = hop_weak.lock();
                 if (not hop)
@@ -812,10 +814,10 @@ namespace srouter::link
                 auto& hopid = hop->rxid;
                 auto nonce = SymmNonce::make_random();
                 response.reserve(response.size() + path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD_MAC);
-                response.resize(response.size() + crypto::MAC_SIZE);
+                response.resize(response.size() + crypto::TAG_SIZE);
                 try
                 {
-                    crypto::xchacha20_poly1305_encrypt(response, hop->shared_secret, nonce);
+                    crypto::xchacha20_poly1305_encrypt_inplace(response, hop->shared_secret, nonce);
                 }
                 catch (const std::exception& e)
                 {
@@ -840,7 +842,7 @@ namespace srouter::link
                 msg.respond(response, false);
             };
             log::debug(logcat, "We are terminal hop for path request: {}", *hop);
-            handle_path_request(payload_span, std::move(responder));
+            handle_path_request(*payload_span, std::move(responder));
             return;
         }
 
@@ -954,7 +956,7 @@ namespace srouter::link
     //
     // Warns and returns nullopt if the input vector is too short or the message type byte is
     // invalid (and thus the message should be dropped).
-    static std::optional<std::tuple<HopID, SymmNonce, std::byte>> extract_path_message_metadata(
+    static std::optional<std::tuple<HopID, SymmNonce, path::MessageType>> extract_path_message_metadata(
         std::vector<std::byte>& message)
     {
         if (message.size() < MIN_PATH_DATA_MESSAGE_SIZE)
@@ -967,14 +969,14 @@ namespace srouter::link
         // updated here as well:
         static_assert(path::Path::ENCRYPT_PATH_MESSAGE_OVERHEAD == SymmNonce::SIZE + HopID::SIZE + 1);
 
-        std::optional<std::tuple<HopID, SymmNonce, std::byte>> result;
+        std::optional<std::tuple<HopID, SymmNonce, path::MessageType>> result;
         auto& [hop_id, nonce, msgtype] = result.emplace();
 
         // For the detailed structure of this encoding, see description in session/session.cpp
-        msgtype = message.back();
-        if (msgtype != std::byte{0x01} && msgtype != std::byte{0x02})
+        msgtype = static_cast<path::MessageType>(message.back());
+        if (msgtype < path::MessageType::CONTROL_MIN || msgtype > path::MessageType::CONTROL_MAX)
         {
-            log::warning(logcat, "Received path message of unknown type: {}", std::to_integer<int>(msgtype));
+            log::warning(logcat, "Received path message of unknown type: 0x{:02x}", static_cast<uint8_t>(msgtype));
             return std::nullopt;
         }
         message.pop_back();
@@ -986,6 +988,46 @@ namespace srouter::link
         message.resize(message.size() - SymmNonce::SIZE);
 
         return result;
+    }
+
+    void Manager::handle_path_switch(
+        std::span<std::byte> payload,
+        session_tag tag,
+        SymmNonce&& nonce,
+        std::variant<std::shared_ptr<path::TransitHop>, std::shared_ptr<path::Path>> source)
+    {
+        oxenc::bt_list_consumer btlc{payload};
+        auto path_switch = btlc.consume_string_view();
+        auto session_init = btlc.consume_string_view();
+        btlc.finish();
+
+        bool client = source.index() == 1;
+        if (auto* sess = router.session_endpoint().get_session(tag))
+        {
+            log::debug(
+                logcat,
+                "Handling incoming session path switch message at the {} end of a path",
+                client ? "client" : "relay");
+            if (!sess->is_established_pfs())
+                // to avoid possible nonce re-use, mutate by xor factor
+                nonce ^= session::switch_xor_factor;
+
+            std::vector<std::byte> bytes;
+            bytes.resize(path_switch.size());
+            std::memcpy(bytes.data(), path_switch.data(), bytes.size());
+            handle_session_control(std::move(bytes), tag, nonce, std::move(source));
+        }
+        else
+        {
+            log::debug(
+                logcat, "Handling incoming session init message at the {} end of a path", client ? "client" : "relay");
+            std::vector<std::byte> bytes;
+            bytes.resize(session_init.size());
+            std::memcpy(bytes.data(), session_init.data(), bytes.size());
+            std::visit(
+                [&](auto& src) { router.session_endpoint().handle_session_init(std::move(bytes), std::move(src)); },
+                source);
+        }
     }
 
     void Manager::handle_session_message(std::vector<std::byte> message, bool control)
@@ -1032,61 +1074,40 @@ namespace srouter::link
                 nonce ^= hop.xor_nonce;
             }
 
+            if (message.size() < sizeof(session_tag))
+            {
+                log::info(logcat, "invalid control message (too small for session tag)");
+                return;
+            }
+
+            auto tag = oxenc::load_big_to_host<session_tag>(message.data() + message.size() - sizeof(session_tag));
+            message.resize(message.size() - sizeof(session_tag));
+
             // NB: path switch is a special case, as it comes bundled as 2 messages:
             //     a path switch session control message, and
             //     a session init message
-            if (msgtype == path::Path::PATH_SWITCH_MESSAGE_TYPE)
+            if (msgtype == path::MessageType::PathSwitch)
             {
-                log::debug(logcat, "client handling path switch/session init message");
-
-                if (message.size() < sizeof(session::session_tag))
-                {
-                    log::info(logcat, "invalid path switch / session reinit message received");
-                    return;
-                }
-                session_tag tag;
-                auto tag_span = std::span{message}.last<sizeof(session_tag)>();
-                tag = oxenc::load_big_to_host<session_tag>(tag_span.data());
-                message.resize(message.size() - sizeof(session::session_tag));
-
-                oxenc::bt_list_consumer btlc{message};
-                auto path_switch = btlc.consume_string_view();
-                auto session_init = btlc.consume_string_view();
-                btlc.finish();
-
-                if (router.session_endpoint().get_session(tag))
-                {
-                    log::debug(logcat, "Handling incoming session path switch message at the client end of a path");
-                    // to avoid nonce re-use, mutate by xor factor
-                    nonce ^= session::switch_xor_factor;
-                    std::vector<std::byte> bytes;
-                    bytes.resize(path_switch.size());
-                    std::memcpy(bytes.data(), path_switch.data(), bytes.size());
-                    handle_session_control(std::move(bytes), tag, nonce, path->shared_from_this());
-                }
+                handle_path_switch(message, tag, std::move(nonce), path->shared_from_this());
+                return;
+            }
+            if (msgtype == path::MessageType::SessionHandshake)
+            {
+                if (tag == 0)  // session init
+                    router.session_endpoint().handle_session_init(message, path->shared_from_this());
+                else if (auto session = router.session_endpoint().get_session<session::OutboundSession>(tag))
+                    session->handle_session_accept(std::move(message));
                 else
-                {
-                    log::debug(logcat, "Handling incoming session init message at the client end of a path");
-                    std::vector<std::byte> bytes;
-                    bytes.resize(session_init.size());
-                    std::memcpy(bytes.data(), session_init.data(), bytes.size());
-                    router.session_endpoint().handle_session_init(std::move(bytes), path->shared_from_this());
-                }
+                    log::warning(logcat, "Ignoring session accept for unknown or inbound session {}", tag);
                 return;
             }
 
             // Client-bound session data has no pivot, just [encrypted][sessiontag], so we extract
-            // and remove the session tag then give the remainder for be session-decrypted.  The
-            // nonce (after the above mutations) also matches the nonce we want to use for the
+            // and remove the session tag (above) then give the remainder for be session-decrypted.
+            // The nonce (after the above mutations) also matches the nonce we want to use for the
             // session encryption.
-            session_tag tag;
-            auto tag_span = std::span{message}.last<sizeof(session_tag)>();
-            tag = oxenc::load_big_to_host<session_tag>(tag_span.data());
-            message.resize(message.size() - sizeof(session_tag));
-
             if (tag == 0)  // session init
             {
-                return router.session_endpoint().handle_session_init(std::move(message), path->shared_from_this());
             }
             if (control)
             {
@@ -1121,7 +1142,7 @@ namespace srouter::link
             // What's left in message after the above xchacha is back to what the data message
             // creator set up for us: [ENCRYPTED, SESSION_TAG, PIVOT_ID].
 
-            auto [payload, bsession_tag, bpivot_id] = split_span_tail(message, sizeof(session_tag), HopID::SIZE);
+            auto [payload, bsession_tag, bpivot_id] = split_span_tail<sizeof(session_tag), HopID::SIZE>(message);
 
             HopID pivot_id;
             pivot_id.assign(bpivot_id.first<HopID::SIZE>());
@@ -1134,54 +1155,29 @@ namespace srouter::link
                 // Case 2: this is a session data message to this relay; extract the session tag and
                 // then drop everything down to the session payload for handle_session_data to deal
                 // with.
+                auto tag = oxenc::load_big_to_host<session_tag>(bsession_tag.data());
+                message.resize(payload.size());
 
-                // NB: path switch is a special case, as it comes bundled as 2 messages:
-                //     a path switch session control message, and
-                //     a session init message
-                if (msgtype == path::Path::PATH_SWITCH_MESSAGE_TYPE)
+                // If this is an "early control" message that means it does not use standard session
+                // encryption around the message; this is used for session handshake messages and
+                // path switch messages.
+                //
+                // Session init and accept have their own partial encryption (see session.hpp); path
+                // switch comes bundled as a bt-list of two separate messages:
+                //     - a session key encrypted path switch session control message; and
+                //     - a fallback session init message
+                if (msgtype == path::MessageType::PathSwitch)
                 {
-                    log::debug(logcat, "client handling path switch/session init message");
-
-                    oxenc::bt_list_consumer btlc{payload};
-                    auto path_switch = btlc.consume_string_view();
-                    auto session_init = btlc.consume_string_view();
-                    btlc.finish();
-
-                    session_tag tag;
-                    tag = oxenc::load_big_to_host<session_tag>(bsession_tag.data());
-                    if (router.session_endpoint().get_session(tag))
-                    {
-                        log::debug(logcat, "Handling incoming session path switch message at the relay end of a path");
-                        // to avoid nonce re-use, mutate by xor factor
-                        nonce ^= session::switch_xor_factor;
-                        std::vector<std::byte> bytes;
-                        bytes.resize(path_switch.size());
-                        std::memcpy(bytes.data(), path_switch.data(), bytes.size());
-                        handle_session_control(
-                            std::move(bytes), tag, nonce, router.path_context.get_transit_hop_ptr(hop_id));
-                    }
-                    else
-                    {
-                        log::debug(logcat, "Handling incoming session init message at the relay end of a path");
-                        std::vector<std::byte> bytes;
-                        bytes.resize(session_init.size());
-                        std::memcpy(bytes.data(), session_init.data(), bytes.size());
-                        router.session_endpoint().handle_session_init(
-                            std::move(bytes), router.path_context.get_transit_hop_ptr(hop_id));
-                    }
+                    handle_path_switch(message, tag, std::move(nonce), router.path_context.get_transit_hop_ptr(hop_id));
                     return;
                 }
-
-                session_tag tag;
-                auto tag_span = bsession_tag.first<sizeof(session_tag)>();
-                tag = oxenc::load_big_to_host<session_tag>(tag_span.data());
-                message.resize(payload.size());
 
                 if (tag == 0)  // session init
                 {
                     // getting shared_ptr here instead of above saves an atomic op on other messages
-                    return router.session_endpoint().handle_session_init(
-                        std::move(message), router.path_context.get_transit_hop_ptr(hop_id));
+                    router.session_endpoint().handle_session_init(
+                        message, router.path_context.get_transit_hop_ptr(hop_id));
+                    return;
                 }
                 if (control)
                 {
@@ -1224,7 +1220,7 @@ namespace srouter::link
 
             nonce.copy_to(bnonce);
             pivot_id.copy_to(bhop);
-            bmsgtype[0] = msgtype;
+            bmsgtype[0] = static_cast<std::byte>(msgtype);
 
             log::trace(logcat, "Pivoting message down another path");
             if (control)
@@ -1246,7 +1242,7 @@ namespace srouter::link
         auto [enc_data, bnonce, bhop, bmsgtype] = split_span_tail<SymmNonce::SIZE, HopID::SIZE, 1>(message);
         nonce.copy_to(bnonce);
         next_hopid.copy_to(bhop);
-        bmsgtype[0] = msgtype;
+        bmsgtype[0] = static_cast<std::byte>(msgtype);
 
         if (control)
             endpoint.send_command(next_target, "session_control"s, std::move(message), nullptr);

@@ -145,6 +145,12 @@ namespace srouter::link
 
         void handle_path_session_control(quic::message m);
 
+        void handle_path_switch(
+            std::span<std::byte> payload,
+            session_tag tag,
+            SymmNonce&& nonce,
+            std::variant<std::shared_ptr<path::TransitHop>, std::shared_ptr<path::Path>> source);
+
         // These requests come over a path (as a "path_control" request),
         // we may or may not need to make a request to another relay,
         // then respond (onioned) back along the path.

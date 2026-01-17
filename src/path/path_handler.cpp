@@ -553,7 +553,7 @@ namespace srouter::path
             }
 
             auto dh_nonce = SymmNonce::make_random();
-            auto eph_key = crypto::generate_ed25519();
+            auto eph_key = Ed25519SecretKey::generate();
 
             if (!crypto::dh_client(hop.shared_secret, hop.router_id, eph_key, dh_nonce))
                 throw std::runtime_error{"Client DH failed for hop[{}] with rid {}"_format(i, hop.router_id)};
@@ -661,7 +661,7 @@ namespace srouter::path
         // the rxid and txid must be equal.  If *not* a terminal hop, then both must be false.
         hop.terminal_hop = hop.upstream == r.id();
         bool terminal_mismatch = hop.terminal_hop != (hop.txid == hop.rxid);
-        if (hop.txid.is_zero() || hop.rxid.is_zero() || terminal_mismatch)
+        if (is_zero(hop.txid) || is_zero(hop.rxid) || terminal_mismatch)
             throw path::TransitHopError::INVALID_HOP_ID();
 
         log::trace(logcat, "TransitHop data successfully decrypted/deserialized: {}", hop);
