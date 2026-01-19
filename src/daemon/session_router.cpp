@@ -33,6 +33,8 @@ namespace
 
         std::filesystem::path config;
 
+        std::string log_levels;
+
         // windows options
         bool win_install = false;
         bool win_remove = false;
@@ -46,7 +48,7 @@ namespace
     // operational function definitions
     int srouter_main(int, char**);
     void handle_signal(int sig);
-    void start_srouter(std::filesystem::path confFile, bool snode);
+    void start_srouter(std::filesystem::path confFile, bool snode, std::string log_levels);
 
     // variable declarations
     static auto logcat = srouter::log::Cat("daemon");
@@ -335,6 +337,11 @@ namespace
         cli.add_option("config,-c,--config", options.config, "Path to session-router.ini configuration file")
             ->required();
 
+        cli.add_option(
+            "-l,--log-levels",
+            options.log_levels,
+            "Specify additional log levels to apply after the config file level");
+
         if constexpr (srouter::platform::is_windows)
         {
             cli.add_flag("--install", options.win_install, "Install win32 daemon to SCM");
@@ -400,7 +407,7 @@ namespace
 
         try
         {
-            start_srouter(options.config, options.relay);
+            start_srouter(std::move(options.config), options.relay, std::move(options.log_levels));
         }
         catch (const std::exception& e)
         {
@@ -436,7 +443,7 @@ namespace
     }
 
     // this sets up, configures and runs the main context
-    void start_srouter(std::filesystem::path confFile, bool snode)
+    void start_srouter(std::filesystem::path confFile, bool snode, std::string log_level)
     {
         srouter::log::info(logcat, "starting {}", srouter::VERSION_FULL);
         try
@@ -451,6 +458,13 @@ namespace
             {
                 srouter::log::error(logcat, "Failed to load config: {}", e.what());
                 throw;
+            }
+
+            if (!log_level.empty())
+            {
+                if (!conf->logging.levels.empty())
+                    conf->logging.levels += ';';
+                conf->logging.levels += log_level;
             }
 
             ctx.emplace(/*embedded=*/false);
