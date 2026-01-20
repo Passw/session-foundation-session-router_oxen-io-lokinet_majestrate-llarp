@@ -1181,7 +1181,8 @@ namespace srouter::handlers
         session_post_init(std::move(new_session));
     }
 
-    void SessionEndpoint::handle_session_init(std::span<const std::byte> payload, std::shared_ptr<path::TransitHop> thop)
+    void SessionEndpoint::handle_session_init(
+        std::span<const std::byte> payload, std::shared_ptr<path::TransitHop> thop)
     {
         log::debug(logcat, "SessionEndpoint::handle_session_init (relay)");
         std::shared_ptr<session::InboundSession> new_session{};

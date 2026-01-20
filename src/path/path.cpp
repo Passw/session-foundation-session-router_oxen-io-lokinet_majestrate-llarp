@@ -190,8 +190,7 @@ namespace srouter::path
         send_path_control_message("publish_cc", btdp.span<std::byte>(), std::move(func));
     }
 
-    void Path::resolve_sns(
-        std::span<const std::byte, 32> name_hash, std::function<void(path_control_response)> func)
+    void Path::resolve_sns(std::span<const std::byte, 32> name_hash, std::function<void(path_control_response)> func)
     {
         oxenc::bt_dict_producer btdp;
         btdp.append("s"sv, name_hash);

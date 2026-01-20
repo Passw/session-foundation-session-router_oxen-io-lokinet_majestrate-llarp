@@ -145,7 +145,10 @@ namespace srouter::link
 
         void handle_path_session_control(quic::message m);
 
-        void handle_path_switch(
+        // Handles a received session init (bt-dict starting with "": "i"), session accept (bt-dict
+        // starting with "": "a"), or path switch (bt-dict starting with "": "s" __OR__ bt-list; the
+        // latter is deprecated and to be removed once everyone is 1.1+).
+        void handle_session_handshake(
             std::span<std::byte> payload,
             session_tag tag,
             SymmNonce&& nonce,

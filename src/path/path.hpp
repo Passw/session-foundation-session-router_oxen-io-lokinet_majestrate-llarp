@@ -60,14 +60,11 @@ namespace srouter::path
         CONTROL_MIN = 0x01,
         // Regular, session-encrypted control message:
         Control = 0x01,
-        // Path switch messages, which are essentially a Control and a SessionHandshake session init
-        // message bundled together:
-        PathSwitch = 0x02,
-        // Session handshake control messages, which are exchanged before establishing Session keys
-        // and thus manage their own encryption (see session/session.hpp).  If this arrives with a
-        // session tag of 0 it is a session init, otherwise a session accept.
-        SessionHandshake = 0x03,
-        CONTROL_MAX = 0x03,
+        // SessionHandshake messages, which include session init, session accept, and path switch
+        // messages (which are combined path switch + fallback session init messages).  NB: before
+        // v1.1, these used to be exclusive used for path switch but not session init/accept.
+        SessionHandshake = 0x02,
+        CONTROL_MAX = 0x02,
     };
 
     class Path final : public std::enable_shared_from_this<Path>
@@ -112,8 +109,7 @@ namespace srouter::path
 
         bool is_expired(sys_ms now = srouter::time_now_ms()) const { return _expiry < now; }
 
-        void resolve_sns(
-            std::span<const std::byte, 32> name_hash, std::function<void(path_control_response)> func);
+        void resolve_sns(std::span<const std::byte, 32> name_hash, std::function<void(path_control_response)> func);
 
         void fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func);
 

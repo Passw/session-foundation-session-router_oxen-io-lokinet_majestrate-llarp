@@ -38,7 +38,7 @@ namespace srouter
             std::unordered_map<NetworkAddress, std::shared_ptr<session::Session>> _sessions;
             std::unordered_map<session_tag, std::shared_ptr<session::Session>> _session_tags;
 
-            session_tag last_tag = srouter::csrng();
+            session_tag last_tag = static_cast<session_tag>(srouter::csrng());
 
             // this could probably map to a pair of vectors, or pending packets could
             // be wrapped in callbacks, but for now this works
@@ -187,6 +187,8 @@ namespace srouter
             template <std::derived_from<session::Session> S = session::Session>
             S* get_session(const session_tag& tag) const
             {
+                if (tag == 0)  // Reserved "not a tag" value
+                    return nullptr;
                 auto it = _session_tags.find(tag);
                 if (it == _session_tags.end())
                     return nullptr;

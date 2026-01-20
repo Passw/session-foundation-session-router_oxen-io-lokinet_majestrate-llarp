@@ -29,7 +29,8 @@ namespace srouter
         crypto_sign_ed25519_sk_to_curve25519(udata(), ed_sk.udata());
     }
 
-    X25519PubKey X25519SecKey::to_pubkey() const {
+    X25519PubKey X25519SecKey::to_pubkey() const
+    {
         X25519PubKey pk;
         crypto_scalarmult_curve25519_base(pk.udata(), udata());
         return pk;
@@ -45,11 +46,7 @@ namespace srouter
         return result;
     }
 
-    X25519KeyPair::X25519KeyPair(const Ed25519SecretKey& ed_sk)
-        : sec{ed_sk}
-    {
-        pub = sec.to_pubkey();
-    }
+    X25519KeyPair::X25519KeyPair(const Ed25519SecretKey& ed_sk) : sec{ed_sk} { pub = sec.to_pubkey(); }
 
     X25519KeyPair X25519KeyPair::generate()
     {

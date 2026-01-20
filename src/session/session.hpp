@@ -45,6 +45,8 @@ namespace srouter
         // We must not use the same nonce for path switch and session init, as they can be in the
         // same message using the same shared secret.  As such, the path switch message will use
         // dh_nonce ^ this xor factor.
+        //
+        // (Deprecated; this is only used in pre-1.1 session init).
         inline const SymmNonce switch_xor_factor = SymmNonce::filled<SymmNonce>(std::byte{0x42});
 
         // The following is our session initialization handshake procedure for a client with
@@ -168,10 +170,12 @@ namespace srouter
             NetworkAddress _remote;
 
             // Deprecated; to be removed once all relays are running Session Router 1.1.0+ (and thus
-            // using PFS ephemeral keys).  When either party is still running 1.0.x these get used:
-            PubKey dh_pk;
-            SymmNonce dh_nonce;
-            SymmKey _shared_secret;
+            // using PFS ephemeral keys).  When either party is still running 1.0.x this get used:
+            std::optional<SymmKey> _shared_secret;
+            // When we have issued a session init but not yet received the response, this will be
+            // set.  This is used, in particular, for the new embedded ephemeral key in a PathSwitch
+            // so we don't actually switch to it unless the other side gives a session accept.
+            std::optional<SymmKey> _pending_shared_secret;
 
             // The (PQ, PFS) keys used for inbound and outbound packet encryption.  These are
             // established during the session initiation handshake (see longer comments above).
@@ -407,7 +411,7 @@ namespace srouter
             // Switches to (or starts using) the given path.
             void switch_path(path::Path& p, const HopID& new_pivot_txid);
 
-            std::string make_session_init(path::Path& path);
+            std::pair<std::string, path::MessageType> make_session_init(path::Path& path);
 
             void fire_waiting();
 
@@ -441,7 +445,10 @@ namespace srouter
                 std::function<void(OutboundSession&)> callback,
                 std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
-            void handle_session_accept(std::vector<std::byte>&& payload);
+            // Processes a session accept SessionHandshake message.  The initial "":"a" keypair
+            // (indicating that this was an accept message) will already have been consumed from the
+            // given bt_dict_consumer.
+            void handle_session_accept(oxenc::bt_dict_consumer&& payload);
 
             std::string to_string() const override;
 
@@ -568,6 +575,9 @@ namespace srouter
             protocol_flag protos;
 
           public:
+            // Called at the end of session initialization, after Session setup housecleaning is
+            // done, to actually send the session accept generating early in session init by
+            // `init()`.
             void session_init_accept();
         };
 

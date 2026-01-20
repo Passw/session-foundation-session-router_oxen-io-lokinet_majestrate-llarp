@@ -22,6 +22,7 @@
 #include <oxen/quic/context.hpp>
 #include <oxen/quic/opt.hpp>
 #include <oxenc/bt_producer.h>
+#include <oxenc/bt_serialize.h>
 #include <oxenc/endian.h>
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/randombytes.h>
@@ -984,16 +985,88 @@ namespace srouter::link
         return result;
     }
 
-    void Manager::handle_path_switch(
+    void Manager::handle_session_handshake(
         std::span<std::byte> payload,
         session_tag tag,
         SymmNonce&& nonce,
         std::variant<std::shared_ptr<path::TransitHop>, std::shared_ptr<path::Path>> source)
     {
-        oxenc::bt_list_consumer btlc{payload};
-        auto path_switch = btlc.consume_string_view();
-        auto session_init = btlc.consume_string_view();
-        btlc.finish();
+        if (payload.empty())
+        {
+            log::warning(logcat, "Ignoring invalid empty session handshake message");
+            return;
+        }
+
+        std::span<const std::byte> path_switch, fallback_init;
+
+        try
+        {
+            // Backwards compat support for 1.0 incoming sessions: 2-element bt-dict where [0] is the
+            // session key encrypted path switch info, and part [1] is a handshake session init message
+            // to be used as a fallback if the session was not found.
+            if (payload.front() == std::byte{'d'})
+            {
+                oxenc::bt_dict_consumer btdc{payload};
+                auto hs_type = btdc.require<std::string_view>("");
+                if (hs_type == "i"sv)  // session init
+                {
+                    if (tag == 0)
+                        std::visit(
+                            [&](auto& src) { router.session_endpoint().handle_session_init(payload, std::move(src)); },
+                            source);
+                    else
+                        log::warning(logcat, "Received invalid session init with non-0 session tag ({})", tag);
+                    return;
+                }
+                if (hs_type == "a"sv)  // session accept
+                {
+                    if (tag == 0)
+                        log::warning(logcat, "Received invalid session accept with reserved session tag value 0");
+                    else if (auto* session = router.session_endpoint().get_session(tag))
+                    {
+                        if (auto* osess = dynamic_cast<session::OutboundSession*>(session))
+                            osess->handle_session_accept(std::move(btdc));
+                        else
+                            log::warning(logcat, "Received invalid session accept on an inbound session (tag {})", tag);
+                    }
+                    else
+                        log::warning(logcat, "Received session accept for unknown or non-outbound session tag {}", tag);
+                    return;
+                }
+                if (hs_type != "s")  // otherwise we expect a path switch
+                {
+                    log::warning(logcat, "Received unknown session handshake message type '{}'", hs_type);
+                    return;
+                }
+                path_switch = btdc.require_span<std::byte>("S");
+                fallback_init = btdc.require_span<std::byte>("i");
+                btdc.finish();
+            }
+            else if (payload.front() != std::byte{'l'})
+            {
+                oxenc::bt_list_consumer btlc{payload};
+                path_switch = btlc.consume_span<std::byte>();
+                fallback_init = btlc.consume_span<std::byte>();
+                btlc.finish();
+            }
+            else
+            {
+                log::warning(logcat, "Received unknown data (not dict, list) in session handshake message");
+                return;
+            }
+        }
+        catch (const oxenc::bt_deserialize_invalid& e)
+        {
+            log::warning(logcat, "Invalid session handshake message: {}", e.what());
+            return;
+        }
+        catch (const std::exception& e)
+        {
+            log::warning(logcat, "Exception during session handshake message handling: {}", e.what());
+            return;
+        }
+
+        // This is a path switch (either old or new format):
 
         bool client = source.index() == 1;
         if (auto* sess = router.session_endpoint().get_session(tag))
@@ -1011,17 +1084,19 @@ namespace srouter::link
             std::memcpy(bytes.data(), path_switch.data(), bytes.size());
             handle_session_control(std::move(bytes), tag, nonce, std::move(source));
         }
-        else
+        else if (!fallback_init.empty())
         {
             log::debug(
                 logcat, "Handling incoming session init message at the {} end of a path", client ? "client" : "relay");
-            std::vector<std::byte> bytes;
-            bytes.resize(session_init.size());
-            std::memcpy(bytes.data(), session_init.data(), bytes.size());
             std::visit(
-                [&](auto& src) { router.session_endpoint().handle_session_init(std::move(bytes), std::move(src)); },
+                [&](auto& src) { router.session_endpoint().handle_session_init(fallback_init, std::move(src)); },
                 source);
         }
+        else
+        {
+            log::debug(logcat, "Path switch received with an unknown tag and empty session init fallback; ignoring it");
+        }
+    }
 
     // Checks whether `type` is something we understand.  Warns and returns true if invalid.  Should
     // only be called by the session target, but *not* by a pivot (so that clients can use no
@@ -1082,6 +1157,11 @@ namespace srouter::link
                 log::warning(logcat, "Client received path data with unknown rxID: {}", hop_id);
                 return;
             }
+            if (message.size() < sizeof(session_tag))
+            {
+                log::info(logcat, "invalid control message (too small for session tag)");
+                return;
+            }
             if (unknown_message_type(msgtype, control))
                 return;
 
@@ -1094,41 +1174,29 @@ namespace srouter::link
                 nonce ^= hop.xor_nonce;
             }
 
-            if (message.size() < sizeof(session_tag))
-            {
-                log::info(logcat, "invalid control message (too small for session tag)");
-                return;
-            }
-
             auto tag = oxenc::load_big_to_host<session_tag>(message.data() + message.size() - sizeof(session_tag));
             message.resize(message.size() - sizeof(session_tag));
 
-            // NB: path switch is a special case, as it comes bundled as 2 messages:
-            //     a path switch session control message, and
-            //     a session init message
-            if (msgtype == path::MessageType::PathSwitch)
-            {
-                handle_path_switch(message, tag, std::move(nonce), path->shared_from_this());
-                return;
-            }
             if (msgtype == path::MessageType::SessionHandshake)
             {
-                if (tag == 0)  // session init
-                    router.session_endpoint().handle_session_init(message, path->shared_from_this());
-                else if (auto session = router.session_endpoint().get_session<session::OutboundSession>(tag))
-                    session->handle_session_accept(std::move(message));
-                else
-                    log::warning(logcat, "Ignoring session accept for unknown or inbound session {}", tag);
+                // Session init/accept/path switch messages are a special case as they come with
+                // their own encoding and encryption (because they need to be readable before
+                // session keys are established).
+                handle_session_handshake(message, tag, std::move(nonce), path->shared_from_this());
                 return;
+            }
+
+            if (control && tag == 0)
+            {
+                // old (pre-1.1) session init.  (1.1 session init goes in a SessionHandake message,
+                // not a Control message).
+                return router.session_endpoint().handle_session_init(message, path->shared_from_this());
             }
 
             // Client-bound session data has no pivot, just [encrypted][sessiontag], so we extract
             // and remove the session tag (above) then give the remainder for be session-decrypted.
             // The nonce (after the above mutations) also matches the nonce we want to use for the
             // session encryption.
-            if (tag == 0)  // session init
-            {
-            }
             if (control)
             {
                 log::trace(logcat, "Handling incoming session control message at the client end of a path");
@@ -1189,21 +1257,24 @@ namespace srouter::link
                 // switch comes bundled as a bt-list of two separate messages:
                 //     - a session key encrypted path switch session control message; and
                 //     - a fallback session init message
-                if (msgtype == path::MessageType::PathSwitch)
+                if (msgtype == path::MessageType::SessionHandshake)
                 {
-                    handle_path_switch(message, tag, std::move(nonce), router.path_context.get_transit_hop_ptr(hop_id));
+                    handle_session_handshake(
+                        message, tag, std::move(nonce), router.path_context.get_transit_hop_ptr(hop_id));
                     return;
                 }
 
-                if (tag == 0)  // session init
-                {
-                    // getting shared_ptr here instead of above saves an atomic op on other messages
-                    router.session_endpoint().handle_session_init(
-                        message, router.path_context.get_transit_hop_ptr(hop_id));
-                    return;
-                }
                 if (control)
                 {
+                    // old (pre-1.1) session init.  (1.1 session init goes in a SessionHandake
+                    // message, not a Control message):
+                    if (tag == 0)  // session init
+                    {
+                        router.session_endpoint().handle_session_init(
+                            message, router.path_context.get_transit_hop_ptr(hop_id));
+                        return;
+                    }
+
                     log::trace(logcat, "Incoming control message is a relay session control message");
                     handle_session_control(
                         std::move(message), tag, nonce, router.path_context.get_transit_hop_ptr(hop_id));

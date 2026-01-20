@@ -1,8 +1,8 @@
 #include "queue_manager.hpp"
 
-#include <thread>
-
 #include "../underlying.hpp"
+
+#include <thread>
 
 namespace srouter::thread
 {
