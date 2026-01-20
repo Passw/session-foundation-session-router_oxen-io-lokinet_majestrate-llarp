@@ -109,12 +109,7 @@ namespace srouter::crypto
 
     void xchacha20_poly1305_encrypt_inplace(std::span<std::byte> buf, const SymmKey& secret, const SymmNonce& nonce)
     {
-        if (buf.size() < TAG_SIZE)
-        {
-            const auto err = fmt::format("Payload size {} is < poly1305 AEAD tag size ({})!", buf.size(), TAG_SIZE);
-            log::error(logcat, "{}", err);
-            throw std::invalid_argument{err};
-        }
+        assert(buf.size() >= TAG_SIZE);
         auto payload_size = buf.size() - TAG_SIZE;
         auto* buf_cptr = reinterpret_cast<unsigned char*>(buf.data());
         crypto_aead_xchacha20poly1305_ietf_encrypt(
@@ -130,9 +125,10 @@ namespace srouter::crypto
     std::optional<std::span<std::byte>> xchacha20_poly1305_decrypt_inplace(
         std::span<std::byte> buf, const SymmKey& secret, const SymmNonce& nonce)
     {
-        if (buf.size() <= TAG_SIZE)
+        if (buf.size() < TAG_SIZE)
         {
-            log::warning(logcat, "On decryption, payload size {} is < poly1305 AEAD size ({})!", buf.size(), TAG_SIZE);
+            log::warning(
+                logcat, "Unable to decrypt: payload size {} is too small to be valid (< {})!", buf.size(), TAG_SIZE);
             return std::nullopt;
         }
         auto* buf_cptr = reinterpret_cast<unsigned char*>(buf.data());
@@ -141,7 +137,7 @@ namespace srouter::crypto
                 buf_cptr, &payload_size, nullptr, buf_cptr, buf.size(), nullptr, 0, nonce.udata(), secret.udata())
             != 0)
         {
-            log::warning(logcat, "On decryption, payload failed authentication!");
+            log::warning(logcat, "Decryption of {}B ciphertext failed", buf.size());
             return std::nullopt;
         }
         assert(payload_size == buf.size() - TAG_SIZE);
