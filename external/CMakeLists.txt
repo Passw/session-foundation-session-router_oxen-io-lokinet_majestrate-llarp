@@ -171,14 +171,85 @@ if(NOT TARGET leancrypto::leancrypto)
       BINARY_DIR ${LEANCRYPTO_BUILD_DIR}
       CONFIGURE_COMMAND
       ${CMAKE_COMMAND} -E env "CC=${CMAKE_C_COMPILER}" "CFLAGS=${CMAKE_C_FLAGS}"
-      ${LEANCRYPTO_SRC_DIR}/build-scripts/pqc-only.sh --default-library=static
-      --buildtype=release
-      --prefix=${LEANCRYPTO_INST_DIR} --libdir=lib
-        ${LEANCRYPTO_SRC_DIR}
+      # This list of junk is adapted from build-scripts/mlkem1024-only to produce a mlkem-only build
+      # as that is all we use from leancrypto.  We still include mlkem-1024 support because the
+      # leancrypto code is buggy and can't build mlkem-768 without mlkem-1024 being enabled.
+      meson setup
+          -Dascon=disabled
+          -Dascon_keccak=disabled
+          -Daes_gcm=disabled
+          -Dchacha20poly1305=disabled
+          -Dhash_crypt=disabled
+
+          -Daes_block=disabled
+          -Daes_cbc=disabled
+          -Daes_ctr=disabled
+          -Daes_kw=disabled
+          -Daes_xts=disabled
+          -Dchacha20=disabled
+
+          -Dsha2-256=disabled
+          -Dsha2-512=disabled
+
+          -Dslh_dsa_ascon_128s=disabled
+          -Dslh_dsa_ascon_128f=disabled
+          -Dsphincs_shake_256s=disabled
+          -Dsphincs_shake_256f=disabled
+          -Dsphincs_shake_192s=disabled
+          -Dsphincs_shake_192f=disabled
+          -Dsphincs_shake_128s=disabled
+          -Dsphincs_shake_128f=disabled
+          -Ddilithium_ed25519=disabled
+          -Ddilithium_ed448=disabled
+          -Ddilithium_87=disabled
+          -Ddilithium_65=disabled
+          -Ddilithium_44=disabled
+
+          -Dbike_5=disabled
+          -Dbike_3=disabled
+          -Dbike_1=disabled
+          -Dkyber_512=disabled
+          -Dkyber_x25519=disabled
+          -Dkyber_x448=disabled
+          -Dhqc_256=disabled
+          -Dhqc_192=disabled
+          -Dhqc_128=disabled
+
+          -Dchacha20_drng=disabled
+          -Ddrbg_hash=disabled
+          -Ddrbg_hmac=disabled
+          -Ddrbg_ctr=disabled
+          -Dkmac_drng=disabled
+          -Dcshake_drng=disabled
+
+          -Dhkdf=disabled
+          -Dkdf_ctr=disabled
+          -Dkdf_fb=disabled
+          -Dkdf_dpi=disabled
+          -Dpbkdf2=disabled
+
+          -Dx509_generator=disabled
+          -Dpkcs7_generator=disabled
+          -Dpkcs8_generator=disabled
+          -Dx509_parser=disabled
+          -Dpkcs7_parser=disabled
+          -Dpkcs8_parser=disabled
+
+          -Dhmac=disabled
+          -Dhotp=disabled
+          -Dtotp=disabled
+          -Dapps=disabled
+
+          --default-library=static
+          --buildtype=release
+          --prefix=${LEANCRYPTO_INST_DIR} --libdir=lib
+
+          ${LEANCRYPTO_SRC_DIR}
+
       BUILD_COMMAND
-        meson compile -C build-pqc-only
+        meson compile
       INSTALL_COMMAND
-        meson install -C build-pqc-only
+        meson install
         BUILD_BYPRODUCTS ${LEANCRYPTO_INST_DIR}/lib/libleancrypto.a
       ${more_opts}
     )
