@@ -135,7 +135,7 @@ namespace srouter::dns
     struct RR_PTR : RR_target
     {
         using RR_target::RR_target;
-        RRType rr_type() const override { return RRType::A; }
+        RRType rr_type() const override { return RRType::PTR; }
     };
     struct RR_CNAME : RR_target
     {
