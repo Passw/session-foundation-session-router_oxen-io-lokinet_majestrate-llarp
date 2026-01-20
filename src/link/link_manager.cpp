@@ -954,8 +954,7 @@ namespace srouter::link
     // the hopid and nonce.  The vector is resized to drop the loaded values (and thus will contain
     // only the onioned payload after this call).
     //
-    // Warns and returns nullopt if the input vector is too short or the message type byte is
-    // invalid (and thus the message should be dropped).
+    // Warns and returns nullopt if the input vector is too short.
     static std::optional<std::tuple<HopID, SymmNonce, path::MessageType>> extract_path_message_metadata(
         std::vector<std::byte>& message)
     {
@@ -974,11 +973,6 @@ namespace srouter::link
 
         // For the detailed structure of this encoding, see description in session/session.cpp
         msgtype = static_cast<path::MessageType>(message.back());
-        if (msgtype < path::MessageType::CONTROL_MIN || msgtype > path::MessageType::CONTROL_MAX)
-        {
-            log::warning(logcat, "Received path message of unknown type: 0x{:02x}", static_cast<uint8_t>(msgtype));
-            return std::nullopt;
-        }
         message.pop_back();
 
         hop_id.assign(std::span{message}.last<HopID::SIZE>());
@@ -1028,6 +1022,30 @@ namespace srouter::link
                 [&](auto& src) { router.session_endpoint().handle_session_init(std::move(bytes), std::move(src)); },
                 source);
         }
+
+    // Checks whether `type` is something we understand.  Warns and returns true if invalid.  Should
+    // only be called by the session target, but *not* by a pivot (so that clients can use no
+    // control types with an older pivot).
+    static bool unknown_message_type(path::MessageType msgtype, bool control)
+    {
+        if (control)
+        {
+            if (msgtype < path::MessageType::CONTROL_MIN || msgtype > path::MessageType::CONTROL_MAX)
+            {
+                log::warning(
+                    logcat, "Received control message of unknown type: 0x{:02x}", static_cast<uint8_t>(msgtype));
+                return true;
+            }
+        }
+        else
+        {
+            if (msgtype != path::MessageType::Data)
+            {
+                log::warning(logcat, "Received data message of unknown type: 0x{:02x}", static_cast<uint8_t>(msgtype));
+                return true;
+            }
+        }
+        return false;
     }
 
     void Manager::handle_session_message(std::vector<std::byte> message, bool control)
@@ -1064,6 +1082,8 @@ namespace srouter::link
                 log::warning(logcat, "Client received path data with unknown rxID: {}", hop_id);
                 return;
             }
+            if (unknown_message_type(msgtype, control))
+                return;
 
             // We're receiving this down an aligned path, which means each hop applied xchacha and
             // nonce mutation so we run through the hops and apply the reverse operation,
@@ -1152,6 +1172,9 @@ namespace srouter::link
             // explicitly for session data messages):
             if (pivot_id == hop_id)
             {
+                if (unknown_message_type(msgtype, control))
+                    return;
+
                 // Case 2: this is a session data message to this relay; extract the session tag and
                 // then drop everything down to the session payload for handle_session_data to deal
                 // with.
