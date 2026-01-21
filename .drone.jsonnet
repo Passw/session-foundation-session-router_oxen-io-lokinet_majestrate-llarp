@@ -14,6 +14,7 @@ local default_deps_base = std.set([
   'libzmq3-dev',
   'libzstd-dev',
   'make',
+  'meson',
   'nettle-dev',
   'nlohmann-json3-dev',
   'python3-dev',
@@ -22,7 +23,7 @@ local default_deps(add=[], remove=[]) = std.setDiff(
   std.setUnion(default_deps_base, if std.isArray(add) then std.set(add) else [add]),
   std.set(if std.isArray(remove) then std.set(remove) else [remove])
 );
-local static_deps = std.set(['g++', 'python3-dev', 'automake', 'libtool']);
+local static_deps = std.set(['g++', 'python3-dev', 'automake', 'libtool', 'meson']);
 local oxen_repo_default = ['liboxen-logging-dev', 'liboxenmq-dev', 'liboxenc-dev', 'liboxen-quic-dev'];
 local docker_base = 'registry.oxen.rocks/';
 
