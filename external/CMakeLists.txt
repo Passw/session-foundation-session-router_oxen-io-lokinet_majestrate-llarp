@@ -240,6 +240,8 @@ if(NOT TARGET leancrypto::leancrypto)
           -Dtotp=disabled
           -Dapps=disabled
 
+          -Denable_selftests=disabled
+
           --default-library=static
           --buildtype=release
           --prefix=${LEANCRYPTO_INST_DIR} --libdir=lib
