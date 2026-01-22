@@ -228,8 +228,12 @@ function(build_external target)
 endfunction()
 
 if(NOT TARGET sodium)
-  build_external(sodium CONFIGURE_COMMAND ./configure ${cross_host} ${cross_rc} --prefix=${DEPS_DESTDIR} --disable-shared
-            --enable-static --with-pic "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}")
+  build_external(sodium
+      PATCH_COMMAND ${PROJECT_SOURCE_DIR}/contrib/apply-patches.sh
+        ${PROJECT_SOURCE_DIR}/contrib/patches/libsodium-1.0.21-arm64-compilation.patch
+      CONFIGURE_COMMAND ./configure ${cross_host} ${cross_rc} --prefix=${DEPS_DESTDIR} --disable-shared
+        --enable-static --with-pic "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
+  )
   add_static_target(sodium sodium_external libsodium.a)
 endif()
 
