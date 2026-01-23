@@ -29,7 +29,7 @@ option(SROUTER_GRAPH_DEPENDENCIES "Produce graphviz representation of cmake depe
 
 option(SROUTER_VERSION_SO "Add the project version to the shared library filename, e.g. libsession-router1.2.3.so instead of libsession-router.so" OFF)
 
-set(LANGS C CXX)
+set(LANGS C CXX ASM)
 if(APPLE AND SROUTER_DAEMON)
   set(LANGS ${LANGS} OBJC Swift)
 endif()

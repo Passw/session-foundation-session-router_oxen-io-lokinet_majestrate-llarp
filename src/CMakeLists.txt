@@ -256,7 +256,7 @@ endif()
 
 target_link_libraries(session-router-cryptography
   PRIVATE
-  leancrypto::leancrypto
+  mlkem_native::mlkem768
   PUBLIC
   session-router-libcrypt
 )

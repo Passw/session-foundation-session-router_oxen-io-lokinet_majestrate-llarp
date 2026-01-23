@@ -5,11 +5,6 @@
 
 #include <concepts>
 
-struct lc_kyber_768_pk;
-struct lc_kyber_768_sk;
-struct lc_kyber_768_ss;
-struct lc_kyber_768_ct;
-
 namespace srouter
 {
     // X25519 keys: these are used (along with ML-KEM) for session secret key negotiation.
@@ -52,19 +47,6 @@ namespace srouter
     struct MLKEM768Ciphertext : public AlignedBuffer<1088>
     {
         using AlignedBuffer<1088>::AlignedBuffer;
-
-        // Implicit conversion to the leancrypto primitive (we very that these conversions are okay
-        // in static asserts in the .cpp).
-        template <std::same_as<::lc_kyber_768_ct> T>
-        operator T*()
-        {
-            return reinterpret_cast<::lc_kyber_768_ct*>(data());
-        }
-        template <std::same_as<::lc_kyber_768_ct> T>
-        operator const T*() const
-        {
-            return reinterpret_cast<const ::lc_kyber_768_ct*>(data());
-        }
     };
 
     // Holds a fixed, 32-byte shared secret produced by ML-KEM encapsulation, and coming out of
@@ -73,19 +55,6 @@ namespace srouter
     struct MLKEMSharedSecret : public AlignedBuffer<32, true>
     {
         using AlignedBuffer<32, true>::AlignedBuffer;
-
-        // Implicit conversion to the leancrypto primitive (we very that these conversions are okay
-        // in static asserts in the .cpp).
-        template <std::same_as<::lc_kyber_768_ss> T>
-        operator T*()
-        {
-            return reinterpret_cast<::lc_kyber_768_ss*>(data());
-        }
-        template <std::same_as<::lc_kyber_768_ss> T>
-        operator const T*() const
-        {
-            return reinterpret_cast<const ::lc_kyber_768_ss*>(data());
-        }
     };
 
     // ML-KEM-768 secret key.
@@ -97,19 +66,6 @@ namespace srouter
         // 32-byte shared secret from it.  Note that there is no concept of "success" here:
         // decapsulating modified data simple returns a different (incorrect) shared secret.
         [[nodiscard]] MLKEMSharedSecret decapsulate(const MLKEM768Ciphertext& ct) const;
-
-        // Implicit conversion to leancrypto primitives (we verify that these conversions are okay
-        // via static asserts in the .cpp).
-        template <std::same_as<::lc_kyber_768_sk> T>
-        operator T*()
-        {
-            return reinterpret_cast<::lc_kyber_768_sk*>(data());
-        }
-        template <std::same_as<::lc_kyber_768_sk> T>
-        operator const T*() const
-        {
-            return reinterpret_cast<const ::lc_kyber_768_sk*>(data());
-        }
     };
 
     // ML-KEM-768 pubkey.

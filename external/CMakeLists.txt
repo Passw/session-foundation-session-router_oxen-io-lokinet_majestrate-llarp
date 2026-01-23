@@ -30,7 +30,7 @@ if(SUBMODULE_CHECK)
     check_submodule(oxen-mq)
     check_submodule(pybind11)
     check_submodule(sqlite_orm)
-    check_submodule(leancrypto)
+    check_submodule(mlkem-native)
   endif()
 endif()
 
@@ -138,130 +138,21 @@ else()
 endif()
 
 
-# Leancrypto is a bit more difficult as it doesn't have a cmake build system (but rather uses
-# meson), and so we need to build it using ExternalProject rather than a submodule.
-#
-# Once libcrypto is commonly packaged this could move into StaticBuild.cmake rather than as a
-# submodule, but currently it needs to be built on most platforms and so we don't want a full static
-# dep build to be necessary to build.
-if(NOT TARGET leancrypto::leancrypto)
-  option(FORCE_LEANCRYPTO_SUBMODULE "force building leancrypto from submodule" OFF)
-  if(NOT BUILD_STATIC_DEPS AND NOT FORCE_LEANCRYPTO_SUBMODULE AND NOT FORCE_ALL_SUBMODULES)
-    pkg_check_modules(LEANCRYPTO leancrypto>=1.4.0 IMPORTED_TARGET)
-  endif()
-  if(LEANCRYPTO_FOUND)
-    add_library(leancrypto INTERFACE)
-    target_link_libraries(leancrypto INTERFACE PkgConfig::LEANCRYPTO)
-    message(STATUS "Found system leancrypto ${LEANCRYPTO_VERSION}")
-  else()
-    message(STATUS "building leancrypto from external/leancrypto")
+if(NOT TARGET mlkem_native::mlkem768)
+    file(GLOB_RECURSE mlkem_sources mlkem-native/mlkem/src/*.c mlkem-native/mlkem/src/*.S)
 
-    set(more_opts)
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.20")
-      list(APPEND more_opts CONFIGURE_HANDLED_BY_BUILD TRUE)
-    endif()
+    add_library(mlkem_native768 STATIC ${mlkem_sources})
 
-    set(LEANCRYPTO_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/leancrypto)
-    set(LEANCRYPTO_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/leancrypto-build)
-    set(LEANCRYPTO_INST_DIR ${CMAKE_CURRENT_BINARY_DIR}/leancrypto)
-    include(ExternalProject)
-    ExternalProject_Add(
-      leancrypto_pqc
-      SOURCE_DIR ${LEANCRYPTO_SRC_DIR}
-      BINARY_DIR ${LEANCRYPTO_BUILD_DIR}
-      CONFIGURE_COMMAND
-      ${CMAKE_COMMAND} -E env "CC=${CMAKE_C_COMPILER}" "CFLAGS=${CMAKE_C_FLAGS}"
-      # This list of junk is adapted from build-scripts/mlkem1024-only to produce a mlkem-only build
-      # as that is all we use from leancrypto.  We still include mlkem-1024 support because the
-      # leancrypto code is buggy and can't build mlkem-768 without mlkem-1024 being enabled.
-      meson setup
-          -Dascon=disabled
-          -Dascon_keccak=disabled
-          -Daes_gcm=disabled
-          -Dchacha20poly1305=disabled
-          -Dhash_crypt=disabled
-
-          -Daes_block=disabled
-          -Daes_cbc=disabled
-          -Daes_ctr=disabled
-          -Daes_kw=disabled
-          -Daes_xts=disabled
-          -Dchacha20=disabled
-
-          -Dsha2-256=disabled
-          -Dsha2-512=disabled
-
-          -Dslh_dsa_ascon_128s=disabled
-          -Dslh_dsa_ascon_128f=disabled
-          -Dsphincs_shake_256s=disabled
-          -Dsphincs_shake_256f=disabled
-          -Dsphincs_shake_192s=disabled
-          -Dsphincs_shake_192f=disabled
-          -Dsphincs_shake_128s=disabled
-          -Dsphincs_shake_128f=disabled
-          -Ddilithium_ed25519=disabled
-          -Ddilithium_ed448=disabled
-          -Ddilithium_87=disabled
-          -Ddilithium_65=disabled
-          -Ddilithium_44=disabled
-
-          -Dbike_5=disabled
-          -Dbike_3=disabled
-          -Dbike_1=disabled
-          -Dkyber_512=disabled
-          -Dkyber_x25519=disabled
-          -Dkyber_x448=disabled
-          -Dhqc_256=disabled
-          -Dhqc_192=disabled
-          -Dhqc_128=disabled
-
-          -Dchacha20_drng=disabled
-          -Ddrbg_hash=disabled
-          -Ddrbg_hmac=disabled
-          -Ddrbg_ctr=disabled
-          -Dkmac_drng=disabled
-          -Dcshake_drng=disabled
-
-          -Dhkdf=disabled
-          -Dkdf_ctr=disabled
-          -Dkdf_fb=disabled
-          -Dkdf_dpi=disabled
-          -Dpbkdf2=disabled
-
-          -Dx509_generator=disabled
-          -Dpkcs7_generator=disabled
-          -Dpkcs8_generator=disabled
-          -Dx509_parser=disabled
-          -Dpkcs7_parser=disabled
-          -Dpkcs8_parser=disabled
-
-          -Dhmac=disabled
-          -Dhotp=disabled
-          -Dtotp=disabled
-          -Dapps=disabled
-
-          -Denable_selftests=disabled
-
-          --default-library=static
-          --buildtype=release
-          --prefix=${LEANCRYPTO_INST_DIR} --libdir=lib
-
-          ${LEANCRYPTO_SRC_DIR}
-
-      BUILD_COMMAND
-        meson compile
-      INSTALL_COMMAND
-        meson install
-        BUILD_BYPRODUCTS ${LEANCRYPTO_INST_DIR}/lib/libleancrypto.a
-      ${more_opts}
+    target_compile_definitions(mlkem_native768 PUBLIC
+        MLK_CONFIG_NO_RANDOMIZED_API
+        MLK_CONFIG_PARAMETER_SET=768
+        MLK_CONFIG_NAMESPACE_PREFIX=sr_mlkem768
+        MLK_CONFIG_NO_SUPERCOP
+        MLK_CONFIG_USE_NATIVE_BACKEND_ARITH
+        MLK_CONFIG_USE_NATIVE_BACKEND_FIPS202
     )
-  endif()
-  add_library(leancrypto_static STATIC IMPORTED GLOBAL)
-  add_dependencies(leancrypto_static leancrypto_pqc)
-  set_target_properties(leancrypto_static PROPERTIES
-    IMPORTED_LOCATION ${LEANCRYPTO_INST_DIR}/lib/libleancrypto.a
-    INTERFACE_INCLUDE_DIRECTORIES ${LEANCRYPTO_INST_DIR}/include)
-  add_library(leancrypto INTERFACE)
-  target_link_libraries(leancrypto INTERFACE leancrypto_static)
-  add_library(leancrypto::leancrypto ALIAS leancrypto)
+
+    target_include_directories(mlkem_native768 PUBLIC mlkem-native/mlkem)
+
+    add_library(mlkem_native::mlkem768 ALIAS mlkem_native768)
 endif()

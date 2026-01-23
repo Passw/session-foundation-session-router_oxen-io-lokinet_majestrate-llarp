@@ -23,6 +23,6 @@
 [submodule "external/oxen-libquic"]
 	path = external/oxen-libquic
 	url = https://github.com/session-foundation/libquic.git
-[submodule "external/leancrypto"]
-	path = external/leancrypto
-	url = https://github.com/smuellerDD/leancrypto.git
+[submodule "external/mlkem-native"]
+	path = external/mlkem-native
+	url = https://github.com/pq-code-package/mlkem-native.git
