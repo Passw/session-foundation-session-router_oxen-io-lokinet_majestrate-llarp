@@ -473,7 +473,6 @@ namespace
             signal(SIGTERM, handle_signal);
             signal(SIGKILL, handle_signal);
 
-            srouter::util::SetThreadName("srtr-main");
             ctx->start(std::move(*conf));
         }
         catch (srouter::util::bind_socket_error& ex)
