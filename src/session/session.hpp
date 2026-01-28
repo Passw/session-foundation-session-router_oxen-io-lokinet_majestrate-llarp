@@ -66,7 +66,6 @@ namespace srouter
         //
         //    c) We encrypt the following Session initialization parameters using that sealed box
         //       encryption:
-        //       - supported protocol flags ("|")
         //       - session ephemeral X25519 pubkey (X)
         //       - session ephemeral ML-KEM768 pubkey (M)
         //       - our Ed25519 client pubkey (aka "identity") (I)
@@ -77,8 +76,9 @@ namespace srouter
         //
         //    The session initiation message body then consists of (bt-encoded):
         //
-        //        ""=1, // session initialization version identifier.  Omitted implies the earlier
-        //              // (1.0.x) DF exchange, while 1 indicates this PFS/PQ key exchange.
+        //        ""="i", // session handshake identifier.  Omitted implies the earlier (1.0.x) DF
+        //                // exchange, while "i" indicates this PFS/PQ key exchange.  Any other
+        //                // value is reserved for future use.
         //        B=sealed box
         //
         // 2. Session initialization recipient and reply:
@@ -123,7 +123,7 @@ namespace srouter
         //       Ix, the X25519 pubkey derived from the initiator's Ed25519 pubkey, I).  The session
         //       response message body thus consists of:
         //
-        //           ""=1, // session initialization version identifier
+        //           ""="a", // X25519+PQ session accept identifier
         //           B=sealed box
         //
         //       (Note that this is not yet using session encryption keys as the initiator still
