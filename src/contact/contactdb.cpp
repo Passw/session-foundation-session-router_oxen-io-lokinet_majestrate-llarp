@@ -82,10 +82,10 @@ namespace srouter
             btdc.require_span<std::byte>("x");
 
             btdc.require_signature("~", [blinded_pk](std::span<const std::byte> m, std::span<const std::byte> s) {
-                if (s.size() != 64)
+                if (s.size() != Signature::SIZE)
                     throw std::runtime_error{"Invalid signature: not 64 bytes"};
 
-                if (not crypto::verify(blinded_pk, m, s.first<64>()))
+                if (not blinded_pk.verify(m, SignatureView{s.first<Signature::SIZE>()}))
                     throw std::runtime_error{"Encrypted client contact signature verification failed"};
             });
 

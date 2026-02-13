@@ -2,6 +2,7 @@
 
 #include "link_manager.hpp"
 #include "nodedb.hpp"
+#include "util/bspan.hpp"
 #include "util/time.hpp"
 
 #include <oxen/quic/btstream.hpp>
@@ -62,7 +63,7 @@ namespace srouter::link
         crypto_generichash_blake2b_state st;
         crypto_generichash_blake2b_init(
             &st, reinterpret_cast<const uint8_t*>(static_secret_key.data()), static_secret_key.size(), secret.size());
-        crypto_generichash_blake2b_update(&st, sk.data(), sk.size());
+        crypto_generichash_blake2b_update(&st, sk.udata(), sk.size());
         crypto_generichash_blake2b_final(&st, secret.data(), secret.size());
 
         return secret;
@@ -609,7 +610,7 @@ namespace srouter::link
     }
 
     std::shared_ptr<quic::BTRequestStream> Endpoint::make_control(
-        quic::Connection& conn, std::span<const unsigned char> remote_key, std::string_view alpn)
+        quic::Connection& conn, std::span<const std::byte> remote_key, std::string_view alpn)
     {
         std::shared_ptr<quic::BTRequestStream> control_stream;
 
@@ -779,7 +780,7 @@ namespace srouter::link
             // because the stream must be queued before stream data gets processed (which could
             // happen immediately after this method call returns) so that we don't accidentally end
             // up with a plain Stream for the stream id rather than a BTRequestStream.
-            inbound_cstream = make_control(conn, conn.remote_key(), conn.selected_alpn());
+            inbound_cstream = make_control(conn, as_bspan(conn.remote_key()), conn.selected_alpn());
         }
 
         router.loop.call([this, weak = conn.weak_from_this(), inbound_cstream = std::move(inbound_cstream)]() mutable {

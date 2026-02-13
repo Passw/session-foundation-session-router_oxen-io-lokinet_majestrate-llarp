@@ -22,7 +22,6 @@
 #include <oxenc/base32z.h>
 
 #include <chrono>
-#include <concepts>
 #include <memory>
 #include <random>
 
@@ -31,27 +30,24 @@ namespace srouter::handlers
     static auto logcat = log::Cat("session_ep");
 
     SessionEndpoint::SessionEndpoint(Router& r)
-        : path::
-              PathHandler{r, r.config().paths.inbound_paths + r.config().paths.inbound_paths_extra, r.config().paths.inbound_hops()},
-          cc_blind_keys{r.secret_key(), crypto::blinding::CLIENT_CONTACT}
+        : path::PathHandler{
+              r, r.config().paths.inbound_paths + r.config().paths.inbound_paths_extra, r.config().paths.inbound_hops()}
     {
-        const auto& netconf = router.config().network;
-
-        _auth_tokens = netconf.exit_auths;
-
-        // *All* clients currently support speaking via QUIC tunnel:
-        protocols = protocol_flag::QUIC_TUNNEL;
-        if (!router.embedded())
+        if (!r.is_service_node)
         {
-            // raw IPv4/IPv6/exit traffic all require a full tun interface.
+            const auto& netconf = router.config().network;
 
-            protocols = protocol_flag::IPV4 | protocol_flag::IPV6;
-            if (router.is_exit_node())
-                protocols |= protocol_flag::EXIT;
+            _auth_tokens = netconf.exit_auths;
+
+            protocol_flag protocols = protocol_flag::PFS_PQ;
+            if (!router.embedded())
+                protocols |= protocol_flag::IPV4 | protocol_flag::IPV6;
+
+            client_contact.emplace(
+                router.key_manager.router_id(), netconf.srv_records, protocols, sys_ms{}, netconf.traffic_policy);
+
+            cc_blind_keys.emplace(r.secret_key(), crypto::blinding::CLIENT_CONTACT);
         }
-
-        client_contact = ClientContact{
-            router.key_manager.router_id(), netconf.srv_records, protocols, sys_ms{}, netconf.traffic_policy};
     }
 
     std::array<int, 5> SessionEndpoint::session_stats() const
@@ -853,6 +849,7 @@ namespace srouter::handlers
 
         Lock_t l{paths_mutex};
 
+        int sent_reqs = 0;
         for (const auto& [_, p] : _paths)
         {
             if (not p or not p->is_active())
@@ -866,9 +863,14 @@ namespace srouter::handlers
                 remote);
 
             p->fetch_relay_contact(remote, response_handler);
+
+            // In case you have lots of utility paths configured, we don't want to spam the network
+            // with tons of parallel lookups:
+            if (++sent_reqs >= 3)
+                break;
         }
 
-        if (*remaining == 0)
+        if (sent_reqs == 0)
         {
             log::warning(logcat, "RC lookup failed: no usable paths!");
             try_calling(logcat, func, std::nullopt);
@@ -1076,6 +1078,8 @@ namespace srouter::handlers
             return;
         }
 
+        assert(client_contact && cc_blind_keys);
+
         log::debug(logcat, "Updating and publishing ClientContact...");
 
         auto now = srouter::time_now_ms();
@@ -1084,15 +1088,15 @@ namespace srouter::handlers
             if (p and p->is_active(now))
                 intros.push_back(p->make_intro());
 
-        client_contact.update_intros(std::move(intros));
+        client_contact->update_intros(std::move(intros));
 
-        log::debug(logcat, "New ClientContact: {}", client_contact);
+        log::debug(logcat, "New ClientContact: {}", *client_contact);
 #ifndef NDEBUG
         log::debug(logcat, "ClientContact details:");
-        log::debug(logcat, "Pubkey: {}", client_contact.pubkey());
-        log::debug(logcat, "{} SRV records", client_contact.SRVs().size());
-        log::debug(logcat, "Intros ({}):", client_contact.intros().size());
-        for (const auto& ci : client_contact.intros())
+        log::debug(logcat, "Pubkey: {}", client_contact->pubkey());
+        log::debug(logcat, "{} SRV records", client_contact->SRVs().size());
+        log::debug(logcat, "Intros ({}):", client_contact->intros().size());
+        for (const auto& ci : client_contact->intros())
             log::debug(
                 logcat,
                 "    • {}, hopid: {}, expiry: {}",
@@ -1103,7 +1107,7 @@ namespace srouter::handlers
 
         try
         {
-            publish_client_contact(client_contact.encrypt_and_sign(cc_blind_keys));
+            publish_client_contact(client_contact->encrypt_and_sign(*cc_blind_keys));
         }
         catch (const std::exception& e)
         {
@@ -1162,7 +1166,7 @@ namespace srouter::handlers
         return std::nullopt;
     }
 
-    void SessionEndpoint::handle_session_init(std::vector<std::byte>&& payload, std::shared_ptr<path::Path> path)
+    void SessionEndpoint::handle_session_init(std::span<const std::byte> payload, std::shared_ptr<path::Path> path)
     {
         std::shared_ptr<session::InboundSession> new_session{};
         try
@@ -1177,7 +1181,8 @@ namespace srouter::handlers
         session_post_init(std::move(new_session));
     }
 
-    void SessionEndpoint::handle_session_init(std::vector<std::byte>&& payload, std::shared_ptr<path::TransitHop> thop)
+    void SessionEndpoint::handle_session_init(
+        std::span<const std::byte> payload, std::shared_ptr<path::TransitHop> thop)
     {
         log::debug(logcat, "SessionEndpoint::handle_session_init (relay)");
         std::shared_ptr<session::InboundSession> new_session{};

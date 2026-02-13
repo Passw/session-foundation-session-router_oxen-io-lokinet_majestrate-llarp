@@ -7,7 +7,6 @@
 #include "constants/files.hpp"
 #include "constants/path.hpp"
 #include "contact/relay_contact.hpp"
-#include "crypto/types.hpp"
 #include "definition.hpp"
 #include "dns/srv_data.hpp"
 #include "ini.hpp"

@@ -17,10 +17,10 @@ set(EXPAT_SOURCE expat-${EXPAT_VERSION}.tar.xz)
 set(EXPAT_HASH SHA512=4c9a6c1c1769d2c4404da083dd3013dbc73883da50e2b7353db2349a420e9b6d27cac7dbcb645991d6c7cdbf79bd88486fc1ac353084ce48e61081fb56e13d46
     CACHE STRING "expat source hash")
 
-set(UNBOUND_VERSION 1.23.0 CACHE STRING "unbound version")
+set(UNBOUND_VERSION 1.24.2 CACHE STRING "unbound version")
 set(UNBOUND_MIRROR ${LOCAL_MIRROR} https://nlnetlabs.nl/downloads/unbound CACHE STRING "unbound download mirror(s)")
 set(UNBOUND_SOURCE unbound-${UNBOUND_VERSION}.tar.gz)
-set(UNBOUND_HASH SHA512=9b5ca48f4f5189f168f76396f5895f39262a4333e589f8c64bb9298a55c6266f626a4a4399370c68edd9f6318215a401146bf9e16a101c54decf623668a398af
+set(UNBOUND_HASH SHA256=44e7b53e008a6dcaec03032769a212b46ab5c23c105284aa05a4f3af78e59cdb
     CACHE STRING "unbound source hash")
 
 set(SQLITE3_VERSION 3500200 CACHE STRING "sqlite3 version")
@@ -30,13 +30,13 @@ set(SQLITE3_SOURCE sqlite-autoconf-${SQLITE3_VERSION}.tar.gz)
 set(SQLITE3_HASH SHA3_256=e4d2b4332988f479ec032ccff00963a9bbd24a3a0f0222b4e249653fa680b4c0
   CACHE STRING "sqlite3 source hash")
 
-set(SODIUM_VERSION 1.0.20 CACHE STRING "libsodium version")
+set(SODIUM_VERSION 1.0.21 CACHE STRING "libsodium version")
 set(SODIUM_MIRROR ${LOCAL_MIRROR}
   https://download.libsodium.org/libsodium/releases
   https://github.com/jedisct1/libsodium/releases/download/${SODIUM_VERSION}-RELEASE
   CACHE STRING "libsodium mirror(s)")
 set(SODIUM_SOURCE libsodium-${SODIUM_VERSION}.tar.gz)
-set(SODIUM_HASH SHA512=7ea165f3c1b1609790e30a16348b9dfdc5731302da00c07c65e125c8ab115c75419a5631876973600f8a4b560ca2c8267001770b68f2eb3eebc9ba095d312702
+set(SODIUM_HASH SHA512=ee8cc2f3f5707b172bf75d8c04afbd5f0c83c6f94dbab3f988f07aab716d96f1662556a59e09b3d83c3bd5c22f59327ad95937bf499d523c86146f4df830f777
   CACHE STRING "libsodium source hash")
 
 set(ZMQ_VERSION 4.3.5 CACHE STRING "libzmq version")
@@ -199,10 +199,15 @@ function(build_external target)
   endforeach()
   string(REPLACE ___TARGET___ ${target} arg_BUILD_BYPRODUCTS "${arg_BUILD_BYPRODUCTS}")
 
+
   if(arg_CONFIGURE_COMMAND MATCHES "^DEFAULT_CMAKE")
       string(REGEX REPLACE "^DEFAULT_CMAKE(;?)" "CMAKE_ARGS;-DCMAKE_INSTALL_PREFIX=${DEPS_DESTDIR}\\1" configure "${arg_CONFIGURE_COMMAND}")
+      set(build "")
+      set(install "")
   else()
     set(configure CONFIGURE_COMMAND ${arg_CONFIGURE_COMMAND})
+    set(build BUILD_COMMAND ${arg_BUILD_COMMAND})
+    set(install INSTALL_COMMAND ${arg_INSTALL_COMMAND})
   endif()
 
   string(TOUPPER "${target}" prefix)
@@ -216,15 +221,19 @@ function(build_external target)
     DOWNLOAD_NO_PROGRESS ON
     PATCH_COMMAND ${arg_PATCH_COMMAND}
     ${configure}
-    BUILD_COMMAND ${arg_BUILD_COMMAND}
-    INSTALL_COMMAND ${arg_INSTALL_COMMAND}
+    ${build}
+    ${install}
     BUILD_BYPRODUCTS ${arg_BUILD_BYPRODUCTS}
   )
 endfunction()
 
 if(NOT TARGET sodium)
-  build_external(sodium CONFIGURE_COMMAND ./configure ${cross_host} ${cross_rc} --prefix=${DEPS_DESTDIR} --disable-shared
-            --enable-static --with-pic "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}")
+  build_external(sodium
+      PATCH_COMMAND ${PROJECT_SOURCE_DIR}/contrib/apply-patches.sh
+        ${PROJECT_SOURCE_DIR}/contrib/patches/libsodium-1.0.21-arm64-compilation.patch
+      CONFIGURE_COMMAND ./configure ${cross_host} ${cross_rc} --prefix=${DEPS_DESTDIR} --disable-shared
+        --enable-static --with-pic "CC=${deps_cc}" "CFLAGS=${deps_CFLAGS}"
+  )
   add_static_target(sodium sodium_external libsodium.a)
 endif()
 

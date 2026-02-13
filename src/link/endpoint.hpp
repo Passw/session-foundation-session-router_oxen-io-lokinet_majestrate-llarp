@@ -312,7 +312,7 @@ namespace srouter::link
 
       private:
         std::shared_ptr<quic::BTRequestStream> make_control(
-            quic::Connection& conn, std::span<const unsigned char> remote_key, std::string_view alpn);
+            quic::Connection& conn, std::span<const std::byte> remote_key, std::string_view alpn);
 
         void on_inbound_conn(std::shared_ptr<quic::Connection> conn, std::shared_ptr<quic::BTRequestStream> control);
         void on_outbound_conn(std::shared_ptr<quic::Connection> conn);

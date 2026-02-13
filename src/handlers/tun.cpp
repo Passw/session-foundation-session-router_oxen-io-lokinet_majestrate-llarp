@@ -443,7 +443,7 @@ namespace srouter::handlers
     }
 
     // FIXME: we need separate flags for to-exit and from-exit
-    void TunEndpoint::handle_inbound_packet(IPPacket pkt, uint8_t type, NetworkAddress remote)
+    void TunEndpoint::handle_inbound_packet(IPPacket pkt, traffic_type type, NetworkAddress remote)
     {
         (void)type;              // TODO FIXME use this
         bool to_exit = false;    // TODO FIXME

@@ -1,6 +1,5 @@
 #include "nodedb.hpp"
 
-#include "crypto/types.hpp"
 #include "link/link_manager.hpp"
 #include "util/file.hpp"
 #include "util/logging/buffer.hpp"
@@ -120,7 +119,7 @@ namespace srouter
     {
         // choice of which byte is arbitrary, but avoid early bytes for clustered vanity keys
         // 128 buckets total, so mask off MSB.
-        return rid.as_array()[16] & 0x7f;
+        return static_cast<uint8_t>(rid.as_array()[16] & std::byte{0x7f});
     }
 
     void NodeDB::update_rc_buckets(const RelayContact& rc, bool added)

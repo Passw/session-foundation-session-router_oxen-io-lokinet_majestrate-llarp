@@ -30,6 +30,7 @@ if(SUBMODULE_CHECK)
     check_submodule(oxen-mq)
     check_submodule(pybind11)
     check_submodule(sqlite_orm)
+    check_submodule(mlkem-native)
   endif()
 endif()
 
@@ -107,7 +108,7 @@ endif()
 
 
 set(LIBQUIC_BUILD_TESTS OFF CACHE BOOL "")
-system_or_submodule(OXENQUIC quic oxen::quic liboxenquic>=1.7 oxen-libquic)
+system_or_submodule(OXENQUIC quic oxen::quic liboxenquic>=1.7.1 oxen-libquic)
 
 
 # libcrypt defaults, only on with macos and non static linux
@@ -134,4 +135,24 @@ if(WITH_LIBCRYPT)
 else()
   # TODO static build lib crypt?
   message(STATUS "not building with libcrypt")
+endif()
+
+
+if(NOT TARGET mlkem_native::mlkem768)
+    file(GLOB_RECURSE mlkem_sources mlkem-native/mlkem/src/*.c mlkem-native/mlkem/src/*.S)
+
+    add_library(mlkem_native768 STATIC ${mlkem_sources})
+
+    target_compile_definitions(mlkem_native768 PUBLIC
+        MLK_CONFIG_NO_RANDOMIZED_API
+        MLK_CONFIG_PARAMETER_SET=768
+        MLK_CONFIG_NAMESPACE_PREFIX=sr_mlkem768
+        MLK_CONFIG_NO_SUPERCOP
+        MLK_CONFIG_USE_NATIVE_BACKEND_ARITH
+        MLK_CONFIG_USE_NATIVE_BACKEND_FIPS202
+    )
+
+    target_include_directories(mlkem_native768 PUBLIC mlkem-native/mlkem)
+
+    add_library(mlkem_native::mlkem768 ALIAS mlkem_native768)
 endif()

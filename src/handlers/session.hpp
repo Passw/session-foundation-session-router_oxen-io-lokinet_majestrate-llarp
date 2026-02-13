@@ -38,17 +38,16 @@ namespace srouter
             std::unordered_map<NetworkAddress, std::shared_ptr<session::Session>> _sessions;
             std::unordered_map<session_tag, std::shared_ptr<session::Session>> _session_tags;
 
-            session_tag last_tag = srouter::csrng();
+            session_tag last_tag = static_cast<session_tag>(srouter::csrng());
 
             // this could probably map to a pair of vectors, or pending packets could
             // be wrapped in callbacks, but for now this works
             // std::unordered_map<NetworkAddress, std::vector<IPPacket>> pending_sessions;
             // std::unordered_map<NetworkAddress, std::vector<std::function<void(bool)>>> pending_session_hooks;
 
-            ClientContact client_contact;
-            Ed25519BlindedKey cc_blind_keys;
+            std::optional<ClientContact> client_contact;
+            std::optional<Ed25519BlindedKey> cc_blind_keys;
             int cc_count = -1;
-            protocol_flag protocols;
 
             // Used for logging connected/disconnected status:
             bool connected = false;
@@ -188,6 +187,8 @@ namespace srouter
             template <std::derived_from<session::Session> S = session::Session>
             S* get_session(const session_tag& tag) const
             {
+                if (tag == 0)  // Reserved "not a tag" value
+                    return nullptr;
                 auto it = _session_tags.find(tag);
                 if (it == _session_tags.end())
                     return nullptr;
@@ -226,6 +227,15 @@ namespace srouter
 
             void publish_client_contact(std::string_view encrypted_cc);
 
+            /// Accesses the current client contact, if we are a client, otherwise returns nullptr.
+            const ClientContact* maybe_cc() const { return client_contact ? &*client_contact : nullptr; }
+            /// Asserts that we are a client and references a reference to the CC
+            const ClientContact& cc() const
+            {
+                assert(client_contact);
+                return *client_contact;
+            }
+
             // Updates a CC cache entry if the given value is better than the one already in the
             // cache.  Returns a reference to the cache entry (which *could* be a copy of the input,
             // but also could be a previous existing entry if the existing cache value is
@@ -239,8 +249,8 @@ namespace srouter
             std::optional<ipv4> map_session_v4(const session::Session& s);
             std::optional<ipv6> map_session_v6(const session::Session& s);
 
-            void handle_session_init(std::vector<std::byte>&& payload, std::shared_ptr<path::Path> path);
-            void handle_session_init(std::vector<std::byte>&& payload, std::shared_ptr<path::TransitHop> thop);
+            void handle_session_init(std::span<const std::byte> payload, std::shared_ptr<path::Path> path);
+            void handle_session_init(std::span<const std::byte> payload, std::shared_ptr<path::TransitHop> thop);
 
             // Called on a client when we receive a session_init from another client to create an
             // InboundClientSession.  Returns nullopt if the session cannot be created, otherwise
@@ -249,7 +259,7 @@ namespace srouter
                 const NetworkAddress& initiator,
                 const HopID& remote_pivot_txid,
                 std::shared_ptr<path::Path> path,
-                const SharedSecret& session_key);
+                const SymmKey& session_key);
 
             // Called on a relay when we receive a session_init from a client to create an
             // InboundRelaySession.  Returns nullopt if the session cannot be created, otherwise
@@ -258,7 +268,7 @@ namespace srouter
                 const NetworkAddress& initiator,
                 const HopID& remote_pivot_txid,
                 std::shared_ptr<path::TransitHop> path,
-                const SharedSecret& session_key);
+                const SymmKey& session_key);
 
             // lookup SNS address to return "{pubkey}.sesh" address of a remote client
             //

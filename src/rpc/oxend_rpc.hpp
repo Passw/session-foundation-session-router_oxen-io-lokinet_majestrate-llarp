@@ -2,7 +2,6 @@
 
 #include "contact/router_id.hpp"
 #include "contact/sns.hpp"
-#include "crypto/types.hpp"
 #include "util/logging.hpp"
 
 #include <oxenmq/address.h>
