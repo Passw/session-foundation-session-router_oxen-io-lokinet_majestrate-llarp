@@ -110,8 +110,10 @@ namespace srouter::handlers
         s->close(send_close);
 
         const auto& remote = s->remote();
+#ifndef SROUTER_EMBEDDED_ONLY
         if (auto& tun = router.tun_endpoint())
             tun->expire(remote);
+#endif
 
         if (auto it = _sessions.find(remote); it != _sessions.end())
         {
@@ -1135,21 +1137,30 @@ namespace srouter::handlers
     std::optional<ipv4> SessionEndpoint::map_session_v4(const session::Session& s)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
-        assert(router.tun_endpoint());
 
-        log::debug(logcat, "Mapping ipv4 for inbound session frmo {}", s.remote());
-        auto addr = router.tun_endpoint()->map4(s.remote());
-        if (addr)
-            log::debug(logcat, "Mapping successful, address: {}", *addr);
-        else
-            log::warning(logcat, "Mapping unsuccessful; out of available addresses?");
-        return addr;
+#ifndef SROUTER_EMBEDDED_ONLY
+        if (const auto& tun = router.tun_endpoint())
+        {
+            log::debug(logcat, "Mapping local tun ipv4 for inbound session from {}", s.remote());
+            auto addr = tun->map4(s.remote());
+            if (addr)
+                log::debug(logcat, "Mapping successful, address: {}", *addr);
+            else
+                log::warning(logcat, "Mapping unsuccessful; out of available addresses?");
+            return addr;
+        }
+#endif
+
+        // TODO: no tun-based
+
+        return std::nullopt;
     }
 
     std::optional<ipv6> SessionEndpoint::map_session_v6(const session::Session& s)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
+#ifndef SROUTER_EMBEDDED_ONLY
         if (const auto& tun = router.tun_endpoint())
         {
             log::debug(logcat, "Successfully mapped inbound session; mapping session to local TUN IPv6");
@@ -1160,6 +1171,7 @@ namespace srouter::handlers
             log::info(logcat, "TUN device successfully mapped session (remote: {}) to local ip: {}", s.remote(), addr);
             return addr;
         }
+#endif
 
         // TODO: if we're not tun-based -- currently not allowing inbound sessions for non-tun
 
