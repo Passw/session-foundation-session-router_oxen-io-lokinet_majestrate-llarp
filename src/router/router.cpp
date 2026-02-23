@@ -83,10 +83,10 @@ namespace srouter
 
     void Router::start_tickers()
     {
+#ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             _tun->start_poller();
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (!embedded())
             _service_stat_ticker = _loop->call_every(
                 SERVICE_MANAGER_REPORT_INTERVAL, []() { sys::service_manager->report_periodic_stats(); });
