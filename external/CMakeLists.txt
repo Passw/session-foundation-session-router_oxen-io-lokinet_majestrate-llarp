@@ -61,8 +61,8 @@ endmacro()
 system_or_submodule(OXENC oxenc oxenc::oxenc liboxenc>=1.5.0 oxen-libquic/external/oxen-encoding)
 
 # oxen-logging
-add_library(oxen-logging-fmt-spdlog INTERFACE)
 if (NOT TARGET oxen::logging)
+    add_library(oxen-logging-fmt-spdlog INTERFACE)
     if(BUILD_STATIC_DEPS)
         set(OXEN_LOGGING_FORCE_SUBMODULES ON CACHE INTERNAL "")
     endif()
