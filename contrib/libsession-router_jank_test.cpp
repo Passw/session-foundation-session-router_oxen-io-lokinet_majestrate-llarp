@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <future>
 #include <iostream>
+#include <regex>
 
 extern "C"
 {
@@ -18,7 +19,7 @@ int main(int argc, char** argv)
 {
     if (argc <= 1)
     {
-        std::cerr << "USAGE: " << argv[0] << " {PUBKEY.sesh | PUBKEY.snode | ONS.loki}\n";
+        std::cerr << "USAGE: " << argv[0] << " {PUBKEY.sesh | PUBKEY.snode | ONS.loki}[:REMOTEPORT]\n";
         return 1;
     }
 
@@ -31,6 +32,12 @@ int main(int argc, char** argv)
     pthread_sigmask(SIG_BLOCK, &signal_mask, nullptr);
 
     std::string target{argv[1]};
+
+    int port = 12345; // Default, but updated if target ends with :PORT
+    if (std::smatch m; std::regex_match(target, m, std::regex{"(.*):(\\d+)$"})) {
+        port = std::stoi(m[2]);
+        target = m[1];
+    }
 
     auto srouter = std::make_unique<session::router::SessionRouter>(std::filesystem::path{"jank.ini"});
 
@@ -83,12 +90,12 @@ int main(int argc, char** argv)
 
         srouter->establish_udp(
             target,
-            12345,
-            [&prom, &start](auto udp_info) {
+            port,
+            [&prom, &start, &port](auto udp_info) {
                 std::cout
                     << "\n\x1b[32;1mSession established ("
                     << std::chrono::round<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()
-                    << "ms); UDP bound to port [::1]:" << udp_info.local_port << "\x1b[0m\n\n"
+                    << "ms); remote UDP port " << port << " bound to local port [::1]:" << udp_info.local_port << "\x1b[0m\n\n"
                     << std::flush;
                 prom.set_value();
             },
@@ -133,7 +140,7 @@ int main(int argc, char** argv)
               << "    Ctrl-C -- shut down\x1b[0m\n\n\n";
 
     /*
-    srouter.map_tcp_remote_port(std::string{argv[1]}, 12345,
+    srouter.map_tcp_remote_port(std::string{argv[1]}, port,
         [&](auto tunnel_info) {
           std::cout << "\n\nTCP bound to port " << tunnel_info.local_port << "\n\n";
         },
@@ -151,12 +158,12 @@ int main(int argc, char** argv)
             {
                 case SIGHUP:
                     std::cout << "\n\n\n\x1b[33;1mHangup signal received; closing UDP tunnel\x1b[0m\n\n\n";
-                    srouter->close_udp(target, 12345);
+                    srouter->close_udp(target, port);
                     break;
                 case SIGUSR1:
                 {
                     std::cout << "\n\n\n\x1b[32;1mSIGUSR1 received: (re-)opening UDP tunnel\x1b[0m\n";
-                    auto ti = srouter->establish_udp(target, 12345);
+                    auto ti = srouter->establish_udp(target, port);
                     std::cout << "\n\x1b[32;1mUDP bound to port " << ti.local_port << "\x1b[0m\n\n";
                     break;
                 }

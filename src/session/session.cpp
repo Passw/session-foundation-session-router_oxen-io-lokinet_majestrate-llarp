@@ -15,6 +15,7 @@
 #include "util/time.hpp"
 #include "util/underlying.hpp"
 
+#include <event2/bufferevent.h>
 #include <nlohmann/json.hpp>
 #include <oxen/quic/context.hpp>
 #include <oxen/quic/gnutls_crypto.hpp>

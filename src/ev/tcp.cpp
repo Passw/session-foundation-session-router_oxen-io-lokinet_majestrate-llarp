@@ -1,10 +1,17 @@
 #include "tcp.hpp"
 
 #include "net/ip_packet.hpp"
+#include "util/logging.hpp"
 #include "util/logging/buffer.hpp"
+
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
+#include <event2/listener.h>
 
 namespace srouter
 {
+    static_assert(std::same_as<evutil_socket_t, TCPConnection::fd_t>);
+
     static auto logcat = oxen::log::Cat("ev-tcp");
 
     constexpr auto evconnlistener_deleter = [](::evconnlistener *e) {

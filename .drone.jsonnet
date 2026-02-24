@@ -107,6 +107,7 @@ local debian_pipeline(name,
                   '-DWARN_DEPRECATED=OFF ' +
                   (if werror then '-DWARNINGS_AS_ERRORS=ON ' else '') +
                   '-DWITH_LTO=' + (if lto then 'ON ' else 'OFF ') +
+                  '-DUSE_LTO=' + (if lto then 'ON ' else 'OFF ') +
                   '-DWITH_TESTS=' + (if tests then 'ON ' else 'OFF ') +
                   cmake_extra +
                   ci_dep_mirror(local_mirror),
@@ -284,14 +285,17 @@ local deb_builder(image, distro, distro_branch, arch='amd64', oxen_repo=oxen_rep
 local clang(version) = debian_pipeline(
   'Debian sid/clang-' + version,
   docker_base + 'debian-sid-clang',
-  deps=default_deps(add='clang-' + version, remove='g++'),
-  cmake_extra='-DCMAKE_C_COMPILER=clang-' + version + ' -DCMAKE_CXX_COMPILER=clang++-' + version + ' '
+  deps=default_deps(add=['clang-' + version, 'llvm-' + version], remove='g++'),
+  cmake_extra='-DCMAKE_C_COMPILER=clang-' + version + ' -DCMAKE_CXX_COMPILER=clang++-' + version + (
+    // clang-21 breaks lots of things in fmt 10, so we have to avoid it.
+    if version >= 21 then ' -DFORCE_OXENLOGGING_SUBMODULE=ON -DOXEN_LOGGING_FORCE_SUBMODULES=ON ' else ' '
+  )
 );
 
 local full_llvm(version) = debian_pipeline(
   'Debian sid/llvm-' + version,
   docker_base + 'debian-sid-clang',
-  deps=default_deps(add=['clang-' + version, ' lld-' + version, ' libc++-' + version + '-dev', 'libc++abi-' + version + '-dev', 'libunwind-' + version + '-dev', 'libngtcp2-crypto-gnutls-dev', 'libngtcp2-dev'],
+  deps=default_deps(add=['clang-' + version, 'llvm-' + version, 'lld-' + version, 'libc++-' + version + '-dev', 'libc++abi-' + version + '-dev', 'libunwind-' + version + '-dev', 'libngtcp2-crypto-gnutls-dev', 'libngtcp2-dev'],
                     remove='g++'),
   oxen_repo=[],
   cmake_extra='-DCMAKE_C_COMPILER=clang-' + version +
@@ -301,7 +305,7 @@ local full_llvm(version) = debian_pipeline(
                 '-DCMAKE_' + type + '_LINKER_FLAGS=-fuse-ld=lld-' + version
                 for type in ['EXE', 'MODULE', 'SHARED']
               ]) +
-              ' -DOXEN_LOGGING_FORCE_SUBMODULES=ON'
+              ' -DFORCE_OXENLOGGING_SUBMODULE=ON -DOXEN_LOGGING_FORCE_SUBMODULES=ON '
 );
 
 // Macos build
@@ -394,10 +398,10 @@ local docs_pipeline(name, image, extra_cmds=[], allow_fail=false) = {
   debian_pipeline('Debian sid/debug', docker_base + 'debian-sid', build_type='Debug'),
   debian_pipeline('Debian sid/debug [arm64]', docker_base + 'debian-sid', build_type='Debug', arch='arm64', jobs=4),
 
-  clang(17),
-  full_llvm(17),
   clang(19),
   full_llvm(19),
+  clang(21),
+  full_llvm(21),
 
   debian_pipeline('Debian testing', docker_base + 'debian-forky'),
   debian_pipeline('Debian testing [i386]', docker_base + 'debian-forky/i386'),
