@@ -107,6 +107,7 @@ local debian_pipeline(name,
                   '-DWARN_DEPRECATED=OFF ' +
                   (if werror then '-DWARNINGS_AS_ERRORS=ON ' else '') +
                   '-DWITH_LTO=' + (if lto then 'ON ' else 'OFF ') +
+                  '-DUSE_LTO=' + (if lto then 'ON ' else 'OFF ') +
                   '-DWITH_TESTS=' + (if tests then 'ON ' else 'OFF ') +
                   cmake_extra +
                   ci_dep_mirror(local_mirror),
