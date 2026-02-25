@@ -330,7 +330,7 @@ endif()
 if(SROUTER_TESTS OR SROUTER_HIVE)
   add_subdirectory(test)
 endif()
-if(ANDROID)
+if(ANDROID AND SROUTER_FULL)
   add_subdirectory(jni)
 endif()
 
