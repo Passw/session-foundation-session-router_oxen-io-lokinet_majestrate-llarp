@@ -220,7 +220,15 @@ target_link_libraries(session-router-contact PUBLIC session-router-dns)
 if(SROUTER_FULL)
   target_link_libraries(session-router-rpc PUBLIC session-router-contact session-router-conf)
 endif()
-target_link_libraries(session-router-addressing PUBLIC session-router-utils session-router-cryptography session-router-contact session-router-ip)
+target_link_libraries(session-router-addressing
+    PUBLIC
+    session-router-utils
+    session-router-cryptography
+    session-router-contact
+    session-router-ip
+    PRIVATE
+    libevent::core
+)
 target_link_libraries(session-router-conf PUBLIC session-router-cryptography session-router-addressing)
 if(SROUTER_FULL)
   target_link_libraries(session-router-platform PUBLIC session-router-cryptography session-router-ip)
@@ -230,6 +238,8 @@ target_link_libraries(session-router-dns
   PUBLIC
   session-router-cryptography
   session-router-conf
+  PRIVATE
+  libevent::core
 )
 if(SROUTER_FULL)
   target_link_libraries(session-router-dns PUBLIC session-router-platform)
@@ -270,11 +280,22 @@ target_link_libraries(session-router-utils
   session-router-cryptography
 )
 
+# libevent
+if(NOT TARGET libevent::core)
+  add_library(libevent_core INTERFACE)
+  pkg_check_modules(LIBEVENT_core libevent_core>=2.1 IMPORTED_TARGET REQUIRED)
+  target_link_libraries(libevent_core INTERFACE PkgConfig::LIBEVENT_core)
+  add_library(libevent::core ALIAS libevent_core)
+endif()
+
+
 target_link_libraries(session-router-core 
   PUBLIC 
   session-router-core-utils
   session-router-nodedb
   session-router-path
+  PRIVATE
+  libevent::core
 )
 if(SROUTER_FULL)
   target_link_libraries(session-router-core PUBLIC session-router-exit-auth)
@@ -297,14 +318,6 @@ if(SROUTER_FULL)
   target_link_libraries(session-router-base INTERFACE libunbound oxenmq::oxenmq)
 endif()
 
-# libevent
-if(NOT TARGET libevent::core)
-  add_library(libevent_core INTERFACE)
-  pkg_check_modules(LIBEVENT_core libevent_core>=2.1 IMPORTED_TARGET REQUIRED)
-  target_link_libraries(libevent_core INTERFACE PkgConfig::LIBEVENT_core)
-  add_library(libevent::core ALIAS libevent_core)
-endif()
-target_link_libraries(session-router-addressing PRIVATE libevent::core)
 
 
 # libzstd
