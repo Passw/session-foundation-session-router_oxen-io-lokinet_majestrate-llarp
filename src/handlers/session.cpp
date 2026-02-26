@@ -115,12 +115,15 @@ namespace srouter::handlers
             tun->expire(remote);
 #endif
 
-        if (auto it = _sessions.find(remote); it != _sessions.end())
-        {
-            if (auto& s = it->second)
-                _session_tags.erase(s->inbound_tag());
-            _sessions.erase(it);
-        }
+        // defer this in case we're in the middle of iterating the container(s)
+        router.loop.call_soon([this, remote]() {
+            if (auto it = _sessions.find(remote); it != _sessions.end())
+            {
+                if (auto& s = it->second)
+                    _session_tags.erase(s->inbound_tag());
+                _sessions.erase(it);
+            }
+        });
     }
 
     bool SessionEndpoint::close_session(NetworkAddress remote, bool send_close)
