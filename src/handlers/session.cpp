@@ -117,10 +117,10 @@ namespace srouter::handlers
 
         // defer this in case we're in the middle of iterating the container(s)
         // capture a weak_ptr to the session so that if for whatever reason
-        router.loop.call_soon([this, remote, weak = std::weak_ptr(s)]() {
+        router.loop.call_soon([this, weak = std::weak_ptr(s)]() {
             if (auto shared = weak.lock())
             {
-                if (auto it = _sessions.find(remote); it != _sessions.end())
+                if (auto it = _sessions.find(shared->remote()); it != _sessions.end())
                 {
                     if (shared != it->second)
                         return;  // session is already gone
