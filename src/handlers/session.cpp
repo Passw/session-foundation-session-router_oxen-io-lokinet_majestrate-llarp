@@ -100,7 +100,7 @@ namespace srouter::handlers
         return stats;
     }
 
-    void SessionEndpoint::close_session(std::shared_ptr<session::Session>& s, bool send_close)
+    void SessionEndpoint::close_session(const std::shared_ptr<session::Session>& s, bool send_close)
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
@@ -115,12 +115,22 @@ namespace srouter::handlers
             tun->expire(remote);
 #endif
 
-        if (auto it = _sessions.find(remote); it != _sessions.end())
-        {
-            if (auto& s = it->second)
-                _session_tags.erase(s->inbound_tag());
-            _sessions.erase(it);
-        }
+        // defer this in case we're in the middle of iterating the container(s)
+        // capture a weak_ptr to the session so that if for whatever reason
+        router.loop.call_soon([this, weak = std::weak_ptr(s)]() {
+            if (auto shared = weak.lock())
+            {
+                if (auto it = _sessions.find(shared->remote()); it != _sessions.end())
+                {
+                    if (shared != it->second)
+                        return;  // session is already gone
+
+                    if (auto& s = it->second)
+                        _session_tags.erase(s->inbound_tag());
+                    _sessions.erase(it);
+                }
+            }
+        });
     }
 
     bool SessionEndpoint::close_session(NetworkAddress remote, bool send_close)
@@ -1231,6 +1241,12 @@ namespace srouter::handlers
         // FIXME: If the initiator does not get our response in time, they will try again
         // to establish a session; in that case we should replace what we have.
         auto& s = _sessions[new_session->remote()];
+
+        // if there was already a session to the remote, we're trampling it, so clear it from
+        // _session_tags
+        if (s)
+            _session_tags.erase(s->inbound_tag());
+
         auto* sptr = new_session.get();
         s = std::move(new_session);
         _session_tags[s->inbound_tag()] = s;

@@ -58,7 +58,7 @@ namespace srouter
 
             std::optional<std::string_view> fetch_auth_token(const NetworkAddress& remote) const;
 
-            void close_session(std::shared_ptr<session::Session>& s, bool send_close);
+            void close_session(const std::shared_ptr<session::Session>& s, bool send_close);
 
             void on_path_build_failure(int64_t build_id, path::Path* path, bool timeout) override;
             void on_path_build_success(int64_t build_id, path::Path& p) override;
