@@ -51,6 +51,7 @@ namespace srouter
         Config conf, std::shared_ptr<quic::Loop> loop, std::shared_ptr<vpn::Platform> vpnPlatform, std::promise<void> p)
         : _config{std::move(conf)},
           _loop{std::move(loop)},
+          _jq{std::make_unique<quic::JobQueue>(*_loop)},
           _vpn{std::move(vpnPlatform)},
           _close_promise{std::move(p)},
           _contact_db{std::make_unique<ContactDB>(*this)},
@@ -70,7 +71,7 @@ namespace srouter
 
         init_logging();
 
-        _loop->call_get([this] {
+        _jq->call_get([this] {
             log::debug(logcat, "Inside router loop, initializing router");
             configure();
             start();
@@ -111,10 +112,10 @@ namespace srouter
                 delay += RelayContact::MIN_GOSSIP_RC_AGE;
             }
             log::debug(logcat, "Delaying initial RC broadcast for {}", delay);
-            loop.call_later(delay, [this] {
+            _jq->call_later(delay, [this] {
                 regenerate_rc();
                 log::debug(logcat, "Starting RC regen ticker");
-                _gossip_ticker = loop.call_every(RC_UPDATE_INTERVAL, [this] { regenerate_rc(); });
+                _gossip_ticker = _loop->call_every(RC_UPDATE_INTERVAL, [this] { regenerate_rc(); });
             });
 
             if (not _config.oxend.disable_testing)
@@ -578,7 +579,7 @@ namespace srouter
                             if (!_dns)
                                 _dns = _loop->make_shared<dns::Listener>(*this, addr);
                             else
-                                _dns->listen(loop, addr);
+                                _dns->listen(loop(), addr);
 
                             log::info(log_global, "DNS listening on {} port {}", addr.host(), _dns->last_port);
                         }
@@ -885,18 +886,18 @@ namespace srouter
 
     bool Router::is_edge_connected() const
     {
-        return loop.call_get([this] { return _is_edge_connected; });
+        return _jq->call_get([this] { return _is_edge_connected; });
     }
     bool Router::is_path_connected() const
     {
-        return loop.call_get([this] { return _is_edge_connected && _has_established_paths; });
+        return _jq->call_get([this] { return _is_edge_connected && _has_established_paths; });
     }
 
     void Router::on_connected(std::function<void()> callback, bool with_paths, bool persistent)
     {
         if (!callback)
             return;
-        loop.call([this, with_paths, callback = std::move(callback), persistent] {
+        _jq->call([this, with_paths, callback = std::move(callback), persistent] {
             bool fire_now = _is_edge_connected && (_has_established_paths || !with_paths);
             if (fire_now)
                 try_calling(logcat, callback);
@@ -910,7 +911,7 @@ namespace srouter
     {
         if (!callback)
             return;
-        loop.call([this, callback = std::move(callback), persistent, with_paths] {
+        _jq->call([this, callback = std::move(callback), persistent, with_paths] {
             bool fire_now = !_is_edge_connected || (with_paths && !_has_established_paths);
             if (fire_now)
                 try_calling(logcat, callback);
@@ -935,7 +936,7 @@ namespace srouter
 
     void Router::on_edge_conn_change()
     {
-        assert(loop.inside());
+        assert(_loop->inside());
 
         int conns = link_endpoint().num_relay_conns();
         if (conns == 0 and _is_edge_connected)
@@ -1023,7 +1024,7 @@ namespace srouter
         if (_is_stopping.exchange(true))
             return;  // Lost a race with something else trying to stop
 
-        _loop->call([this] {
+        _jq->call([this] {
 #ifndef SROUTER_EMBEDDED_ONLY
             if (!embedded())
             {

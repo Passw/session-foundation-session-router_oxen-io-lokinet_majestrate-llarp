@@ -184,7 +184,7 @@ namespace session::router
             return;
         }
 
-        context->router->loop.call([address = std::move(address),
+        context->router->_jq->call([address = std::move(address),
                                     callback = std::move(callback),
                                     &ep = context->router->session_endpoint()]() mutable {
             ep.resolve_sns(
@@ -212,7 +212,7 @@ namespace session::router
             return std::nullopt;
         }
 
-        return context->router->loop.call_get([&r = context->router, addr = std::move(netaddr)]() {
+        return context->router->_jq->call_get([&r = context->router, addr = std::move(netaddr)]() {
             std::optional<snode_path> ret;
             if (auto* s = r->session_endpoint().get_session(addr))
                 ret = to_snode_path(s->current_path_info());
@@ -222,7 +222,7 @@ namespace session::router
 
     std::vector<session_path> SessionRouter::get_all_session_paths()
     {
-        return context->router->loop.call_get([&r = context->router]() {
+        return context->router->_jq->call_get([&r = context->router]() {
             std::vector<session_path> ret;
             r->session_endpoint().for_each_session(
                 [&ret](const srouter::NetworkAddress& addr, const srouter::session::Session& s) {

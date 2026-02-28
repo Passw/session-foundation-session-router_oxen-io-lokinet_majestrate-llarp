@@ -109,8 +109,16 @@ namespace srouter
         void start();
 
         Config _config;
+
+      public:
         const std::shared_ptr<quic::Loop> _loop;
 
+        // unique_ptr instead of concrete instance so methods which are const apart from using
+        // this object can still be const.
+        // FIXME: make sure this is okay?
+        const std::unique_ptr<quic::JobQueue> _jq;
+
+      private:
         // path to write our self signed rc to
         std::filesystem::path our_rc_file;
 
@@ -287,7 +295,7 @@ namespace srouter
 
         Profiling& router_profiling() { return _router_profiling; }
 
-        quic::Loop& loop{*_loop};
+        quic::Loop& loop() { return *_loop; }
 
         // If this router is not a registered service node, does nothing.  Otherwise this regenerate
         // the RC for this router, add it to the nodedb, saves it to disk, and gossips it.

@@ -428,7 +428,7 @@ namespace srouter::handlers
 
     void TunEndpoint::send_packet_to_net_if(IPPacket pkt)
     {
-        _router.loop.call([this, pkt = std::move(pkt)]() mutable { _net_if->write_packet(std::move(pkt)); });
+        _router._jq->call([this, pkt = std::move(pkt)]() mutable { _net_if->write_packet(std::move(pkt)); });
     }
 
     void TunEndpoint::rewrite_and_send_packet(IPPacket&& pkt, const ipv4& src, const ipv4& dest)
@@ -496,7 +496,7 @@ namespace srouter::handlers
 
     void TunEndpoint::start_poller()
     {
-        _poller = std::make_unique<ev::FDPoller>(_router.loop, _net_if->PollFD(), [this] {
+        _poller = std::make_unique<ev::FDPoller>(_router.loop(), _net_if->PollFD(), [this] {
             for (auto pkt = _net_if->read_next_packet(); not pkt.empty(); pkt = _net_if->read_next_packet())
             {
                 log::trace(logcat, "packet router receiving {}", pkt.info_line());

@@ -91,7 +91,7 @@ namespace srouter::link
             [this](quic::Connection& conn, uint64_t ec) { on_conn_closed(conn, ec); },
             [this](quic::datagram dgram) {
                 // Transfer handling to the router loop:
-                router.loop.call([this, msg = std::move(dgram).extract()]() mutable {
+                router._jq->call([this, msg = std::move(dgram).extract()]() mutable {
                     manager.handle_session_message(std::move(msg));
                 });
             },
@@ -190,14 +190,14 @@ namespace srouter::link
     {
         if (router.is_service_node)
         {
-            redundancy_ticker = router.loop.call_every(REDUNDANT_LINGER, [this] { close_redundant(); });
-            dereg_conn_ticker = router.loop.call_every(1min, [this] { check_deregged_conns(); });
+            redundancy_ticker = router.loop().call_every(REDUNDANT_LINGER, [this] { close_redundant(); });
+            dereg_conn_ticker = router.loop().call_every(1min, [this] { check_deregged_conns(); });
         }
     }
 
     link::Connection* Endpoint::get_relay_conn(const RouterID& relay) const
     {
-        return router.loop.call_get([this, relay]() -> link::Connection* {
+        return router._jq->call_get([this, relay]() -> link::Connection* {
             if (router.is_service_node)
             {
                 if (auto it = relay_conns.find(relay); it != relay_conns.end())
@@ -289,7 +289,7 @@ namespace srouter::link
     {
         if (router.is_service_node)
             return nullptr;
-        return router.loop.call_get([this, remote]() -> link::Connection* {
+        return router._jq->call_get([this, remote]() -> link::Connection* {
             if (auto itr = client_conns.find(remote); itr != client_conns.end())
                 return itr->second.get();
             return nullptr;
@@ -298,7 +298,7 @@ namespace srouter::link
 
     void Endpoint::for_each_relay_conn(std::function<void(const RouterID&, link::Connection&)> func) const
     {
-        assert(router.loop.inside());
+        assert(router.loop().inside());
 
         if (manager.is_stopping)
             return;
@@ -405,7 +405,7 @@ namespace srouter::link
     {
         if (not router.is_service_node)
             return {0};
-        return router.loop.call_get([this] {
+        return router._jq->call_get([this] {
             std::array<int, 5> result{0};
             auto& [relays, out, in, pending, clients] = result;
 
@@ -426,14 +426,14 @@ namespace srouter::link
 
     std::array<int, 2> Endpoint::client_connection_counts() const
     {
-        return router.loop.call_get([this] {
+        return router._jq->call_get([this] {
             return std::array{static_cast<int>(client_conns.size()), static_cast<int>(pending_outbound.size())};
         });
     }
 
     int Endpoint::num_relay_conns(bool include_pending) const
     {
-        return router.loop.call_get([this, &include_pending] {
+        return router._jq->call_get([this, &include_pending] {
             int c;
             if (router.is_service_node)
             {
@@ -459,7 +459,7 @@ namespace srouter::link
 
     std::pair<bool, quic::BTRequestStream*> Endpoint::ctrl_stream_impl(const RelayContact& rc)
     {
-        assert(router.loop.inside());
+        assert(router.loop().inside());
         std::pair<bool, quic::BTRequestStream*> result;
         auto& [res_est, res_str] = result;
 
@@ -515,7 +515,7 @@ namespace srouter::link
 
         if (response_handler)
             // Wrap the handler to transfer to the router loop for execution:
-            response_handler = [f = std::move(response_handler), &rloop = router.loop](quic::message m) mutable {
+            response_handler = [f = std::move(response_handler), &rloop = router.loop()](quic::message m) mutable {
                 rloop.call([f = std::move(f), m = std::move(m)]() mutable { f(std::move(m)); });
             };
 
@@ -571,7 +571,7 @@ namespace srouter::link
 
         if (response_handler)
             // Wrap the handler to transfer to the router loop for execution:
-            response_handler = [f = std::move(response_handler), &rloop = router.loop](quic::message m) mutable {
+            response_handler = [f = std::move(response_handler), &rloop = router.loop()](quic::message m) mutable {
                 rloop.call([f = std::move(f), m = std::move(m)]() mutable { f(std::move(m)); });
             };
 
@@ -783,7 +783,7 @@ namespace srouter::link
             inbound_cstream = make_control(conn, as_bspan(conn.remote_key()), conn.selected_alpn());
         }
 
-        router.loop.call([this, weak = conn.weak_from_this(), inbound_cstream = std::move(inbound_cstream)]() mutable {
+        router._jq->call([this, weak = conn.weak_from_this(), inbound_cstream = std::move(inbound_cstream)]() mutable {
             auto conn = weak.lock();
             if (not conn)
             {
@@ -828,7 +828,7 @@ namespace srouter::link
         // attempt beyond the end of `this.loop`.  Thus we capture everything we need into the
         // lambda here, while we are still in the network loop.
 
-        router.loop.call([this,
+        router._jq->call([this,
                           alive = canary,
                           conn_refid = conn.reference_id(),
                           alpn,

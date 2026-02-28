@@ -117,7 +117,7 @@ namespace srouter::handlers
 
         // defer this in case we're in the middle of iterating the container(s)
         // capture a weak_ptr to the session so that if for whatever reason
-        router.loop.call_soon([this, weak = std::weak_ptr(s)]() {
+        router._jq->call_soon([this, weak = std::weak_ptr(s)]() {
             if (auto shared = weak.lock())
             {
                 if (auto it = _sessions.find(shared->remote()); it != _sessions.end())
@@ -1362,7 +1362,7 @@ namespace srouter::handlers
         std::function<void(session::Session& session)> on_attempted,
         std::optional<std::chrono::milliseconds> timeout)
     {
-        return router.loop.call_get([this, &remote, &on_attempted, &timeout] {
+        return router._jq->call_get([this, &remote, &on_attempted, &timeout] {
             std::shared_ptr<session::Session> s{nullptr};
             if (_sessions.contains(remote))
                 s = _sessions[remote];
@@ -1388,10 +1388,10 @@ namespace srouter::handlers
                 try
                 {
                     if (remote.client())
-                        s = router.loop.make_shared<session::OutboundClientSession>(
+                        s = router._jq->make_shared<session::OutboundClientSession>(
                             remote, *this, tag, std::move(on_attempted), timeout);
                     else
-                        s = router.loop.make_shared<session::OutboundRelaySession>(
+                        s = router._jq->make_shared<session::OutboundRelaySession>(
                             remote, *this, tag, std::move(on_attempted), timeout);
                     _session_tags.emplace(tag, s);
                     _sessions[remote] = s;
@@ -1424,7 +1424,7 @@ namespace srouter::handlers
     std::pair<uint16_t, std::shared_ptr<session::Session>> SessionEndpoint::map_udp_remote_port(
         const NetworkAddress& remote, uint16_t port)
     {
-        return router.loop.call_get([&] {
+        return router._jq->call_get([&] {
             // Port selection: we pick something random in the 49152-60000 range to start from, as
             // that range (up to 60999) is common to all modern OSes for ephemeral addresses, and so
             // at least our first thousand ports will look like a normal random ephemeral port.
@@ -1442,7 +1442,7 @@ namespace srouter::handlers
             if (!existing)
 
                 udp_handle = std::make_unique<quic::UDPSocket>(
-                    router.loop.get_event_base(),
+                    router.loop().get_event_base(),
                     quic::Address{"::1", 0},
                     /*gso=*/false,
                     [this, target](quic::Packet&& pkt) {
