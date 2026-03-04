@@ -27,7 +27,7 @@ namespace srouter
     // TODO FIXME this class seems unnecessary, we should get rid of it.
     struct Context
     {
-        std::unique_ptr<Router> router;
+        std::shared_ptr<Router> router;
 
         explicit Context(bool embedded);
         ~Context();

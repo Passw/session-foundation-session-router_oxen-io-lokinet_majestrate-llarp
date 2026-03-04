@@ -66,8 +66,7 @@ namespace srouter
         log::debug(logcat, "Starting main router...");
         try
         {
-            router =
-                std::make_unique<Router>(std::move(conf), std::move(loop), std::move(plat), std::move(done_promise));
+            router = loop->make_shared<Router>(std::move(conf), loop, std::move(plat), std::move(done_promise));
         }
         catch (const std::exception& e)
         {
