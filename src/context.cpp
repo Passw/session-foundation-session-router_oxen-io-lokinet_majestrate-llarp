@@ -44,6 +44,7 @@ namespace srouter
             log::debug(logcat, "Initializing event loop...");
 
             loop = std::make_shared<quic::Loop>();
+            router_loop = loop;
             assert(loop->call_get([] { return 42; }) == 42);
 
             log::debug(logcat, "Event loop initialized!");
@@ -80,7 +81,9 @@ namespace srouter
         if (!router)
             return;
         lifetime_waiter.get();
+        assert(router.use_count() == 1);
         router.reset();
+        router_loop.reset();  // in the event we own the loop, destroy it *after* Router
     }
 
     void Context::stop()

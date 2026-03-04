@@ -29,6 +29,11 @@ namespace srouter
     {
         std::shared_ptr<Router> router;
 
+        // If we are not given an event loop, we must own it so that Router does not own its own
+        // loop and yet queue its destructor onto said loop, as the Router and Loop destructors
+        // would deadlock.
+        std::shared_ptr<oxen::quic::Loop> router_loop;
+
         explicit Context(bool embedded);
         ~Context();
 
