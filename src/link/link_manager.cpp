@@ -71,11 +71,11 @@ namespace srouter::link
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         s.register_handler("path_control"s, [this](quic::message m) {
-            router.loop.call([this, msg = std::move(m)]() mutable { handle_path_control(std::move(msg)); });
+            router._jq->call([this, msg = std::move(m)]() mutable { handle_path_control(std::move(msg)); });
         });
 
         s.register_handler("session_control"s, [this](quic::message m) {
-            router.loop.call([this, msg = std::move(m)]() mutable { handle_path_session_control(std::move(msg)); });
+            router._jq->call([this, msg = std::move(m)]() mutable { handle_path_session_control(std::move(msg)); });
         });
 
         if (not router.is_service_node)
@@ -85,28 +85,28 @@ namespace srouter::link
         }
 
         s.register_handler("path_build"s, [this, remote](quic::message m) {
-            router.loop.call(
+            router._jq->call(
                 [this, remote, msg = std::move(m)]() mutable { handle_path_build(std::move(msg), remote); });
         });
 
         s.register_handler("fetch_rcs"s, [this](quic::message m) {
-            router.loop.call([this, msg = std::move(m)]() mutable {
+            router._jq->call([this, msg = std::move(m)]() mutable {
                 handle_direct_request(&Manager::handle_fetch_rcs, std::move(msg));
             });
         });
 
         s.register_handler("gossip_rc"s, [this](quic::message m) {
-            router.loop.call([this, msg = std::move(m)]() mutable { handle_gossip_rc(std::move(msg)); });
+            router._jq->call([this, msg = std::move(m)]() mutable { handle_gossip_rc(std::move(msg)); });
         });
 
         s.register_handler("publish_cc"s, [this](quic::message m) {
-            router.loop.call([this, msg = std::move(m)]() mutable {
+            router._jq->call([this, msg = std::move(m)]() mutable {
                 handle_direct_request(&Manager::handle_publish_cc, std::move(msg));
             });
         });
 
         s.register_handler("find_cc"s, [this](quic::message m) {
-            router.loop.call([this, msg = std::move(m)]() mutable {
+            router._jq->call([this, msg = std::move(m)]() mutable {
                 handle_direct_request(&Manager::handle_find_cc, std::move(msg));
             });
         });
@@ -115,7 +115,7 @@ namespace srouter::link
         // replies with "pong" (we don't actually need a loop transfer here for the reply, but do it anyway so
         // that ping requests check that our router loop isn't stuck).
         s.register_handler("ping"s, [this](quic::message m) {
-            router.loop.call([this, m = std::move(m)] {
+            router._jq->call([this, m = std::move(m)] {
                 m.respond("pong");
                 router.on_test_ping();
             });
@@ -125,7 +125,7 @@ namespace srouter::link
     void Manager::register_bootstrap_commands(quic::BTRequestStream& s)
     {
         s.register_handler("bfetch_rcs"s, [this](quic::message m) {
-            router.loop.call([this, msg = std::move(m)]() mutable { handle_fetch_bootstrap_rcs(std::move(msg)); });
+            router._jq->call([this, msg = std::move(m)]() mutable { handle_fetch_bootstrap_rcs(std::move(msg)); });
         });
 
         log::trace(logcat, "Registered bootstrap commands for inbound bootstrap connection");
@@ -138,7 +138,7 @@ namespace srouter::link
         if (is_stopping.exchange(true))
             return;
 
-        router.loop.call_get([this] { endpoint.shutdown(); });
+        router._jq->call_get([this] { endpoint.shutdown(); });
     }
 
     Manager::~Manager() { stop(); }

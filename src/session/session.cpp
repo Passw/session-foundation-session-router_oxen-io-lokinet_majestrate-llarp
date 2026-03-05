@@ -172,7 +172,8 @@ namespace srouter::session
 
             quic_ep = quic::Endpoint::endpoint(
                 // TODO FIXME: this should probably attach to the network loop rather than the logic loop:
-                session._r.loop,
+                // TODO FIXME: this is now further weird with the separate JobQueue change to libquic
+                session._r.loop(),
                 FAKE_QUIC_ADDR,
                 std::move(quic_send),
                 std::move(new_conn),
@@ -226,7 +227,8 @@ namespace srouter::session
 
             auto _handle = TCPHandle::make_server(
                 // TODO FIXME: this should probably attach to the network loop rather than the logic loop:
-                session._r.loop,
+                // TODO FIXME: this is now further weird with the separate JobQueue change to libquic
+                session._r.loop(),
                 [this, dest_port](struct bufferevent* _bev, evutil_socket_t _fd) -> TCPConnection* {
                     auto s =
                         quic_conn->open_stream<quic::Stream>([_bev](quic::Stream& s, std::span<const std::byte> data) {
@@ -1752,7 +1754,7 @@ namespace srouter::session
     void OutboundSession::on_path_build_success(int64_t /*build_id*/, path::Path& p)
     {
         log::debug(logcat, "{} path {} built successfully", _remote, p);
-        assert(router.loop.inside());
+        assert(router.loop().inside());
 
         // If we don't have a current path then immediately switch to this built in.
         //

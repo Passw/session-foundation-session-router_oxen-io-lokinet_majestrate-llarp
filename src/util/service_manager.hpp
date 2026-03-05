@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace srouter
 {
     struct Context;
@@ -46,7 +48,7 @@ namespace srouter::sys
         virtual void report_changed_state() = 0;
 
         /// report our stats on each timer tick
-        virtual void report_periodic_stats() {};
+        virtual void report_periodic_stats([[maybe_unused]] const std::string& stats) {};
 
         void starting()
         {

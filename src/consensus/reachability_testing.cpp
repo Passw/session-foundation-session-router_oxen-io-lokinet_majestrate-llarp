@@ -25,8 +25,8 @@ namespace srouter::consensus
         else
         {
             log::debug(logcat, "Starting reachability testing tickers");
-            ticker = router.loop.call_every(TEST_INTERVAL, [this] { tick(); });
-            whine_ticker = router.loop.call_every(30s, [this] { check_incoming_tests(); });
+            ticker = router.loop().call_every(TEST_INTERVAL, [this] { tick(); });
+            whine_ticker = router.loop().call_every(30s, [this] { check_incoming_tests(); });
         }
     }
 
@@ -88,7 +88,7 @@ namespace srouter::consensus
                     auto conn = weak_conn.lock();
                     if (conn)
                         conn->close_connection();
-                    router.loop.call_soon([this, rid, prev_fails, m = std::move(m)] {
+                    router._jq->call_soon([this, rid, prev_fails, m = std::move(m)] {
                         if (m)
                         {
                             if (prev_fails)

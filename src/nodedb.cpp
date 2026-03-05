@@ -141,7 +141,7 @@ namespace srouter
     std::vector<const RelayContact*> NodeDB::get_n_random_rcs(
         int n, bool shuffle, const std::function<bool(const RelayContact&)>& predicate) const
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
 #ifdef SROUTER_DEBUG_PATH_SEED
         if (auto& s = _router.config().paths.debug_path_seed)
         {
@@ -170,7 +170,7 @@ namespace srouter
     std::vector<const RelayContact*> NodeDB::get_n_random_edge_rcs(
         int n, bool shuffle, const std::function<bool(const RelayContact&)>& predicate) const
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         auto& strict = _router.config().paths.strict_edges;
         if (_router.is_service_node || strict.empty())
             return get_n_random_rcs(n, shuffle, predicate);
@@ -200,7 +200,7 @@ namespace srouter
 
     void NodeDB::bootstrap()
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         assert(!_bootstraps.empty());
         _bootstrap_running = true;
 
@@ -241,7 +241,7 @@ namespace srouter
                     rc.addr());
                 auto [conn, control] = nodedb._router.link_endpoint().bootstrap_connect(rc);
                 control->command("bfetch_rcs", body, [this, conn](quic::message m) {
-                    nodedb._router.loop.call_soon([this, m = std::move(m)] {
+                    nodedb._router._jq->call_soon([this, m = std::move(m)] {
                         if (not m)
                             log::warning(logcat, "Bootstrap fetch failed: {}", m.timed_out ? "timeout" : m.body());
 
@@ -269,7 +269,7 @@ namespace srouter
 
     void NodeDB::purge_rcs(sys_ms now)
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         if (_router.is_stopping() || not _router.is_running())
@@ -338,7 +338,7 @@ namespace srouter
 
     void NodeDB::fetch_rcs()
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
 
         path::Path* selected_path = _router.session_endpoint().get_random_active_path();
         if (!selected_path)
@@ -406,7 +406,7 @@ namespace srouter
 
     void NodeDB::fetch_rids()
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         if (_router.is_stopping() || not _router.is_running())
         {
             log::debug(logcat, "NodeDB skipping RouterID fetch -- router is stopped!");
@@ -435,7 +435,7 @@ namespace srouter
         if (selected_paths.size() < 2)
         {
             log::debug(logcat, "Have fewer than 2 paths, not fetching RouterIDs yet.");
-            _router.loop.call_later(100ms, [this] { fetch_rids(); });
+            _router._jq->call_later(100ms, [this] { fetch_rids(); });
             return;
         }
         else if (selected_paths.size() < RID_SOURCE_COUNT)
@@ -482,7 +482,7 @@ namespace srouter
                 if (*result_count == results->size())
                 {
                     // FIXME: call again sooner if enough failed
-                    _router.loop.call_later(FETCH_INTERVAL, [this] { fetch_rids(); });
+                    _router._jq->call_later(FETCH_INTERVAL, [this] { fetch_rids(); });
                     handle_fetched_router_ids(*results);
                 }
             };
@@ -492,7 +492,7 @@ namespace srouter
 
     void NodeDB::handle_fetched_router_ids(const std::unordered_map<RouterID, std::unordered_set<RouterID>>& results)
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         std::unordered_set<RouterID> accepted{};
 
         auto itr = results.begin();
@@ -528,7 +528,7 @@ namespace srouter
     {
         log::trace(logcat, "NodeDB starting tickers...");
 
-        _purge_ticker = _router.loop.call_every(PURGE_INTERVAL, [this] { purge_rcs(); });
+        _purge_ticker = _router.loop().call_every(PURGE_INTERVAL, [this] { purge_rcs(); });
 
         auto need_bootstrap = num_rcs() < MIN_ACTIVE_RCS;
         if (not has_bootstraps())
@@ -539,7 +539,7 @@ namespace srouter
 
         if (not _router.is_service_node)
         {
-            _router.loop.call_later(100ms, [this] { fetch_rids(); });
+            _router._jq->call_later(100ms, [this] { fetch_rids(); });
         }
 
         _0rtt_saver = _router.disk_loop.make_wakeable([this] { _0rtt_save(); });
@@ -572,7 +572,7 @@ namespace srouter
             num_rcs(),
             success ? "successful" : "failed",
             cooldown);
-        _router.loop.call_later(cooldown, [this] { bootstrap(); });
+        _router._jq->call_later(cooldown, [this] { bootstrap(); });
     }
 
     NodeDB::NodeDB(Router& r) : _router{r}, _root{_router.config().router.data_dir / nodedb_dirname}
@@ -705,7 +705,7 @@ namespace srouter
 
     void NodeDB::post_rid_fetch(bool shutdown)
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         fetch_counter = 0;
@@ -724,7 +724,7 @@ namespace srouter
 
     bool NodeDB::handle_bootstrap_result(const RouterID& source, std::string_view body)
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         log::debug(logcat, "Received response to BootstrapRC fetch request...");
 
         int num = 0, n_new = 0;
@@ -999,14 +999,14 @@ namespace srouter
 
     const RelayContact* NodeDB::get_rc(const RouterID& pk) const
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         auto it = known_rcs.find(pk);
         return it != known_rcs.end() ? &it->second : nullptr;
     }
 
     bool NodeDB::put_rc(RelayContact rc)
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
 
         const auto& rid = rc.router_id();
 
@@ -1052,7 +1052,7 @@ namespace srouter
 
     bool NodeDB::verify_store_gossip_rc(RelayContact rc)
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         if (not is_registered(rc.router_id()) || rc.router_id() == _router.id())
             return false;
         return put_rc(std::move(rc));
@@ -1060,7 +1060,7 @@ namespace srouter
 
     int NodeDB::num_rcs(bool include_self) const
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         int total = static_cast<int>(known_rcs.size());
         if (not include_self and _router.is_service_node and known_rcs.contains(_router.id()))
             --total;
@@ -1069,7 +1069,7 @@ namespace srouter
 
     int NodeDB::num_rids() const
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         if (_router.is_service_node)
         {
             std::shared_lock lock{_registered_relays_mutex};
@@ -1080,7 +1080,7 @@ namespace srouter
 
     void NodeDB::remove_rcs_if(const std::function<bool(const RelayContact&)>& remove)
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
 
         std::vector<RouterID> removed;
 
@@ -1103,7 +1103,7 @@ namespace srouter
 
     void NodeDB::remove_many_from_disk_async(const std::vector<RouterID>& remove) const
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         if (_root.empty())
             return;
 
@@ -1149,7 +1149,7 @@ namespace srouter
 
     std::vector<RouterID> NodeDB::find_many_closest_to(const PubKey& blinded_pk, int num_routers) const
     {
-        assert(_router.loop.inside());
+        assert(_router.loop().inside());
         if (num_routers <= 0)
             return {};
 

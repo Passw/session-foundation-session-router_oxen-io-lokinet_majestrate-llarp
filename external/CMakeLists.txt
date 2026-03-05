@@ -107,7 +107,7 @@ endif()
 
 
 set(LIBQUIC_BUILD_TESTS OFF CACHE BOOL "")
-system_or_submodule(OXENQUIC quic oxen::quic liboxenquic>=1.7.1 oxen-libquic)
+system_or_submodule(OXENQUIC quic oxen::quic liboxenquic>=1.8.0 oxen-libquic)
 
 
 # libcrypt defaults, only on with macos and non static linux

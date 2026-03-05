@@ -44,7 +44,7 @@ namespace srouter::dns
             evconnlistener_free(e);
     }
 
-    Listener::Listener(Router& router, const quic::Address& bind) : _handler{router} { listen(router.loop, bind); }
+    Listener::Listener(Router& router, const quic::Address& bind) : _handler{router} { listen(router.loop(), bind); }
 
     struct Listener::udp_socket_helper
     {

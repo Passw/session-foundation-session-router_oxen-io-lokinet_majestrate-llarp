@@ -38,7 +38,7 @@ namespace srouter::rpc
             [](oxenmq::ConnectionID) {},
             [this, url](oxenmq::ConnectionID, std::string_view f) {
                 log::info(logcat, "Failed to connect to oxend at {}", f);
-                _router.loop.call([this, url]() { connect_async(url); });
+                _router._jq->call([this, url]() { connect_async(url); });
             });
     }
 
@@ -180,7 +180,7 @@ namespace srouter::rpc
 
         log::info(logcat, "Starting OxendRPC ping ticker...");
         ping();
-        _ping_ticker = _router.loop.call_every(PING_INTERVAL, [this] { ping(); });
+        _ping_ticker = _router.loop().call_every(PING_INTERVAL, [this] { ping(); });
     }
 
     void OxendRPC::handle_new_service_node_list(const nlohmann::json& j)
@@ -235,7 +235,7 @@ namespace srouter::rpc
 
     void OxendRPC::inform_connection(RouterID router, bool success)
     {
-        _router.loop.call([router, success, this]() {
+        _router._jq->call([router, success, this]() {
             const nlohmann::json req = {{"passed", success}, {"pubkey", router.ToHex()}, {"type", "srouter"}};
             request(
                 "admin.report_peer_status",
@@ -315,7 +315,7 @@ namespace srouter::rpc
                         result.reset();
                     }
                 }
-                _router.loop.call(
+                _router._jq->call(
                     [resultHandler, result = std::move(result)]() mutable { resultHandler(std::move(result)); });
             },
             std::move(req).str());
