@@ -21,14 +21,11 @@ namespace srouter
 {
     static auto logcat = log::Cat("context");
 
-    // Defaulted here because the header doesn't have visibility of the unique_ptr destructors.
-    Context::~Context() = default;
+    bool Context::looks_alive() const { return router->looks_alive(); }
 
-    bool Context::is_up() const { return router && router->is_running(); }
+    bool Context::is_running() const { return running.load(); }
 
-    bool Context::is_waiting() const { return router && !router->is_running(); }
-
-    bool Context::looks_alive() const { return router && router->looks_alive(); }
+    void Context::wait() { lifetime_waiter.get(); }
 
     void Context::start(Config conf, std::shared_ptr<oxen::quic::Loop> loop)
     {
@@ -44,11 +41,11 @@ namespace srouter
             log::debug(logcat, "Initializing event loop...");
 
             loop = std::make_shared<quic::Loop>();
-            router_loop = loop;
             assert(loop->call_get([] { return 42; }) == 42);
 
             log::debug(logcat, "Event loop initialized!");
         }
+        router_loop = loop;
 
         std::promise<void> done_promise;
         lifetime_waiter = done_promise.get_future();
@@ -67,7 +64,7 @@ namespace srouter
         log::debug(logcat, "Starting main router...");
         try
         {
-            router = loop->make_shared<Router>(std::move(conf), loop, std::move(plat), std::move(done_promise));
+            router = new Router{std::move(conf), loop, std::move(plat), std::move(done_promise)};
         }
         catch (const std::exception& e)
         {
@@ -76,24 +73,26 @@ namespace srouter
         }
     }
 
-    void Context::wait()
-    {
-        if (!router)
-            return;
-        lifetime_waiter.get();
-        assert(router.use_count() == 1);
-        router.reset();
-        router_loop.reset();  // in the event we own the loop, destroy it *after* Router
-    }
-
     void Context::stop()
     {
-        if (!router)
+        if (!running.exchange(false))
             return;
+
         router->stop();
     }
 
-    bool Context::is_stopping() const { return router && router->is_stopping(); }
+    Context::~Context()
+    {
+        // if stop() has not been called yet, we wait on the future.  If something else calls stop,
+        // it is expected to wait on the future.
+        if (running.exchange(false))
+        {
+            stop();
+            wait();
+        }
+
+        router_loop->call_get([this]() { delete router; });
+    }
 
     void Context::signal(int sig)
     {
@@ -109,13 +108,14 @@ namespace srouter
         }
     }
 
-    Context::Context(bool embedded) : embedded{embedded}
+    Context::Context(bool embedded, Config conf, std::shared_ptr<oxen::quic::Loop> loop) : embedded{embedded}
     {
 #ifndef SROUTER_EMBEDDED_ONLY
         // service_manager is a global and context isnt
         if (!embedded)
             srouter::sys::service_manager->give_context(this);
 #endif
+        start(std::move(conf), std::move(loop));
     }
 
 }  // namespace srouter

@@ -421,7 +421,7 @@ namespace
             while (ftr.wait_for(1s) != std::future_status::ready)
             {
                 // do periodic non Session Router related tasks here
-                if (ctx and ctx->is_up() and not ctx->looks_alive())
+                if (ctx and ctx->is_running() and not ctx->looks_alive())
                 {
                     auto deadlock_cat = srouter::log::Cat("deadlock");
                     srouter::log::critical(deadlock_cat, "Router has deadlocked!");
@@ -467,13 +467,11 @@ namespace
                 conf->logging.levels += log_level;
             }
 
-            ctx.emplace(/*embedded=*/false);
+            ctx.emplace(/*embedded=*/false, std::move(*conf));
 
             signal(SIGINT, handle_signal);
             signal(SIGTERM, handle_signal);
             signal(SIGKILL, handle_signal);
-
-            ctx->start(std::move(*conf));
         }
         catch (srouter::util::bind_socket_error& ex)
         {

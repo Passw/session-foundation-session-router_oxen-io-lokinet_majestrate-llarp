@@ -89,8 +89,9 @@ namespace srouter
             _tun->start_poller();
 
         if (!embedded())
-            _service_stat_ticker = _loop->call_every(
-                SERVICE_MANAGER_REPORT_INTERVAL, []() { sys::service_manager->report_periodic_stats(); });
+            _service_stat_ticker = _loop->call_every(SERVICE_MANAGER_REPORT_INTERVAL, [this]() {
+                sys::service_manager->report_periodic_stats(status_line());
+            });
 #endif
 
         _node_db->start();

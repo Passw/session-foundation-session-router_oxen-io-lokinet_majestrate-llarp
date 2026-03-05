@@ -25,22 +25,17 @@ namespace session::router
 {
     namespace log = oxen::log;
 
-    static auto make_embedded_context() { return std::make_unique<srouter::Context>(/*embedded=*/true); }
-
     SessionRouter::SessionRouter(std::string config, std::shared_ptr<oxen::quic::Loop> loop)
-        : context{make_embedded_context()}
-    {
-        context->start(srouter::Config{srouter::config::Type::EmbeddedClient, std::move(config)}, loop);
-    }
+        : context{std::make_unique<srouter::Context>(
+              /*embedded=*/true, srouter::Config{srouter::config::Type::EmbeddedClient, std::move(config)}, loop)}
+    {}
 
     SessionRouter::SessionRouter(path_ctor, const std::filesystem::path& config, std::shared_ptr<oxen::quic::Loop> loop)
-        : context{make_embedded_context()}
-    {
-        ;
-        context->start(srouter::Config{srouter::config::Type::EmbeddedClient, config}, loop);
-    }
+        : context{std::make_unique<srouter::Context>(
+              /*embedded=*/true, srouter::Config{srouter::config::Type::EmbeddedClient, config}, loop)}
+    {}
 
-    SessionRouter::SessionRouter(Network n, std::shared_ptr<oxen::quic::Loop> loop) : context{make_embedded_context()}
+    SessionRouter::SessionRouter(Network n, std::shared_ptr<oxen::quic::Loop> loop)
     {
         srouter::Config conf{srouter::config::Type::EmbeddedClient};
         switch (n)
@@ -54,14 +49,10 @@ namespace session::router
             default:
                 throw std::invalid_argument{"Unknown/unsupported network value passed to Session Router constructor"};
         }
-        context->start(std::move(conf), loop);
+        context = std::make_unique<srouter::Context>(/*embedded-*/ true, std::move(conf), loop);
     }
 
-    SessionRouter::~SessionRouter()
-    {
-        context->stop();
-        context->wait();
-    }
+    SessionRouter::~SessionRouter() {}
 
     void SessionRouter::on_connected(std::function<void()> callback, bool with_path, bool persist)
     {
