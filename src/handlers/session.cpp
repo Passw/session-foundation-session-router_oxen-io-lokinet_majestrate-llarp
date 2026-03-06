@@ -1364,8 +1364,8 @@ namespace srouter::handlers
     {
         return router._jq->call_get([this, &remote, &on_attempted, &timeout] {
             std::shared_ptr<session::Session> s{nullptr};
-            if (_sessions.contains(remote))
-                s = _sessions[remote];
+            if (auto it = _sessions.find(remote); it != _sessions.end())
+                s = it->second;
             if (s && !s->is_closed())
             {
                 if (on_attempted)
