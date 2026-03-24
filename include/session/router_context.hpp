@@ -27,7 +27,7 @@ namespace srouter
     // TODO FIXME this class seems unnecessary, we should get rid of it.
     struct Context
     {
-        Router* router;
+        Router* router = nullptr;
 
         explicit Context(bool embedded, Config conf, std::shared_ptr<oxen::quic::Loop> loop = nullptr);
         ~Context();
