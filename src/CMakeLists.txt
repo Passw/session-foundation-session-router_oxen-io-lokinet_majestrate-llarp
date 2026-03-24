@@ -228,6 +228,7 @@ target_link_libraries(session-router-addressing
     session-router-ip
     PRIVATE
     sessiondep::libevent_core
+    sessiondep::libzstd
 )
 target_link_libraries(session-router-conf PUBLIC session-router-cryptography session-router-addressing)
 if(SROUTER_FULL)
@@ -309,15 +310,6 @@ if(SROUTER_FULL)
   target_link_libraries(session-router-base INTERFACE sessiondep::libunbound oxenmq::oxenmq)
 endif()
 
-
-
-# libzstd
-if(TARGET sessiondep::libzstd)
-    target_link_libraries(session-router-utils PRIVATE sessiondep::libzstd)
-else()
-    pkg_check_modules(LIBZSTD libzstd>=1.3 IMPORTED_TARGET REQUIRED)
-    target_link_libraries(session-router-utils PRIVATE PkgConfig::LIBZSTD)
-endif()
 
 
 add_library(libsessionrouter session_router.cpp)

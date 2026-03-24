@@ -230,9 +230,11 @@ find_package(PkgConfig REQUIRED)
 
 session_dep(libevent_core 2.1)
 session_dep(libsodium 1.0.18)
+session_dep(libzstd 1.3)
 if(SROUTER_FULL)
   session_dep(libunbound 1.8)
 endif()
+
 
 if (NOT BUILD_STATIC_DEPS)
   pkg_check_modules(SD libsystemd IMPORTED_TARGET)
