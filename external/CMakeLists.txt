@@ -7,7 +7,9 @@ check_submodule(pybind11)
 check_submodule(sqlite_orm)
 check_submodule(mlkem-native)
 
-sessiondep_or_submodule(liboxenc 1.5.0 oxen-libquic/external/oxen-encoding oxenc::oxenc)
+if(NOT TARGET oxenc::oxenc)
+    sessiondep_or_submodule(liboxenc 1.5.0 oxen-libquic/external/oxen-encoding oxenc::oxenc)
+endif()
 
 # oxen::logging (with fmt & spdlog):
 include(oxen-libquic/external/oxen-logging/cmake/load.cmake)
@@ -18,7 +20,9 @@ endif()
 
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 set(JSON_Install OFF CACHE INTERNAL "")
-sessiondep_or_submodule(nlohmann_json 3.7.0 nlohmann nlohmann_json::nlohmann_json)
+if(NOT TARGET nlohmann_json::nlohmann_json)
+    sessiondep_or_submodule(nlohmann_json 3.7.0 nlohmann nlohmann_json::nlohmann_json)
+endif()
 
 
 if(SROUTER_HIVE)
