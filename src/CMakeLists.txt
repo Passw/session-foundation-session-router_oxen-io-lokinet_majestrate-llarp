@@ -227,7 +227,8 @@ target_link_libraries(session-router-addressing
     session-router-contact
     session-router-ip
     PRIVATE
-    libevent::core
+    sessiondep::libevent_core
+    sessiondep::libzstd
 )
 target_link_libraries(session-router-conf PUBLIC session-router-cryptography session-router-addressing)
 if(SROUTER_FULL)
@@ -239,7 +240,7 @@ target_link_libraries(session-router-dns
   session-router-cryptography
   session-router-conf
   PRIVATE
-  libevent::core
+  sessiondep::libevent_core
 )
 if(SROUTER_FULL)
   target_link_libraries(session-router-dns PUBLIC session-router-platform)
@@ -280,22 +281,13 @@ target_link_libraries(session-router-utils
   session-router-cryptography
 )
 
-# libevent
-if(NOT TARGET libevent::core)
-  add_library(libevent_core INTERFACE)
-  pkg_check_modules(LIBEVENT_core libevent_core>=2.1 IMPORTED_TARGET REQUIRED)
-  target_link_libraries(libevent_core INTERFACE PkgConfig::LIBEVENT_core)
-  add_library(libevent::core ALIAS libevent_core)
-endif()
-
-
 target_link_libraries(session-router-core 
   PUBLIC 
   session-router-core-utils
   session-router-nodedb
   session-router-path
   PRIVATE
-  libevent::core
+  sessiondep::libevent_core
 )
 if(SROUTER_FULL)
   target_link_libraries(session-router-core PUBLIC session-router-exit-auth)
@@ -310,23 +302,14 @@ target_link_libraries(session-router-base
   oxenc::oxenc 
   oxen::logging 
   
-  sodium
+  sessiondep::libsodium
 )
 
 
 if(SROUTER_FULL)
-  target_link_libraries(session-router-base INTERFACE libunbound oxenmq::oxenmq)
+  target_link_libraries(session-router-base INTERFACE sessiondep::libunbound oxenmq::oxenmq)
 endif()
 
-
-
-# libzstd
-if(TARGET libzstd::static)  # static dep or libsession-util's embedded static target
-    target_link_libraries(session-router-utils PRIVATE libzstd::static)
-else()
-    pkg_check_modules(LIBZSTD libzstd>=1.3 IMPORTED_TARGET REQUIRED)
-    target_link_libraries(session-router-utils PRIVATE PkgConfig::LIBZSTD)
-endif()
 
 
 add_library(libsessionrouter session_router.cpp)

@@ -58,6 +58,8 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+include(cmake/session-deps/Deps.cmake)
+
 # Core options
 option(SROUTER_AVX2 "enable avx2 code" OFF)
 option(SROUTER_NATIVE_BUILD "optimise for host system and FPU" ON)
@@ -81,7 +83,6 @@ option(CROSS_PLATFORM "cross compiler platform" "Linux")
 option(CROSS_PREFIX "toolchain cross compiler prefix" "")
 
 option(BUILD_SHARED_LIBS "Build shared library" OFF)
-option(BUILD_STATIC_DEPS "Download, build, and statically link against core dependencies" OFF)
 option(STATIC_LINK "link statically against dependencies" ${BUILD_STATIC_DEPS})
 if(BUILD_STATIC_DEPS AND NOT STATIC_LINK)
   message(FATAL_ERROR "Option BUILD_STATIC_DEPS requires STATIC_LINK to be enabled as well")
@@ -89,11 +90,6 @@ endif()
 
 if(BUILD_STATIC_DEPS AND BUILD_SHARED_LIBS)
   message(FATAL_ERROR "Incompatible options: BUILD_STATIC_DEPS cannot be used with BUILD_SHARED_LIBS")
-endif()
-
-if(BUILD_STATIC_DEPS)
-  set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
-  include(cmake/StaticBuild.cmake)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -153,31 +149,6 @@ if(NOT WIN32)
       set(NON_PC_TARGET ON)
     endif()
   endif()
-endif()
-
-find_package(PkgConfig REQUIRED)
-
-if(NOT TARGET sodium)
-  # Allow -DSROUTER_DOWNLOAD_SODIUM=FORCE to download without even checking for a local libsodium
-  option(SROUTER_DOWNLOAD_SODIUM "Allow libsodium to be downloaded and built locally if not found on the system" OFF)
-  if(NOT SROUTER_DOWNLOAD_SODIUM STREQUAL "FORCE" AND NOT BUILD_STATIC_DEPS)
-    pkg_check_modules(SODIUM libsodium>=1.0.18 IMPORTED_TARGET)
-  endif()
-
-  add_library(sodium INTERFACE)
-  if(SODIUM_FOUND AND NOT SROUTER_DOWNLOAD_SODIUM STREQUAL "FORCE" AND NOT BUILD_STATIC_DEPS)
-    target_link_libraries(sodium INTERFACE PkgConfig::SODIUM)
-  else()
-    if(NOT SROUTER_DOWNLOAD_SODIUM AND NOT BUILD_STATIC_DEPS)
-      message(FATAL_ERROR "Could not find libsodium >= 1.0.18; either install it on your system or use -DSROUTER_DOWNLOAD_SODIUM=ON to download and build an internal copy")
-    endif()
-    message(STATUS "Sodium >= 1.0.18 not found, but SROUTER_DOWNLOAD_SODIUM specified, so downloading it")
-    include(DownloadLibSodium)
-    target_link_libraries(sodium INTERFACE sodium_vendor)
-  endif()
-
-  # Need this target export so that loki-mq properly picks up sodium
-  export(TARGETS sodium NAMESPACE sodium:: FILE sodium-exports.cmake)
 endif()
 
 set(warning_flags -Wall -Wextra -Wno-unknown-pragmas -Wno-unused-function -Werror=vla)
@@ -257,11 +228,15 @@ string(REGEX REPLACE "^fatal.*$" nogit GIT_VERSION_REAL "${GIT_VERSION}")
 
 find_package(PkgConfig REQUIRED)
 
-if (NOT BUILD_STATIC_DEPS)
-  pkg_check_modules(UNBOUND libunbound REQUIRED IMPORTED_TARGET)
-  add_library(libunbound INTERFACE)
-  target_link_libraries(libunbound INTERFACE PkgConfig::UNBOUND)
+session_dep(libevent_core 2.1)
+session_dep(libsodium 1.0.18)
+session_dep(libzstd 1.3)
+if(SROUTER_FULL)
+  session_dep(libunbound 1.8)
+endif()
 
+
+if (NOT BUILD_STATIC_DEPS)
   pkg_check_modules(SD libsystemd IMPORTED_TARGET)
   # Default WITH_SYSTEMD to true if we found it
   option(WITH_SYSTEMD "enable systemd integration for sd_notify" ${SD_FOUND})
