@@ -87,7 +87,7 @@ namespace srouter
         // it is expected to wait on the future.
         if (running.exchange(false))
         {
-            stop();
+            router->stop();
             wait();
         }
 
