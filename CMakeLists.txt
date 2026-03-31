@@ -25,7 +25,6 @@ if(SROUTER_DAEMON AND NOT SROUTER_FULL)
   message(FATAL_ERROR "Cannot use SROUTER_DAEMON without SROUTER_FULL platform support!")
 endif()
 
-option(SROUTER_GRAPH_DEPENDENCIES "Produce graphviz representation of cmake dependencies" OFF)
 
 option(SROUTER_VERSION_SO "Add the project version to the shared library filename, e.g. libsession-router1.2.3.so instead of libsession-router.so" OFF)
 
@@ -79,8 +78,8 @@ set(SROUTER_BOOTSTRAP_FALLBACK_TESTNET "${PROJECT_SOURCE_DIR}/contrib/bootstrap/
 
 include(cmake/enable_lto.cmake)
 
-option(CROSS_PLATFORM "cross compiler platform" "Linux")
-option(CROSS_PREFIX "toolchain cross compiler prefix" "")
+set(CROSS_PLATFORM "Linux" CACHE STRING "cross compiler platform")
+set(CROSS_PREFIX "" CACHE STRING "toolchain cross compiler prefix")
 
 option(BUILD_SHARED_LIBS "Build shared library" OFF)
 option(STATIC_LINK "link statically against dependencies" ${BUILD_STATIC_DEPS})
@@ -95,12 +94,6 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
-
-# set(debug OFF)
-# if(CMAKE_BUILD_TYPE MATCHES "[Dd][Ee][Bb][Uu][Gg]")
-#   set(debug ON)
-#   add_definitions(-DSROUTER_DEBUG)
-# endif()
 
 option(SROUTER_WARN_DEPRECATED "show deprecation warnings" OFF)
 
@@ -218,7 +211,7 @@ unset(GIT_VERSION_REAL)
 if(NOT GIT_VERSION)
   execute_process(
       COMMAND git rev-parse --short HEAD
-      WOKRING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       OUTPUT_VARIABLE GIT_VERSION
       OUTPUT_STRIP_TRAILING_WHITESPACE
   )
