@@ -49,7 +49,7 @@ namespace srouter::dns
             hdr_fields,
             question ? uint16_t{1} : uint16_t{0},
             static_cast<uint16_t>(answers.size()),
-            static_cast<uint16_t>(0 /*authorities.size()*/),
+            static_cast<uint16_t>(authorities.size()),
             static_cast<uint16_t>(additional_edns ? 1 : 0 /*additional.size()*/));
 
         if (question)
@@ -64,6 +64,9 @@ namespace srouter::dns
         try
         {
             for (auto& a : answers)
+                a->encode(buf, prev_names, buf_offset);
+
+            for (auto& a : authorities)
                 a->encode(buf, prev_names, buf_offset);
 
             if (additional_edns)
