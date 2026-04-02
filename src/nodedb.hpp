@@ -3,6 +3,7 @@
 #include "contact/relay_contact.hpp"
 #include "contact/router_id.hpp"
 #include "util/thread/threading.hpp"
+#include "util/time.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -229,8 +230,16 @@ namespace srouter
         /// does not have to be called from the router loop.
         [[nodiscard]] std::optional<std::vector<unsigned char>> extract_0rtt(const RouterID& rid);
 
+        /// Looks up an RC by RouterID.  If found locally, calls `func` immediately with the RC.
+        /// If the initial bulk RC fetch has not yet completed (i.e. during startup), the lookup
+        /// is queued and retried once RCs are available.  Otherwise returns nullopt.
+        void lookup_rc(const RouterID& rid, std::function<void(std::optional<RelayContact>)> func);
+
       private:
-        void fetch_rcs();
+        sys_ms _last_rc_fetch{};
+        std::vector<std::pair<RouterID, std::function<void(std::optional<RelayContact>)>>> _pending_rc_lookups;
+
+        void fetch_rcs(std::function<void(bool success)> on_done = nullptr);
         void fetch_rids();
 
         /// Initiate a bootstrap fetch attempt.  This will try to bootstrap once from each
