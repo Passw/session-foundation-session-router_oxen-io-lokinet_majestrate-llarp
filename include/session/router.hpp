@@ -48,12 +48,14 @@ namespace session::router
         /// destination through session_router.
         uint16_t local_port;
 
-        /// A suggested maximum MTU for the connection.  If the application supports a configurable
-        /// MTU, this value is the recommended value that avoids some additional overhead from
-        /// packet splitting, which can slightly reduce latency and jitter.  If the application
-        /// doesn't support MTU configuration then this value can simply be ignored and Session
-        /// Router will split any "too large" packets into two.
-        uint16_t suggested_mtu;
+        /// A suggested maximum payload size for the tunnel.  If the application supports a
+        /// configurable payload size, using this value avoids additional overhead from packet
+        /// splitting, which can slightly reduce latency and jitter.  nullopt means the outer
+        /// connection's MTU is unknown (PMTUD without a cap); the application should use its
+        /// own default.  If the application doesn't support payload size configuration then
+        /// this value can simply be ignored and Session Router will split any "too large"
+        /// packets into two.
+        std::optional<uint16_t> suggested_mtu;
     };
 
     using snode_path = std::vector<std::pair<std::string, std::string>>;
