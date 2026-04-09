@@ -336,7 +336,7 @@ namespace srouter
         return _root / std::filesystem::path{pubkey.to_string()}.replace_extension(ext);
     }
 
-    void NodeDB::fetch_rcs()
+    void NodeDB::fetch_rcs(std::function<void(bool success)> on_done)
     {
         assert(_router.loop().inside());
 
@@ -344,6 +344,8 @@ namespace srouter
         if (!selected_path)
         {
             log::debug(logcat, "NodeDB fetch rcs, skipping because we have no paths.");
+            if (on_done)
+                on_done(false);
             return;
         }
 
@@ -357,7 +359,7 @@ namespace srouter
             btlp.append(std::span(h));
         }
 
-        selected_path->fetch_relay_contacts(btdp.span<std::byte>(), [this](auto resp) {
+        selected_path->fetch_relay_contacts(btdp.span<std::byte>(), [this, on_done = std::move(on_done)](auto resp) {
             std::string error;
             if (resp.ok())
             {
@@ -391,6 +393,26 @@ namespace srouter
                         fetched_count++;
                     }
                     log::debug(logcat, "RC fetch gave {} RCs"sv, fetched_count);
+                    _last_rc_fetch = time_now_ms();
+
+                    if (!_pending_rc_lookups.empty())
+                    {
+                        log::debug(logcat, "Processing {} queued RC lookups", _pending_rc_lookups.size());
+                        auto pending = std::move(_pending_rc_lookups);
+                        _pending_rc_lookups.clear();
+                        for (auto& [rid, func] : pending)
+                        {
+                            try
+                            {
+                                auto* rc = get_rc(rid);
+                                func(rc ? std::optional{*rc} : std::nullopt);
+                            }
+                            catch (const std::exception& e)
+                            {
+                                log::error(logcat, "Uncaught exception processing queued RC lookup: {}", e.what());
+                            }
+                        }
+                    }
                 }
                 catch (const std::exception& e)
                 {
@@ -401,7 +423,62 @@ namespace srouter
             {
                 error = resp.timed_out ? "timed out" : "failed: {}"_format(resp.body);
             }
+
+            if (!error.empty())
+            {
+                log::warning(logcat, "RC bucket fetch failed: {}", error);
+
+                // Fail any queued lookups that were waiting for the initial fetch
+                if (!_pending_rc_lookups.empty())
+                {
+                    log::debug(logcat, "Failing {} queued RC lookups", _pending_rc_lookups.size());
+                    auto pending = std::move(_pending_rc_lookups);
+                    _pending_rc_lookups.clear();
+                    for (auto& [rid, func] : pending)
+                    {
+                        try
+                        {
+                            func(std::nullopt);
+                        }
+                        catch (const std::exception& e)
+                        {
+                            log::error(logcat, "Uncaught exception processing queued RC lookup: {}", e.what());
+                        }
+                    }
+                }
+            }
+
+            if (on_done)
+                on_done(error.empty());
         });
+    }
+
+    void NodeDB::lookup_rc(const RouterID& rid, std::function<void(std::optional<RelayContact>)> func)
+    {
+        assert(_router.loop().inside());
+
+        if (auto* rc = get_rc(rid))
+        {
+            log::debug(logcat, "lookup_rc: {} found locally", rid);
+            func(*rc);
+            return;
+        }
+
+        // If we haven't completed an initial RC fetch yet, queue the lookup to be retried
+        // once the first fetch completes (this happens during startup before RCs are available).
+        if (_last_rc_fetch == sys_ms{})
+        {
+            log::debug(logcat, "lookup_rc: {} not found, initial RC fetch not yet complete; queueing", rid);
+            _pending_rc_lookups.emplace_back(rid, std::move(func));
+            return;
+        }
+
+        if (!known_rids.contains(rid))
+            log::debug(logcat, "lookup_rc: {} not in known RID set; treating as unknown", rid);
+        else
+            log::debug(logcat, "lookup_rc: {} in RID set but no RC available", rid);
+
+        func(std::nullopt);
     }
 
     void NodeDB::fetch_rids()

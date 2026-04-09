@@ -159,14 +159,6 @@ namespace srouter::path
             hops, other.hops, [](const TransitHop& a, const TransitHop& b) { return a.same_transit(b); });
     }
 
-    void Path::fetch_relay_contact(const RouterID& needed, std::function<void(path_control_response)> func)
-    {
-        oxenc::bt_dict_producer btdp;
-        auto btlp = btdp.append_list("x"sv);
-        btlp.append(needed.span());
-        send_path_control_message("fetch_rcs", btdp.span<std::byte>(), std::move(func));
-    }
-
     void Path::fetch_relay_contacts(std::span<const std::byte> body, std::function<void(path_control_response)> func)
     {
         send_path_control_message("fetch_rcs", body, std::move(func));
