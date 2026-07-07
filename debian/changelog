@@ -1,3 +1,9 @@
+session-router (1.0.2-1~ubuntu2604) resolute; urgency=medium
+
+  * Resolute deb
+
+ -- Jason Rhinelander <jason@session.foundation>  Tue, 07 Jul 2026 17:23:43 -0300
+
 session-router (1.0.2-1~ubuntu2510) unstable; urgency=medium
 
   * Properly wrap `session-router-config --help` output
