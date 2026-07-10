@@ -1828,10 +1828,6 @@ namespace srouter::session
                 "Received session accept message for established session, likely a path switch failed because the "
                 "remote restarted, but it accepted our fallback session init.");
 
-        // reset these so that if this parsing fails we trigger a new session init:
-        _is_established = false;
-        _outbound_tag = 0;
-
         try
         {
             auto box = payload.require_span<std::byte>("B");
@@ -1849,6 +1845,10 @@ namespace srouter::session
 
             auto tag = inner_btdc.require<session_tag>("t");
 
+            // Everything up to and including this signature check is unauthenticated: "B" is a sealed
+            // (anonymous-sender) box, so an on-path party that knows our session tag could forge a
+            // malformed accept.  We therefore mutate no live session state until the remote's identity
+            // signature verifies, so that a forged/garbage accept cannot de-establish a live session.
             inner_btdc.require_signature("~", [this](std::span<const std::byte> msg, std::span<const std::byte> sig) {
                 if (sig.size() != Signature::SIZE)
                     throw std::runtime_error{fmt::format("Invalid signature: not {} bytes", Signature::SIZE)};
@@ -1859,23 +1859,35 @@ namespace srouter::session
 
             inner_btdc.finish();
 
-            auto mlss = _session_mlkem756->sec.decapsulate(remote_mlct);
+            // The accept is now authenticated as coming from the remote.  If completing establishment
+            // fails from here on it's a genuine-but-broken accept, so reset our session state to
+            // trigger a fresh session init.
+            try
+            {
+                auto mlss = _session_mlkem756->sec.decapsulate(remote_mlct);
 
-            _outbound_tag = tag;
-            std::tie(_inbound_key.emplace(), _outbound_key.emplace()) = session_secret(
-                _r.id(),
-                _remote.pubkey,
-                *_session_x25519,
-                remote_eph_xpk,
-                /*is_initiator=*/true,
-                mlss,
-                _session_mlkem756->pub,
-                _inbound_tag,
-                _outbound_tag);
-            _is_established = true;
+                _outbound_tag = tag;
+                std::tie(_inbound_key.emplace(), _outbound_key.emplace()) = session_secret(
+                    _r.id(),
+                    _remote.pubkey,
+                    *_session_x25519,
+                    remote_eph_xpk,
+                    /*is_initiator=*/true,
+                    mlss,
+                    _session_mlkem756->pub,
+                    _inbound_tag,
+                    _outbound_tag);
+                _is_established = true;
 
-            _session_mlkem756.reset();
-            _session_x25519.reset();
+                _session_mlkem756.reset();
+                _session_x25519.reset();
+            }
+            catch (...)
+            {
+                _is_established = false;
+                _outbound_tag = 0;
+                throw;
+            }
         }
         catch (const std::exception& e)
         {
