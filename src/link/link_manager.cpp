@@ -1001,9 +1001,9 @@ namespace srouter::link
 
         try
         {
-            // Backwards compat support for 1.0 incoming sessions: 2-element bt-dict where [0] is the
-            // session key encrypted path switch info, and part [1] is a handshake session init message
-            // to be used as a fallback if the session was not found.
+            // New 1.1+ (PFS+PQ) format: a bt-dict whose "" key gives the handshake type ("i" session
+            // init, "a" session accept, or "s" path switch); path switches also carry the encrypted
+            // path switch info ("S") and a fallback session init ("i").
             if (payload.front() == std::byte{'d'})
             {
                 oxenc::bt_dict_consumer btdc{payload};
@@ -1042,8 +1042,11 @@ namespace srouter::link
                 fallback_init = btdc.require_span<std::byte>("i");
                 btdc.finish();
             }
-            else if (payload.front() != std::byte{'l'})
+            else if (payload.front() == std::byte{'l'})
             {
+                // Backwards compat support for 1.0 incoming sessions: a 2-element bt-list where [0] is
+                // the session key encrypted path switch info, and [1] is a handshake session init
+                // message to be used as a fallback if the session was not found.
                 oxenc::bt_list_consumer btlc{payload};
                 path_switch = btlc.consume_span<std::byte>();
                 fallback_init = btlc.consume_span<std::byte>();
