@@ -24,19 +24,20 @@ namespace srouter::rpc
         _is_updating_list = false;
     }
 
-    void OxendRPC::connect_async(oxenmq::address url)
+    void OxendRPC::connect_async(std::string url)
     {
         if (not _router.is_service_node)
         {
             throw std::runtime_error("we cannot talk to oxend while not a service node");
         }
 
-        log::info(logcat, "RPC client connecting to oxend at {}", url.full_address());
+        oxenmq::address addr{url};
+        log::info(logcat, "RPC client connecting to oxend at {}", addr.full_address());
 
         _conn = _omq.connect_remote(
-            url,
+            addr,
             [](oxenmq::ConnectionID) {},
-            [this, url](oxenmq::ConnectionID, std::string_view f) {
+            [this, url = std::move(url)](oxenmq::ConnectionID, std::string_view f) {
                 log::info(logcat, "Failed to connect to oxend at {}", f);
                 _router._jq->call([this, url]() { connect_async(url); });
             });

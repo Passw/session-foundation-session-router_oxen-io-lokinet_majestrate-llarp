@@ -1,7 +1,6 @@
 #include "router.hpp"
 
 #include "config/config.hpp"
-#include "consensus/reachability_testing.hpp"
 #include "constants/platform.hpp"
 #include "constants/proto.hpp"
 #include "constants/version.hpp"
@@ -21,15 +20,6 @@
 #include <oxen/log.hpp>
 
 #include <chrono>
-
-#ifndef SROUTER_EMBEDDED_ONLY
-#include "handlers/tun.hpp"
-#include "rpc/oxend_rpc.hpp"
-#include "rpc/rpc_server.hpp"
-
-#include <oxenmq/oxenmq.h>
-#endif
-
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
@@ -57,17 +47,14 @@ namespace srouter
           _contact_db{std::make_unique<ContactDB>(*this)},
           _last_tick{}
     {
-#ifndef SROUTER_EMBEDDED_ONLY
-        // Not actually shared, but unique_ptr would require destructor visibility which
-        // embedded-only won't have:
-        _omq = std::make_shared<oxenmq::OxenMQ>();
-        // for oxend, so we don't close the connection when syncing the registered relay (which can
-        // exceed the defaut 1MB limit).
-        _omq->MAX_MSG_SIZE = -1;
-
-        if (is_service_node)
-            _router_testing = std::make_shared<consensus::reachability_testing>(*this);
-#endif
+        // Full builds install the rpc backend (srouter::full::initialize); in embedded/core-only
+        // builds rpc_backend is null and these stay null (the relay/rpc paths never run).
+        if (rpc_backend)
+        {
+            _omq = rpc_backend->make_omq();
+            if (is_service_node)
+                _router_testing = rpc_backend->make_reachability(*this);
+        }
 
         init_logging();
 
@@ -98,7 +85,6 @@ namespace srouter
         _contact_db->start_tickers();
         _link_endpoint->start_tickers();
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (is_service_node)
         {
             _oxend->start_pings();
@@ -123,7 +109,6 @@ namespace srouter
                 _router_testing->start();
         }
         else
-#endif
         {
             // Resolve needed ONS values now that we have the necessary things prefigured
             _session_endpoint->resolve_sns_mappings();
@@ -135,7 +120,6 @@ namespace srouter
     void Router::fetch_snode_keys()
     {
         assert(is_service_node);
-#ifndef SROUTER_EMBEDDED_ONLY
 
         our_rc_file = _config.router.data_dir / our_rc_filename;
 
@@ -166,7 +150,6 @@ namespace srouter
                     throw;
             }
         }
-#endif
     }
 
     void Router::init_logging()
@@ -474,29 +457,29 @@ namespace srouter
 
         log::info(log_global, "Operating as a Session Router {}", is_service_node ? "relay (service node)" : "client");
 
-#ifndef SROUTER_EMBEDDED_ONLY
-        if (is_service_node)
+        if (rpc_backend)
         {
-            log::debug(logcat, "Starting oxend RPC client");
-            _oxend = std::make_shared<rpc::OxendRPC>(*_omq, *this);
-        }
+            if (is_service_node)
+            {
+                log::debug(logcat, "Starting oxend RPC client");
+                _oxend = rpc_backend->make_oxend(*this, *_omq);
+            }
 
-        if (_config.api.enable_rpc_server)
-        {
-            log::debug(logcat, "Starting RPC server");
-            //
-            _rpc_server = std::make_shared<rpc::RPCServer>(*_omq, *this);
-        }
+            if (_config.api.enable_rpc_server)
+            {
+                log::debug(logcat, "Starting RPC server");
+                _rpc_server = rpc_backend->make_rpc_server(*this, *_omq);
+            }
 
-        log::debug(logcat, "Starting OMQ server");
-        _omq->start();
+            log::debug(logcat, "Starting OMQ server");
+            rpc_backend->start_omq(*_omq);
 
-        if (is_service_node)
-        {
-            log::debug(logcat, "Connecting to oxend @ {}", _config.oxend.rpc_addr);
-            _oxend->connect_async(oxenmq::address(_config.oxend.rpc_addr));
+            if (is_service_node)
+            {
+                log::debug(logcat, "Connecting to oxend @ {}", _config.oxend.rpc_addr);
+                _oxend->connect_async(_config.oxend.rpc_addr);
+            }
         }
-#endif
 
         log::debug(logcat, "Initializing key manager");
 
@@ -511,7 +494,6 @@ namespace srouter
 
         _node_db = std::make_unique<NodeDB>(*this);
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (is_service_node)
         {
             // Wait, synchronously, for the oxend SN list update, for up to 10s.  If we still don't
@@ -539,7 +521,6 @@ namespace srouter
             if (fallback)
                 _node_db->load_registered_relays_fallback();
         }
-#endif
 
         _session_endpoint = std::make_unique<handlers::SessionEndpoint>(*this);
 
@@ -999,10 +980,8 @@ namespace srouter
 
     void Router::on_test_ping()
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_router_testing)
             _router_testing->incoming_ping();
-#endif
     }
 
     void Router::stop()
@@ -1028,10 +1007,8 @@ namespace srouter
                 srouter::sys::service_manager->stopping();
             }
 
-#ifndef SROUTER_EMBEDDED_ONLY
             if (_router_testing)
                 _router_testing->stop();
-#endif
 
             _session_endpoint->stop(true);
 

@@ -13,4 +13,8 @@ namespace srouter::full
     // static initialisation, is deterministic.
     void initialize();
 
+    // Installs the rpc/oxend/omq/reachability construction hooks (RpcBackendHooks) so Router can
+    // build those full-only objects.  Implementation detail of initialize(); not called directly.
+    void install_rpc_backend();
+
 }  // namespace srouter::full

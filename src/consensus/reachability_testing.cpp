@@ -159,8 +159,9 @@ namespace srouter::consensus
         }
     }
 
-    void reachability_testing::incoming_ping(const time_point_t& now)
+    void reachability_testing::incoming_ping()
     {
+        auto now = clock_t::now();
         last.last_test = now;
 
         // If we had previous logged about a failure then log about the success immediately (rather

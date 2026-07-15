@@ -76,8 +76,10 @@ if(SROUTER_FULL)
   # full-backend factory will live.
   session_router_add_library(session-router-full
     full/init.cpp
+    full/rpc_backend.cpp
   )
-  target_link_libraries(session-router-full PRIVATE session-router-platform session-router-rpc)
+  target_link_libraries(session-router-full PRIVATE
+    session-router-core session-router-platform session-router-rpc)
 endif()
 
 # config, crypto, timeplace, nodedb, net, router

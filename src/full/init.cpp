@@ -9,6 +9,7 @@ namespace srouter::full
     {
         sys::install_native_service_manager();
         config::install_full_config_validators();
+        install_rpc_backend();
     }
 
 }  // namespace srouter::full

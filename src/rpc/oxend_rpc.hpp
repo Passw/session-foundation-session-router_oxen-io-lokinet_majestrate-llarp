@@ -2,6 +2,7 @@
 
 #include "contact/router_id.hpp"
 #include "contact/sns.hpp"
+#include "rpc/oxend_client.hpp"
 #include "util/logging.hpp"
 
 #include <oxenmq/address.h>
@@ -22,34 +23,34 @@ namespace srouter::rpc
 
     /// OxenMQ RPC client for a relay to talk to its oxend to obtain info about and report on
     /// the service node network.
-    class OxendRPC
+    class OxendRPC : public IOxendClient
     {
       public:
         OxendRPC(oxenmq::OxenMQ& omq, Router& r);
 
         /// Connect to oxend async
-        void connect_async(oxenmq::address url);
+        void connect_async(std::string url) override;
 
         /// blocking request identity secret key from oxend
         /// throws on failure
-        Ed25519SecretKey obtain_identity_key();
+        Ed25519SecretKey obtain_identity_key() override;
 
         /// get what the current block height is according to oxend
         uint64_t block_height() const { return _block_height; }
 
         void lookup_sns_hash(
             std::string_view namehash,
-            std::function<void(std::optional<std::pair<std::string, SymmNonce>>)> resultHandler);
+            std::function<void(std::optional<std::pair<std::string, SymmNonce>>)> resultHandler) override;
 
         /// inform that if connected to a router successfully
-        void inform_connection(RouterID router, bool success);
+        void inform_connection(RouterID router, bool success) override;
 
-        void start_pings();
+        void start_pings() override;
 
         /// triggers a service node list refresh from oxend; thread-safe and will do nothing if
         /// an update is already in progress.  The promise is for router.cpp to attempt a
         /// synchronous update on startup, and should not be used otherwise.
-        void update_service_node_list(std::shared_ptr<std::promise<void>> on_update = nullptr);
+        void update_service_node_list(std::shared_ptr<std::promise<void>> on_update = nullptr) override;
 
       private:
         void ping();
