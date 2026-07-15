@@ -13,10 +13,6 @@
 
 namespace srouter::dns
 {
-#ifdef SROUTER_EMBEDDED_ONLY
-    static_assert(false, "dns::RequestHandler requires a full lokinet build!");
-#endif
-
     namespace
     {
         auto logcat = log::Cat("dns");

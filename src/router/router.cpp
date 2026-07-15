@@ -6,7 +6,6 @@
 #include "constants/version.hpp"
 #include "contact/contactdb.hpp"
 #include "crypto/crypto.hpp"
-#include "dns/listener.hpp"
 #include "link/link_manager.hpp"
 #include "nodedb.hpp"
 #include "util/formattable.hpp"
@@ -71,10 +70,8 @@ namespace srouter
 
     void Router::start_tickers()
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             _tun->start_poller();
-#endif
 
         if (!embedded())
             _service_stat_ticker = _loop->call_every(SERVICE_MANAGER_REPORT_INTERVAL, [this]() {
@@ -191,12 +188,10 @@ namespace srouter
                 log::set_level(log_global, log::Level::info);
         });
 
-#ifndef SROUTER_EMBEDDED_ONLY
         // re-add rpc log sink if rpc enabled, else free it
         if (_config.api.enable_rpc_server and srouter::logRingBuffer)
             log::add_sink(srouter::logRingBuffer, srouter::log::DEFAULT_PATTERN_MONO);
         else
-#endif
             srouter::logRingBuffer.reset();
     }
 
@@ -530,55 +525,21 @@ namespace srouter
 
         if (!embedded())
         {
-#ifdef SROUTER_EMBEDDED_ONLY
-            log::critical(logcat, "This Session Router build only supports embedded configurations!");
-            throw std::runtime_error{"This Session Router build only supports embedded configurations!"};
-#else
             log::debug(logcat, "Initializing TUN device");
-            _tun = _loop->make_shared<handlers::TunEndpoint>(*this);
+            _tun = rpc_backend->make_tun(*this);
 
             log::info(logcat, "Session Router IPv4 local network is {}", _tun->get_ipv4_network());
             log::info(logcat, "Session Router IPv6 local network is {}", _tun->get_ipv6_network());
 
             // only (full) clients should have DNS, relays have no need for it
             if (!is_service_node)
-            {
-                auto& dns_bind = config().dns._listen_addrs;
-                if (dns_bind.empty())
-                {
-                    // This configuration is allowed (a service-only client might use it), although a bit unusual
-                    log::warning(
-                        logcat, "[dns]:listen is empty: DNS disabled.  Making outbound paths will not be possible");
-                }
-                else
-                {
-                    try
-                    {
-                        for (const auto& addr : dns_bind)
-                        {
-                            if (!_dns)
-                                _dns = _loop->make_shared<dns::Listener>(*this, addr);
-                            else
-                                _dns->listen(loop(), addr);
-
-                            log::info(log_global, "DNS listening on {} port {}", addr.host(), _dns->last_port);
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        log::error(
-                            logcat, "Failed to initialize DNS listener on {}: {}", fmt::join(dns_bind, ","), e.what());
-                        throw;
-                    }
-                }
-            }
+                _dns = rpc_backend->make_dns(*this);
 
             log::info(
                 log_global,
                 "Session Router internal network: {} on device {}",
                 _tun->get_ipv4_network(),
                 _tun->get_if_name());
-#endif
         }
         else
             log::debug(logcat, "Not initializing TUN device; running as an embedded client");
@@ -703,7 +664,6 @@ namespace srouter
     void Router::_relay_tick([[maybe_unused]] sys_ms now)
     {
         assert(_config.type == config::Type::Relay);
-#ifndef SROUTER_EMBEDDED_ONLY
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         auto steady_now = steady_now_ms();
@@ -741,7 +701,6 @@ namespace srouter
         }
 
         path_context.expire_hops(now);
-#endif
     }
 
     void Router::_client_tick(sys_ms now)
@@ -1018,13 +977,11 @@ namespace srouter
             log::debug(logcat, "closing all connections");
             _link_manager->stop();
 
-#ifndef SROUTER_EMBEDDED_ONLY
             if (_dns)
                 _dns.reset();
 
             if (_tun)
                 _tun->stop();
-#endif
 
             auto rv = _loop_ticker->stop();
             log::debug(logcat, "router loop ticker stopped {}successfully!", rv ? "" : "un");
@@ -1073,29 +1030,23 @@ namespace srouter
 
     std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv4& addr) const
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             return _tun->reverse_lookup(addr);
-#endif
         return {std::nullopt, false};
     }
 
     std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv6& addr) const
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             return _tun->reverse_lookup(addr);
-#endif
         return {std::nullopt, false};
     }
 
     const srouter::net::Platform* Router::net() const
     {
-#ifndef SROUTER_EMBEDDED_ONLY
-        if (!embedded())
-            return srouter::net::Platform::Default_ptr();
-#endif
-        return nullptr;
+        if (embedded())
+            return nullptr;
+        return srouter::net::native_net_platform;
     }
 
 }  // namespace srouter

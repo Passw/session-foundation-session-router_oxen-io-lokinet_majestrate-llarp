@@ -246,9 +246,6 @@ target_compile_features(session-router-base INTERFACE cxx_std_20)
 
 add_library(session-router-base-internal INTERFACE)
 target_include_directories(session-router-base-internal INTERFACE include/session_router)
-if(NOT SROUTER_FULL)
-  target_compile_definitions(session-router-base-internal INTERFACE SROUTER_EMBEDDED_ONLY)
-endif()
 
 target_link_libraries(session-router-base-internal INTERFACE session-router-base-internal_warnings)
 

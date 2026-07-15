@@ -156,7 +156,7 @@ namespace srouter
         link::Endpoint* _link_endpoint = nullptr;
 
         // These are only created in full platform mode (not embedded clients)
-        std::shared_ptr<handlers::TunEndpoint> _tun;
+        std::shared_ptr<handlers::ITunnel> _tun;
         std::shared_ptr<dns::Listener> _dns;
         std::shared_ptr<vpn::Platform> _vpn;
         std::shared_ptr<RoutePoker> _route_poker;
@@ -229,7 +229,7 @@ namespace srouter
 
         bool is_fully_meshed() const;
 
-        const std::shared_ptr<handlers::TunEndpoint>& tun_endpoint() { return _tun; }
+        const std::shared_ptr<handlers::ITunnel>& tun_endpoint() { return _tun; }
 
         // Looks up the given IP in our TUN mapping and, if it is a TUN address and maps to a remote, returns the
         // network address of the mapped-to address.  The `.second` part of the result indicates

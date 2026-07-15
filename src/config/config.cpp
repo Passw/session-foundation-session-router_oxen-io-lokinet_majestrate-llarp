@@ -1581,11 +1581,6 @@ namespace srouter
     Config::Config(config::Type type, std::string ini, std::filesystem::path conf_dir, std::string config_for_debug)
         : type{type}, defs{type, std::move(conf_dir)}, parser{std::move(config_for_debug)}
     {
-#ifdef SROUTER_EMBEDDED_ONLY
-        if (type != Type::EmbeddedClient)
-            throw std::runtime_error{
-                "This Session Router build only supports embedded clients, not {}"_format(to_string(type))};
-#endif
         for (ConfigBase* c : std::initializer_list<ConfigBase*>{
                  &router, &exit, &network, &paths, &dns, &links, &api, &oxend, &bootstrap, &logging})
             c->define_config_options(defs);

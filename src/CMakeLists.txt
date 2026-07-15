@@ -79,7 +79,7 @@ if(SROUTER_FULL)
     full/rpc_backend.cpp
   )
   target_link_libraries(session-router-full PRIVATE
-    session-router-core session-router-platform session-router-rpc)
+    session-router-core session-router-dns session-router-platform session-router-rpc)
 endif()
 
 # config, crypto, timeplace, nodedb, net, router

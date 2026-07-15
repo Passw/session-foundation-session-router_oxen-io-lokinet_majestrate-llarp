@@ -34,10 +34,6 @@
 #include <ranges>
 #include <variant>
 
-#ifndef SROUTER_EMBEDDED_ONLY
-#include "rpc/oxend_rpc.hpp"
-#endif
-
 namespace srouter::link
 {
     static auto logcat = srouter::log::Cat("link.manager");
@@ -349,9 +345,9 @@ namespace srouter::link
 
     void Manager::handle_path_resolve_sns(std::span<const std::byte> body, std::function<void(std::string)> respond)
     {
-#ifdef SROUTER_EMBEDDED_ONLY
-        throw std::logic_error{"This Session Router is not a service node!"};
-#else
+        if (!router.oxend())
+            throw std::logic_error{"This Session Router is not a service node!"};
+
         log::trace(logcat, "Received request to publish client contact!");
 
         std::string_view name_hash;
@@ -366,7 +362,6 @@ namespace srouter::link
             return respond(messages::ERROR_RESPONSE);
         }
 
-        assert(router.oxend());
         router.oxend()->lookup_sns_hash(
             name_hash, [respond = std::move(respond)](std::optional<std::pair<std::string, SymmNonce>> maybe_enc) {
                 if (maybe_enc)
@@ -384,7 +379,6 @@ namespace srouter::link
                     respond(messages::NOT_FOUND_RESPONSE);
                 }
             });
-#endif
     }
 
     void Manager::handle_publish_cc(

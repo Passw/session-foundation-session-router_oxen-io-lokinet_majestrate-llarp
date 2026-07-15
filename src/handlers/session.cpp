@@ -110,10 +110,8 @@ namespace srouter::handlers
         s->close(send_close);
 
         const auto& remote = s->remote();
-#ifndef SROUTER_EMBEDDED_ONLY
         if (auto& tun = router.tun_endpoint())
             tun->expire(remote);
-#endif
 
         // defer this in case we're in the middle of iterating the container(s)
         // capture a weak_ptr to the session so that if for whatever reason
@@ -1056,7 +1054,6 @@ namespace srouter::handlers
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (const auto& tun = router.tun_endpoint())
         {
             log::debug(logcat, "Mapping local tun ipv4 for inbound session from {}", s.remote());
@@ -1067,7 +1064,6 @@ namespace srouter::handlers
                 log::warning(logcat, "Mapping unsuccessful; out of available addresses?");
             return addr;
         }
-#endif
 
         // TODO: no tun-based
 
@@ -1078,7 +1074,6 @@ namespace srouter::handlers
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (const auto& tun = router.tun_endpoint())
         {
             log::debug(logcat, "Successfully mapped inbound session; mapping session to local TUN IPv6");
@@ -1089,7 +1084,6 @@ namespace srouter::handlers
             log::info(logcat, "TUN device successfully mapped session (remote: {}) to local ip: {}", s.remote(), addr);
             return addr;
         }
-#endif
 
         // TODO: if we're not tun-based -- currently not allowing inbound sessions for non-tun
 

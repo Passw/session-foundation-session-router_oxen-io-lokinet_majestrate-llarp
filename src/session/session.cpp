@@ -830,7 +830,6 @@ namespace srouter::session
             return;
         }
 
-#ifndef SROUTER_EMBEDDED_ONLY
         // Otherwise we're not embedded; if the other side also isn't then this is just a raw IP
         // packet to handle via the tun endpoint, and the same for UDP packets from embedded
         // remotes (which also send raw UDP packets):
@@ -859,9 +858,8 @@ namespace srouter::session
             ipv4_mapped = true;
         }
 
-        assert(_r.tun_endpoint());  // (We return above if embedded)
-        _r.tun_endpoint()->handle_inbound_packet(std::move(pkt), dgram_type, _remote);
-#endif
+        if (auto& tun = _r.tun_endpoint())
+            tun->handle_inbound_packet(std::move(pkt), dgram_type, _remote);
     }
 
     void Session::publish_client_contact(std::string_view encrypted_cc)

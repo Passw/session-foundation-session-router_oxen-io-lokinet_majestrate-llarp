@@ -19,6 +19,14 @@ namespace srouter
     {
         struct IReachability;
     }
+    namespace handlers
+    {
+        struct ITunnel;
+    }
+    namespace dns
+    {
+        class Listener;
+    }
 
     // Construction hooks for the full rpc/oxend/omq/reachability subsystem.  Installed once by
     // srouter::full::initialize() in full builds; left null in embedded/core-only builds (Router then
@@ -34,6 +42,8 @@ namespace srouter
         std::shared_ptr<rpc::IOxendClient> (*make_oxend)(Router&, oxenmq::OxenMQ&);
         std::shared_ptr<rpc::RPCServer> (*make_rpc_server)(Router&, oxenmq::OxenMQ&);
         std::shared_ptr<consensus::IReachability> (*make_reachability)(Router&);
+        std::shared_ptr<handlers::ITunnel> (*make_tun)(Router&);
+        std::shared_ptr<dns::Listener> (*make_dns)(Router&);
     };
 
     inline const RpcBackendHooks* rpc_backend = nullptr;

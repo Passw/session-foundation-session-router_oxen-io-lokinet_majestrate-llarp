@@ -51,15 +51,14 @@ namespace srouter
         lifetime_waiter = done_promise.get_future();
 
         std::shared_ptr<srouter::vpn::Platform> plat;
-#ifndef SROUTER_EMBEDDED_ONLY
         if (!embedded)
         {
             log::debug(logcat, "Initializing platform code...");
-            plat = vpn::MakeNativePlatform(this);
+            if (vpn::make_native_platform)
+                plat = vpn::make_native_platform(this);
             if (!plat)
                 throw std::runtime_error{"This platform is not currently supported!"};
         }
-#endif
 
         log::debug(logcat, "Starting main router...");
         try
