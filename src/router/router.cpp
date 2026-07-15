@@ -87,12 +87,12 @@ namespace srouter
 #ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             _tun->start_poller();
+#endif
 
         if (!embedded())
             _service_stat_ticker = _loop->call_every(SERVICE_MANAGER_REPORT_INTERVAL, [this]() {
                 sys::service_manager->report_periodic_stats(status_line());
             });
-#endif
 
         _node_db->start();
         _contact_db->start_tickers();
@@ -456,10 +456,8 @@ namespace srouter
     void Router::configure()
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
-#ifndef SROUTER_EMBEDDED_ONLY
         if (!embedded())
             sys::service_manager->starting();
-#endif
 
         if (_config.exit.exit_enabled and is_service_node)
             throw std::runtime_error{
@@ -869,10 +867,8 @@ namespace srouter
         start_tickers();
         _is_running = true;
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (!embedded())
             srouter::sys::service_manager->ready();
-#endif
 
         log::info(
             log_global,
@@ -1026,13 +1022,13 @@ namespace srouter
             return;  // Lost a race with something else trying to stop
 
         _jq->call([this] {
-#ifndef SROUTER_EMBEDDED_ONLY
             if (!embedded())
             {
                 log::debug(logcat, "stopping service manager...");
                 srouter::sys::service_manager->stopping();
             }
 
+#ifndef SROUTER_EMBEDDED_ONLY
             if (_router_testing)
                 _router_testing->stop();
 #endif

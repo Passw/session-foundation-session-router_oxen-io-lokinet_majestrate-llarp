@@ -62,10 +62,22 @@ if (SROUTER_FULL)
   session_router_add_library(session-router-rpc
     rpc/json_binary_proxy.cpp
     rpc/json_conversions.cpp
+    rpc/config_validation.cpp
     rpc/oxend_rpc.cpp
     rpc/rpc_request_parser.cpp
     rpc/rpc_server.cpp
   )
+endif()
+
+if(SROUTER_FULL)
+  # Full (non-embedded) application support: the single srouter::full::initialize() entry point that
+  # installs full-only overrides (native service manager, stricter config validators, ...) over their
+  # core defaults.  A full application must call it early in main().  This is also where the phase-4
+  # full-backend factory will live.
+  session_router_add_library(session-router-full
+    full/init.cpp
+  )
+  target_link_libraries(session-router-full PRIVATE session-router-platform session-router-rpc)
 endif()
 
 # config, crypto, timeplace, nodedb, net, router
@@ -74,6 +86,7 @@ session_router_add_library(session-router-utils
   util/cleared.cpp
   util/file.cpp
   util/logging.cpp
+  util/service_manager.cpp
   util/str.cpp
   util/thread/queue_manager.cpp  
   util/thread/threading.cpp

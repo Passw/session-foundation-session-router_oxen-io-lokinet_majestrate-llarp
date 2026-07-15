@@ -14,10 +14,6 @@
 #include <filesystem>
 #include <stdexcept>
 
-#ifndef SROUTER_EMBEDDED_ONLY
-#include <oxenmq/address.h>
-#endif
-
 namespace srouter
 {
     static auto logcat = log::Cat("config");
@@ -1176,9 +1172,14 @@ namespace srouter
                 "    rpc=tcp://127.0.0.1:5678",
             },
             [this](std::string arg) {
-#ifndef SROUTER_EMBEDDED_ONLY
-                oxenmq::address test_valid{arg};
-#endif
+                // The full library installs a stricter oxenmq-based validator (see
+                // config::install_full_config_validators); embedded/core-only builds fall back to a
+                // cheap scheme check so we don't pull oxenmq into the core config library.
+                if (config::oxend_rpc_addr_validator)
+                    config::oxend_rpc_addr_validator(arg);
+                else if (arg.find("://") == std::string::npos)
+                    throw std::invalid_argument{
+                        "Invalid [oxend]:rpc address '{}': expected a scheme such as ipc:// or tcp://"_format(arg)};
                 rpc_addr = std::move(arg);
             });
     }

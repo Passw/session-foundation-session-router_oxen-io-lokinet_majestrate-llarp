@@ -110,11 +110,9 @@ namespace srouter
 
     Context::Context(bool embedded, Config conf, std::shared_ptr<oxen::quic::Loop> loop) : embedded{embedded}
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         // service_manager is a global and context isnt
         if (!embedded)
             srouter::sys::service_manager->give_context(this);
-#endif
         start(std::move(conf), std::move(loop));
     }
 
