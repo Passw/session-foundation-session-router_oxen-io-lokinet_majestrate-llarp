@@ -227,14 +227,17 @@ namespace srouter::handlers
         }
 
         assert(_local_ipv6_net.contains(*to_try));
-        if (!_local_ipv6_mapping.contains(*to_try) && *to_try != _local_ipv6_net.ip)
+        // A pubkey with a zero prefix maps onto the base address of the range, which is the
+        // subnet-router anycast address and so must never be handed out as a host address.
+        if (!_local_ipv6_mapping.contains(*to_try) && *to_try != _local_ipv6_net.ip
+            && *to_try != _local_ipv6_net.ip.to_base(_local_ipv6_net.mask))
         {
             log::debug(logcat, "Assigning pubkey-based local IPv6 {} for remote {}", *to_try, a);
             return to_try;
         }
         log::debug(
             logcat,
-            "Pubkey-based local IPv6 {} is already mapped; falling back to sequential IPv6 allocation",
+            "Pubkey-based local IPv6 {} for remote {} is unavailable; falling back to sequential IPv6 allocation",
             *to_try,
             a);
 
