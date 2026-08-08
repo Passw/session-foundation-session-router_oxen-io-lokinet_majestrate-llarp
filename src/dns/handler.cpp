@@ -452,9 +452,18 @@ namespace srouter::dns
                         const std::optional<ClientContact>& cc) mutable {
                         if (cc)
                         {
+                            bool found = false;
                             for (const auto& srv : cc->SRVs())
                                 if (srv.service == sub[0] && srv.proto == sub[1])
+                                {
                                     msg->add_reply(srv);
+                                    found = true;
+                                }
+
+                            // The contact exists, it just doesn't offer the requested
+                            // service/proto, which is a NODATA reply rather than a name failure.
+                            if (!found)
+                                msg->add_nodata_reply();
                         }
                         else
                             // Re-trying the request could initiate a new lookup, so *don't* put an
