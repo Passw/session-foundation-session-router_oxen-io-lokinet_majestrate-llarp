@@ -178,6 +178,7 @@ namespace srouter::dns
         {
             log::warning(logcat, "Ignoring archaic DNS request with {} > 1 questions", qd_count);
             m.bad_extract = true;
+            m.formerr();
             return result;
         }
         // Ignore these:
@@ -304,6 +305,7 @@ namespace srouter::dns
         {
             log::debug(logcat, "failed to parse DNS message: {}", e.what());
             m.bad_extract = true;
+            m.formerr();
         }
 
         return result;
