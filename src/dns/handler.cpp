@@ -278,7 +278,7 @@ namespace srouter::dns
                         auto target = maybe_netaddr->to_string();
                         msg.add_cname_reply(target, std::chrono::floor<std::chrono::seconds>(ttl));
                         if (cname_only)
-                            return;
+                            return reply(msg.encode(tcp));
                         auto qname = sub.empty() ? target : "{}.{}"_format(fmt::join(sub, "."), target);
                         msg.set_rr_name(qname);
                         if (!handle_local(reply, msg, std::move(qname), tcp))
