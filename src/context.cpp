@@ -51,15 +51,14 @@ namespace srouter
         lifetime_waiter = done_promise.get_future();
 
         std::shared_ptr<srouter::vpn::Platform> plat;
-#ifndef SROUTER_EMBEDDED_ONLY
         if (!embedded)
         {
             log::debug(logcat, "Initializing platform code...");
-            plat = vpn::MakeNativePlatform(this);
+            if (vpn::make_native_platform)
+                plat = vpn::make_native_platform(this);
             if (!plat)
                 throw std::runtime_error{"This platform is not currently supported!"};
         }
-#endif
 
         log::debug(logcat, "Starting main router...");
         try
@@ -110,11 +109,9 @@ namespace srouter
 
     Context::Context(bool embedded, Config conf, std::shared_ptr<oxen::quic::Loop> loop) : embedded{embedded}
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         // service_manager is a global and context isnt
         if (!embedded)
             srouter::sys::service_manager->give_context(this);
-#endif
         start(std::move(conf), std::move(loop));
     }
 

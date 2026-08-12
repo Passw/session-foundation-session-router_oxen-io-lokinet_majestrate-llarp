@@ -14,10 +14,6 @@
 #include <filesystem>
 #include <stdexcept>
 
-#ifndef SROUTER_EMBEDDED_ONLY
-#include <oxenmq/address.h>
-#endif
-
 namespace srouter
 {
     static auto logcat = log::Cat("config");
@@ -1176,9 +1172,14 @@ namespace srouter
                 "    rpc=tcp://127.0.0.1:5678",
             },
             [this](std::string arg) {
-#ifndef SROUTER_EMBEDDED_ONLY
-                oxenmq::address test_valid{arg};
-#endif
+                // The full library installs a stricter oxenmq-based validator (see
+                // config::install_full_config_validators); embedded/core-only builds fall back to a
+                // cheap scheme check so we don't pull oxenmq into the core config library.
+                if (config::oxend_rpc_addr_validator)
+                    config::oxend_rpc_addr_validator(arg);
+                else if (arg.find("://") == std::string::npos)
+                    throw std::invalid_argument{
+                        "Invalid [oxend]:rpc address '{}': expected a scheme such as ipc:// or tcp://"_format(arg)};
                 rpc_addr = std::move(arg);
             });
     }
@@ -1580,11 +1581,6 @@ namespace srouter
     Config::Config(config::Type type, std::string ini, std::filesystem::path conf_dir, std::string config_for_debug)
         : type{type}, defs{type, std::move(conf_dir)}, parser{std::move(config_for_debug)}
     {
-#ifdef SROUTER_EMBEDDED_ONLY
-        if (type != Type::EmbeddedClient)
-            throw std::runtime_error{
-                "This Session Router build only supports embedded clients, not {}"_format(to_string(type))};
-#endif
         for (ConfigBase* c : std::initializer_list<ConfigBase*>{
                  &router, &exit, &network, &paths, &dns, &links, &api, &oxend, &bootstrap, &logging})
             c->define_config_options(defs);

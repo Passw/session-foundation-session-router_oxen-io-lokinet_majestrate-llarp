@@ -23,6 +23,20 @@
 #include <unordered_set>
 #include <vector>
 
+namespace srouter::config
+{
+    // Optional stricter validator for the [oxend]:rpc address, installed by the full library (which
+    // parses it via oxenmq::address).  Null in embedded/core-only builds, where config.cpp falls
+    // back to a cheap scheme check so oxenmq stays out of the core config library.  Installed via
+    // install_full_config_validators().
+    inline void (*oxend_rpc_addr_validator)(const std::string&) = nullptr;
+
+    // Installs the full library's stricter config validators over the core defaults.  Defined in the
+    // full (rpc) library; invoked by srouter::full::initialize().
+    void install_full_config_validators();
+
+}  // namespace srouter::config
+
 namespace srouter
 {
     using SectionValues = srouter::ConfigParser::SectionValues;

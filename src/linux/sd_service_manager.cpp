@@ -48,6 +48,7 @@ namespace srouter::sys
     };
 
     SD_Manager _manager{};
-    I_SystemLayerManager* const service_manager = &_manager;
+
+    void install_native_service_manager() { service_manager = &_manager; }
 
 }  // namespace srouter::sys

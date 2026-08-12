@@ -244,11 +244,16 @@ target_link_libraries(session-router-base INTERFACE oxen::quic oxen::logging nlo
 
 target_compile_features(session-router-base INTERFACE cxx_std_20)
 
+# Interface carrying the full-only external dependencies (oxenmq/libzmq, libunbound).  Only the full
+# libraries link this, which keeps those dependencies off the core libraries' link line entirely
+# (rather than relying on --as-needed to drop them).
+add_library(session-router-base-full INTERFACE)
+if(SROUTER_FULL)
+  target_link_libraries(session-router-base-full INTERFACE sessiondep::libunbound oxenmq::oxenmq)
+endif()
+
 add_library(session-router-base-internal INTERFACE)
 target_include_directories(session-router-base-internal INTERFACE include/session_router)
-if(NOT SROUTER_FULL)
-  target_compile_definitions(session-router-base-internal INTERFACE SROUTER_EMBEDDED_ONLY)
-endif()
 
 target_link_libraries(session-router-base-internal INTERFACE session-router-base-internal_warnings)
 

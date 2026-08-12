@@ -1,13 +1,11 @@
 #include "router.hpp"
 
 #include "config/config.hpp"
-#include "consensus/reachability_testing.hpp"
 #include "constants/platform.hpp"
 #include "constants/proto.hpp"
 #include "constants/version.hpp"
 #include "contact/contactdb.hpp"
 #include "crypto/crypto.hpp"
-#include "dns/listener.hpp"
 #include "link/link_manager.hpp"
 #include "nodedb.hpp"
 #include "util/formattable.hpp"
@@ -21,15 +19,6 @@
 #include <oxen/log.hpp>
 
 #include <chrono>
-
-#ifndef SROUTER_EMBEDDED_ONLY
-#include "handlers/tun.hpp"
-#include "rpc/oxend_rpc.hpp"
-#include "rpc/rpc_server.hpp"
-
-#include <oxenmq/oxenmq.h>
-#endif
-
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
@@ -57,17 +46,14 @@ namespace srouter
           _contact_db{std::make_unique<ContactDB>(*this)},
           _last_tick{}
     {
-#ifndef SROUTER_EMBEDDED_ONLY
-        // Not actually shared, but unique_ptr would require destructor visibility which
-        // embedded-only won't have:
-        _omq = std::make_shared<oxenmq::OxenMQ>();
-        // for oxend, so we don't close the connection when syncing the registered relay (which can
-        // exceed the defaut 1MB limit).
-        _omq->MAX_MSG_SIZE = -1;
-
-        if (is_service_node)
-            _router_testing = std::make_shared<consensus::reachability_testing>(*this);
-#endif
+        // Full builds install the rpc backend (srouter::full::initialize); in embedded/core-only
+        // builds rpc_backend is null and these stay null (the relay/rpc paths never run).
+        if (rpc_backend)
+        {
+            _omq = rpc_backend->make_omq();
+            if (is_service_node)
+                _router_testing = rpc_backend->make_reachability(*this);
+        }
 
         init_logging();
 
@@ -84,7 +70,6 @@ namespace srouter
 
     void Router::start_tickers()
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             _tun->start_poller();
 
@@ -92,13 +77,11 @@ namespace srouter
             _service_stat_ticker = _loop->call_every(SERVICE_MANAGER_REPORT_INTERVAL, [this]() {
                 sys::service_manager->report_periodic_stats(status_line());
             });
-#endif
 
         _node_db->start();
         _contact_db->start_tickers();
         _link_endpoint->start_tickers();
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (is_service_node)
         {
             _oxend->start_pings();
@@ -123,7 +106,6 @@ namespace srouter
                 _router_testing->start();
         }
         else
-#endif
         {
             // Resolve needed ONS values now that we have the necessary things prefigured
             _session_endpoint->resolve_sns_mappings();
@@ -135,7 +117,6 @@ namespace srouter
     void Router::fetch_snode_keys()
     {
         assert(is_service_node);
-#ifndef SROUTER_EMBEDDED_ONLY
 
         our_rc_file = _config.router.data_dir / our_rc_filename;
 
@@ -166,7 +147,6 @@ namespace srouter
                     throw;
             }
         }
-#endif
     }
 
     void Router::init_logging()
@@ -208,12 +188,10 @@ namespace srouter
                 log::set_level(log_global, log::Level::info);
         });
 
-#ifndef SROUTER_EMBEDDED_ONLY
         // re-add rpc log sink if rpc enabled, else free it
         if (_config.api.enable_rpc_server and srouter::logRingBuffer)
             log::add_sink(srouter::logRingBuffer, srouter::log::DEFAULT_PATTERN_MONO);
         else
-#endif
             srouter::logRingBuffer.reset();
     }
 
@@ -456,10 +434,8 @@ namespace srouter
     void Router::configure()
     {
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
-#ifndef SROUTER_EMBEDDED_ONLY
         if (!embedded())
             sys::service_manager->starting();
-#endif
 
         if (_config.exit.exit_enabled and is_service_node)
             throw std::runtime_error{
@@ -476,29 +452,29 @@ namespace srouter
 
         log::info(log_global, "Operating as a Session Router {}", is_service_node ? "relay (service node)" : "client");
 
-#ifndef SROUTER_EMBEDDED_ONLY
-        if (is_service_node)
+        if (rpc_backend)
         {
-            log::debug(logcat, "Starting oxend RPC client");
-            _oxend = std::make_shared<rpc::OxendRPC>(*_omq, *this);
-        }
+            if (is_service_node)
+            {
+                log::debug(logcat, "Starting oxend RPC client");
+                _oxend = rpc_backend->make_oxend(*this, *_omq);
+            }
 
-        if (_config.api.enable_rpc_server)
-        {
-            log::debug(logcat, "Starting RPC server");
-            //
-            _rpc_server = std::make_shared<rpc::RPCServer>(*_omq, *this);
-        }
+            if (_config.api.enable_rpc_server)
+            {
+                log::debug(logcat, "Starting RPC server");
+                _rpc_server = rpc_backend->make_rpc_server(*this, *_omq);
+            }
 
-        log::debug(logcat, "Starting OMQ server");
-        _omq->start();
+            log::debug(logcat, "Starting OMQ server");
+            rpc_backend->start_omq(*_omq);
 
-        if (is_service_node)
-        {
-            log::debug(logcat, "Connecting to oxend @ {}", _config.oxend.rpc_addr);
-            _oxend->connect_async(oxenmq::address(_config.oxend.rpc_addr));
+            if (is_service_node)
+            {
+                log::debug(logcat, "Connecting to oxend @ {}", _config.oxend.rpc_addr);
+                _oxend->connect_async(_config.oxend.rpc_addr);
+            }
         }
-#endif
 
         log::debug(logcat, "Initializing key manager");
 
@@ -513,7 +489,6 @@ namespace srouter
 
         _node_db = std::make_unique<NodeDB>(*this);
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (is_service_node)
         {
             // Wait, synchronously, for the oxend SN list update, for up to 10s.  If we still don't
@@ -541,7 +516,6 @@ namespace srouter
             if (fallback)
                 _node_db->load_registered_relays_fallback();
         }
-#endif
 
         _session_endpoint = std::make_unique<handlers::SessionEndpoint>(*this);
 
@@ -551,55 +525,21 @@ namespace srouter
 
         if (!embedded())
         {
-#ifdef SROUTER_EMBEDDED_ONLY
-            log::critical(logcat, "This Session Router build only supports embedded configurations!");
-            throw std::runtime_error{"This Session Router build only supports embedded configurations!"};
-#else
             log::debug(logcat, "Initializing TUN device");
-            _tun = _loop->make_shared<handlers::TunEndpoint>(*this);
+            _tun = rpc_backend->make_tun(*this);
 
             log::info(logcat, "Session Router IPv4 local network is {}", _tun->get_ipv4_network());
             log::info(logcat, "Session Router IPv6 local network is {}", _tun->get_ipv6_network());
 
             // only (full) clients should have DNS, relays have no need for it
             if (!is_service_node)
-            {
-                auto& dns_bind = config().dns._listen_addrs;
-                if (dns_bind.empty())
-                {
-                    // This configuration is allowed (a service-only client might use it), although a bit unusual
-                    log::warning(
-                        logcat, "[dns]:listen is empty: DNS disabled.  Making outbound paths will not be possible");
-                }
-                else
-                {
-                    try
-                    {
-                        for (const auto& addr : dns_bind)
-                        {
-                            if (!_dns)
-                                _dns = _loop->make_shared<dns::Listener>(*this, addr);
-                            else
-                                _dns->listen(loop(), addr);
-
-                            log::info(log_global, "DNS listening on {} port {}", addr.host(), _dns->last_port);
-                        }
-                    }
-                    catch (const std::exception& e)
-                    {
-                        log::error(
-                            logcat, "Failed to initialize DNS listener on {}: {}", fmt::join(dns_bind, ","), e.what());
-                        throw;
-                    }
-                }
-            }
+                _dns = rpc_backend->make_dns(*this);
 
             log::info(
                 log_global,
                 "Session Router internal network: {} on device {}",
                 _tun->get_ipv4_network(),
                 _tun->get_if_name());
-#endif
         }
         else
             log::debug(logcat, "Not initializing TUN device; running as an embedded client");
@@ -724,7 +664,6 @@ namespace srouter
     void Router::_relay_tick([[maybe_unused]] sys_ms now)
     {
         assert(_config.type == config::Type::Relay);
-#ifndef SROUTER_EMBEDDED_ONLY
         log::trace(logcat, "{} called", __PRETTY_FUNCTION__);
 
         auto steady_now = steady_now_ms();
@@ -762,7 +701,6 @@ namespace srouter
         }
 
         path_context.expire_hops(now);
-#endif
     }
 
     void Router::_client_tick(sys_ms now)
@@ -869,10 +807,8 @@ namespace srouter
         start_tickers();
         _is_running = true;
 
-#ifndef SROUTER_EMBEDDED_ONLY
         if (!embedded())
             srouter::sys::service_manager->ready();
-#endif
 
         log::info(
             log_global,
@@ -1003,10 +939,8 @@ namespace srouter
 
     void Router::on_test_ping()
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_router_testing)
             _router_testing->incoming_ping();
-#endif
     }
 
     void Router::stop()
@@ -1026,7 +960,6 @@ namespace srouter
             return;  // Lost a race with something else trying to stop
 
         _jq->call([this] {
-#ifndef SROUTER_EMBEDDED_ONLY
             if (!embedded())
             {
                 log::debug(logcat, "stopping service manager...");
@@ -1035,7 +968,6 @@ namespace srouter
 
             if (_router_testing)
                 _router_testing->stop();
-#endif
 
             _session_endpoint->stop(true);
 
@@ -1045,13 +977,11 @@ namespace srouter
             log::debug(logcat, "closing all connections");
             _link_manager->stop();
 
-#ifndef SROUTER_EMBEDDED_ONLY
             if (_dns)
                 _dns.reset();
 
             if (_tun)
                 _tun->stop();
-#endif
 
             auto rv = _loop_ticker->stop();
             log::debug(logcat, "router loop ticker stopped {}successfully!", rv ? "" : "un");
@@ -1100,29 +1030,23 @@ namespace srouter
 
     std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv4& addr) const
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             return _tun->reverse_lookup(addr);
-#endif
         return {std::nullopt, false};
     }
 
     std::pair<std::optional<NetworkAddress>, bool> Router::reverse_lookup(const ipv6& addr) const
     {
-#ifndef SROUTER_EMBEDDED_ONLY
         if (_tun)
             return _tun->reverse_lookup(addr);
-#endif
         return {std::nullopt, false};
     }
 
     const srouter::net::Platform* Router::net() const
     {
-#ifndef SROUTER_EMBEDDED_ONLY
-        if (!embedded())
-            return srouter::net::Platform::Default_ptr();
-#endif
-        return nullptr;
+        if (embedded())
+            return nullptr;
+        return srouter::net::native_net_platform;
     }
 
 }  // namespace srouter

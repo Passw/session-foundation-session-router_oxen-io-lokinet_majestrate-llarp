@@ -86,7 +86,16 @@ namespace srouter::sys
         }
     };
 
-    extern I_SystemLayerManager* const service_manager;
+    // Global system-layer manager.  Defaults to a no-op handler (used for embedded usage and for
+    // platforms without a native service manager); full builds install a native implementation via
+    // install_native_service_manager().
+    extern I_SystemLayerManager* service_manager;
+
+    // Installs the platform's native service manager into the `service_manager` global, replacing the
+    // default no-op handler.  Provided by the full platform library (a no-op on platforms without a
+    // native service manager).  Must be called before the service manager is first used, i.e. by the
+    // daemon before it constructs the Context.
+    void install_native_service_manager();
 
     class NOP_SystemLayerHandler : public I_SystemLayerManager
     {

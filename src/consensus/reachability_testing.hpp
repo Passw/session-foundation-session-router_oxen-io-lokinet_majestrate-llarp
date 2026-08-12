@@ -1,5 +1,6 @@
 #pragma once
 
+#include "consensus/reachability.hpp"
 #include "contact/router_id.hpp"
 #include "util/time.hpp"
 
@@ -50,7 +51,7 @@ namespace srouter::consensus
     using fseconds = std::chrono::duration<float, std::chrono::seconds::period>;
     using fminutes = std::chrono::duration<float, std::chrono::minutes::period>;
 
-    class reachability_testing
+    class reachability_testing : public IReachability
     {
       public:
         // How often we tick the timer to perform one new random test and check whether we need to
@@ -123,8 +124,8 @@ namespace srouter::consensus
         explicit reachability_testing(Router& r);
 
         // Called by router when it is starting/stopping to start/stop our ticker.
-        void start();
-        void stop();
+        void start() override;
+        void stop() override;
 
         // Runs a tick iteration.
         void tick();
@@ -151,7 +152,7 @@ namespace srouter::consensus
         void remove_node_from_failing(const RouterID& pk);
 
         // Called when this router receives an incoming ping test request
-        void incoming_ping(const time_point_t& now = clock_t::now());
+        void incoming_ping() override;
 
         // Check whether we received incoming pings recently
         void check_incoming_tests(const time_point_t& now = clock_t::now());

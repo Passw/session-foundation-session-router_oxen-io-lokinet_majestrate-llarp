@@ -1,6 +1,7 @@
 #include "config/config.hpp"  // for ensure_config
 #include "constants/platform.hpp"
 #include "constants/version.hpp"
+#include "full/init.hpp"
 #include "util/exceptions.hpp"
 #include "util/thread/threading.hpp"
 
@@ -495,6 +496,11 @@ int main(int argc, char* argv[])
     oxen::log::add_sink(srouter::log::Type::Print, "stderr");
     oxen::log::reset_level(srouter::log::Level::info);
     // oxen::log::set_level("quic", oxen::log::Level::info);
+
+    // Set up full (non-embedded) application support (native service manager, stricter config
+    // validators, ...).  Must happen before config is loaded and before the Context is constructed
+    // (which calls give_context()) and, on win32, before the service control dispatcher runs.
+    srouter::full::initialize();
 
     // TODO FIXME: this seems to be segfaulting?
     // srouter::logRingBuffer = std::make_shared<srouter::log::RingBufferSink>(100);

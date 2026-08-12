@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/definition.hpp"
+#include "consensus/reachability.hpp"
 #include "contact/relay_contact.hpp"
 #include "crypto/key_manager.hpp"
 #include "handlers/session.hpp"
@@ -9,6 +10,8 @@
 #include "path/path_context.hpp"
 #include "profiling.hpp"
 #include "route_poker.hpp"
+#include "router/rpc_backend.hpp"
+#include "rpc/oxend_client.hpp"
 #include "util/str.hpp"
 #include "util/time.hpp"
 #include "vpn/platform.hpp"
@@ -135,8 +138,9 @@ namespace srouter
         // connections.
         bool _has_established_paths{false};
 
-        // Not actually shared, but not available at all in non-full builds.
-        std::shared_ptr<consensus::reachability_testing> _router_testing;
+        // Held via the core IReachability interface; the concrete (relay-only) implementation is
+        // constructed by the full seam and is null in embedded/core-only builds.
+        std::shared_ptr<consensus::IReachability> _router_testing;
 
         // The actual network address we use for communications:
         quic::Address _listen_address;
@@ -152,7 +156,7 @@ namespace srouter
         link::Endpoint* _link_endpoint = nullptr;
 
         // These are only created in full platform mode (not embedded clients)
-        std::shared_ptr<handlers::TunEndpoint> _tun;
+        std::shared_ptr<handlers::ITunnel> _tun;
         std::shared_ptr<dns::Listener> _dns;
         std::shared_ptr<vpn::Platform> _vpn;
         std::shared_ptr<RoutePoker> _route_poker;
@@ -192,7 +196,7 @@ namespace srouter
         // These aren't actually shared, but we unique_ptr requires destructor visibility, which
         // embedded-only clients won't have as they don't compile any RPC code.
         std::shared_ptr<rpc::RPCServer> _rpc_server;
-        std::shared_ptr<rpc::OxendRPC> _oxend;
+        std::shared_ptr<rpc::IOxendClient> _oxend;
 
         Profiling _router_profiling;
 
@@ -225,7 +229,7 @@ namespace srouter
 
         bool is_fully_meshed() const;
 
-        const std::shared_ptr<handlers::TunEndpoint>& tun_endpoint() { return _tun; }
+        const std::shared_ptr<handlers::ITunnel>& tun_endpoint() { return _tun; }
 
         // Looks up the given IP in our TUN mapping and, if it is a TUN address and maps to a remote, returns the
         // network address of the mapped-to address.  The `.second` part of the result indicates
@@ -285,10 +289,7 @@ namespace srouter
 
         bool embedded() const { return _config.type == config::Type::EmbeddedClient; }
 
-        oxenmq::OxenMQ* omq() { return _omq.get(); }
-        const oxenmq::OxenMQ* omq() const { return _omq.get(); }
-
-        rpc::OxendRPC* oxend() const { return _oxend.get(); }
+        rpc::IOxendClient* oxend() const { return _oxend.get(); }
 
         const Ed25519SecretKey& secret_key() const { return key_manager.secret_key; }
         const RouterID& id() const { return key_manager.router_id(); }
