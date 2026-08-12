@@ -278,7 +278,7 @@ namespace srouter::dns
                         auto target = maybe_netaddr->to_string();
                         msg.add_cname_reply(target, std::chrono::floor<std::chrono::seconds>(ttl));
                         if (cname_only)
-                            return;
+                            return reply(msg.encode(tcp));
                         auto qname = sub.empty() ? target : "{}.{}"_format(fmt::join(sub, "."), target);
                         msg.set_rr_name(qname);
                         if (!handle_local(reply, msg, std::move(qname), tcp))
@@ -399,18 +399,28 @@ namespace srouter::dns
                         if (auto v4_addr = tun.map4(*maybe_netaddr); v4_addr)
                             msg.add_reply(*v4_addr);
                         else
+                        {
+                            // We ran out of local IPv4s, which is a local failure rather than
+                            // anything to do with the name, and could succeed later:
                             log::warning(logcat, "IPv4 mapping requested for {} failed.", *maybe_netaddr);
+                            msg.servfail();
+                        }
                     }
-                    // else they requested A *not* using the magic ipv4 subdomain, so we only have
-                    // AAAA to offer and thus we return a reply without an answer record (which is
-                    // the proper DNS way to say "something exists at this address, but not with the
-                    // type you requested requested", as opposed to this nx_reply below, which means
-                    // "this record does not exist").
-                    //
-                    // In order for this NODATA result to be properly cacheable, we need an SOA
-                    // record included.  It'll also never work in the future, so we can use a
-                    // relatively longer negative TTL via the SOA.
-                    add_nx_soa(msg, tld, 5min);
+                    else
+                    {
+                        // They requested A *not* using the magic ipv4 subdomain, so we only have
+                        // AAAA to offer and thus we return a reply without an answer record (which
+                        // is the proper DNS way to say "something exists at this address, but not
+                        // with the type you requested", as opposed to the nxdomain below, which
+                        // means "this record does not exist" and would stop a client from going on
+                        // to ask for the AAAA that we *can* answer).
+                        //
+                        // In order for this NODATA result to be properly cacheable, we need an SOA
+                        // record included.  It'll also never work in the future, so we can use a
+                        // relatively longer negative TTL via the SOA.
+                        msg.add_nodata_reply();
+                        add_nx_soa(msg, tld, 5min);
+                    }
                 }
                 else
                 {
@@ -426,7 +436,8 @@ namespace srouter::dns
             }
 
             log::warning(logcat, "DNS query failure: '{}' is not a valid Session Router name or address", qname);
-            reply(msg.encode(tcp));
+            add_nx_soa(msg, tld, 30s);
+            reply(msg.nxdomain().encode(tcp));
             return true;
         }
 
@@ -441,9 +452,18 @@ namespace srouter::dns
                         const std::optional<ClientContact>& cc) mutable {
                         if (cc)
                         {
+                            bool found = false;
                             for (const auto& srv : cc->SRVs())
                                 if (srv.service == sub[0] && srv.proto == sub[1])
+                                {
                                     msg->add_reply(srv);
+                                    found = true;
+                                }
+
+                            // The contact exists, it just doesn't offer the requested
+                            // service/proto, which is a NODATA reply rather than a name failure.
+                            if (!found)
+                                msg->add_nodata_reply();
                         }
                         else
                             // Re-trying the request could initiate a new lookup, so *don't* put an
