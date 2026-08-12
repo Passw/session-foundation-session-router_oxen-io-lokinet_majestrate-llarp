@@ -188,42 +188,49 @@ namespace session::router
         //
         // (This method does not accept SNS names: you need to call resolve_sns() first for that).
         //
-        // Returns an empty udp_tunnel if the remote is a relay that we know we cannot reach: we hold
-        // relay contacts for every relay participating in the network, so a relay we have no contact
-        // for is one that is not participating (it may be running a version without Session Router,
-        // or be misconfigured).  No tunnel is established in that case and neither callback is
-        // invoked, so a caller choosing between several relays can move on to the next one
-        // immediately rather than waiting out a build timeout.
+        // Exactly one of three things happens:
         //
-        // Note that an empty return is a statement about this moment, not a permanent one, and it
-        // only happens once relay contacts have actually been fetched: before the first fetch
-        // completes, the request is held until we know the answer.
+        // 1. It throws, if `remote` is unparseable, is an SNS name, or `port` is 0.  Nothing is
+        //    mapped and no callback is ever invoked.
         //
-        // Otherwise the returned udp_tunnel is a claim on the mapping and carries its port
-        // information.  The tunnel stays up until every claim on it has been destroyed (or the
-        // SessionRouter is), so the caller need only hold this object for as long as it wants the
-        // tunnel; there is nothing else to remember to call.
+        // 2. It returns an empty claim, if `remote` is a relay the network holds no relay contact
+        //    for.  We hold contacts for every relay participating in the network, so a relay
+        //    without one is not participating (it may be running a version without Session Router,
+        //    or be misconfigured).  Nothing is mapped and no callback is ever invoked, so a caller
+        //    choosing between several relays can move on to the next immediately rather than
+        //    waiting out a build timeout.
         //
-        // Asking for an already-mapped remote/port returns another claim on that same mapping, it
-        // does *not* create a new one.
+        //    This is a statement about right now rather than a permanent one, and it only happens
+        //    once relay contacts have actually been fetched: before the first fetch completes the
+        //    request is held until we know the answer, so this never guesses.
         //
-        // This method will throw if the given address is unparseable.
+        // 3. It returns a claim on the mapping, carrying its port information, and exactly one of
+        //    the two callbacks is subsequently invoked (whichever of them was provided):
         //
-        // If an `on_established` callback is provided then it will be called once the full session
-        // is established, and passed the same tunnel_info data carried by the returned claim.  Note
-        // that `on_established` can be called immediately (i.e. before `establish_udp()` returns),
-        // if a session to the remote is already established.
+        //    - `on_established(info)`, once the session is up, with the same tunnel_info the claim
+        //      carries.  This one *can* fire before establish_udp returns, if a session to the
+        //      remote already exists, so be ready for it to run during the call.
         //
-        // `on_failed` is invoked instead of `on_established` if the session fails to establish, and
-        // is told which of the two happened.  In particular a relay whose relay contact we did not
-        // have yet, and which turns out on lookup not to have one, is reported as `unreachable`
-        // here rather than as a timeout: the empty return above can only cover the case where we
-        // already knew before returning.  Note that:
-        // - `on_failed` is *not* called if the call throws (such as if given an unparseable
-        //   address), nor if the return is empty (in which case there is no tunnel to report on).
-        // - an `on_failed` call does *not* mean the tunnel has been released: it remains mapped for
-        //   as long as the claim is held, and future attempts to connect to the tunnel port will
-        //   attempt to (re-)establish the session.  Drop the claim if you want it gone.
+        //    - `on_failed(unreachable)`, if the relay turned out to have no relay contact after
+        //      all.  This is case 2 discovered late: we had not yet fetched contacts when asked, so
+        //      the mapping was made before the answer came back.  Unlike case 2, a mapping does
+        //      exist and the claim is real.
+        //
+        //    - `on_failed(timeout)`, if the session did not come up in time.  Unlike the above, the
+        //      remote may well be reachable and worth another attempt shortly.
+        //
+        //    `on_failed` is never invoked before establish_udp returns.  Neither callback fires if
+        //    the SessionRouter is destroyed while the session is still coming up.
+        //
+        // A failure does not release the tunnel: it stays mapped for as long as a claim is held,
+        // and sending to the tunnel port again will attempt to re-establish the session.  Drop the
+        // claim if you want it gone.
+        //
+        // The tunnel stays up until every claim on it has been destroyed (or the SessionRouter is),
+        // so a caller need only hold its claim for as long as it wants the tunnel; there is nothing
+        // to remember to call.  Asking for an already-mapped remote/port returns another claim on
+        // that same mapping rather than creating a new one, so releasing a claim can never take the
+        // tunnel away from another holder.
         //
         // Take care not to use very slow or blocking code inside the callbacks: they are called
         // from Session Router's logic thread (and so any blocking will stall Session Router).
