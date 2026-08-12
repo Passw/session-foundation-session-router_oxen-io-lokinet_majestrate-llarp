@@ -1448,29 +1448,33 @@ namespace srouter::handlers
 
     void SessionEndpoint::unmap_udp_remote_port(const NetworkAddress& remote, uint16_t port)
     {
-        mapped_remote rem{.remote = remote, .port = port};
+        // As in map_udp_remote_port: these containers belong to the job queue thread, and an
+        // embedded caller can be on any thread at all.
+        router._jq->call_get([&] {
+            mapped_remote rem{.remote = remote, .port = port};
 
-        auto it = _udp_handles.find(rem);
-        if (it == _udp_handles.end())
-        {
-            log::debug(logcat, "Nothing to unmap: {}:{} is not currently a mapped UDP port", remote, port);
-            return;
-        }
-
-        auto& [sock, cports] = it->second;
-        for (auto& c : cports)
-        {
-            if (auto cit = _udp_client_ports.find(c); cit != _udp_client_ports.end())
+            auto it = _udp_handles.find(rem);
+            if (it == _udp_handles.end())
             {
-                _udp_return_ports.erase(mapped_remote{.remote = remote, .port = cit->second});
-                _udp_client_ports.erase(cit);
+                log::debug(logcat, "Nothing to unmap: {}:{} is not currently a mapped UDP port", remote, port);
+                return;
             }
-        }
 
-        auto local_port = sock->address().port();
-        _udp_handles.erase(it);
+            auto& [sock, cports] = it->second;
+            for (auto& c : cports)
+            {
+                if (auto cit = _udp_client_ports.find(c); cit != _udp_client_ports.end())
+                {
+                    _udp_return_ports.erase(mapped_remote{.remote = remote, .port = cit->second});
+                    _udp_client_ports.erase(cit);
+                }
+            }
 
-        log::debug(logcat, "Unmapped localhost:{} -> {}:{} UDP mapping", local_port, remote, port);
+            auto local_port = sock->address().port();
+            _udp_handles.erase(it);
+
+            log::debug(logcat, "Unmapped localhost:{} -> {}:{} UDP mapping", local_port, remote, port);
+        });
     }
 
 }  //  namespace srouter::handlers
