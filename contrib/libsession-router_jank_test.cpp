@@ -44,6 +44,9 @@ int main(int argc, char** argv)
     std::promise<void> prom;
     std::promise<void> conn_prom;
 
+    // Holding this is what keeps the tunnel up; dropping it releases it.
+    session::router::udp_tunnel tunnel;
+
     bool first_conn = true;
     srouter->on_connected([&] {
         if (!first_conn)
@@ -88,7 +91,7 @@ int main(int argc, char** argv)
 
         target = resolve_prom.get_future().get();
 
-        srouter->establish_udp(
+        tunnel = srouter->establish_udp(
             target,
             port,
             [&prom, &start, &port](auto udp_info) {
@@ -99,10 +102,12 @@ int main(int argc, char** argv)
                     << std::flush;
                 prom.set_value();
             },
-            [&prom]() {
+            [&prom](auto failure) {
                 try
                 {
-                    throw std::runtime_error{"Session timed out!"};
+                    throw std::runtime_error{
+                        failure == session::router::tunnel_failure::unreachable ? "Remote is unreachable!"
+                                                                               : "Session timed out!"};
                 }
                 catch (...)
                 {
@@ -158,13 +163,14 @@ int main(int argc, char** argv)
             {
                 case SIGHUP:
                     std::cout << "\n\n\n\x1b[33;1mHangup signal received; closing UDP tunnel\x1b[0m\n\n\n";
-                    srouter->close_udp(target, port);
+                    tunnel.reset();
                     break;
                 case SIGUSR1:
                 {
                     std::cout << "\n\n\n\x1b[32;1mSIGUSR1 received: (re-)opening UDP tunnel\x1b[0m\n";
-                    if (auto ti = srouter->establish_udp(target, port))
-                        std::cout << "\n\x1b[32;1mUDP bound to port " << ti->local_port << "\x1b[0m\n\n";
+                    tunnel = srouter->establish_udp(target, port);
+                    if (tunnel)
+                        std::cout << "\n\x1b[32;1mUDP bound to port " << tunnel->local_port << "\x1b[0m\n\n";
                     else
                         std::cout << "\n\x1b[31;1m" << target << " is unreachable\x1b[0m\n\n";
                     break;

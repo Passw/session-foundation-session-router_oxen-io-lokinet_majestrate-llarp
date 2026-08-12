@@ -915,7 +915,7 @@ namespace srouter::session
             log::debug(logcat, "Received udp datagram from unknown source port {}", *source_port);
             return;
         }
-        auto& socket = *it->second.first;
+        auto& socket = *it->second.socket;
 
         log::trace(logcat, "incoming udp packet for pseudo port {}", *dest_port);
         mapped_remote local{.remote = _remote, .port = *dest_port};

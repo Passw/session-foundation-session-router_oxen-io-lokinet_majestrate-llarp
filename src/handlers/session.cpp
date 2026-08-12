@@ -1352,8 +1352,9 @@ namespace srouter::handlers
             }
 
             mapped_remote target{.remote = remote, .port = port};
-            auto& [udp_handle, cports] = _udp_handles[target];
+            auto& [udp_handle, cports, holders] = _udp_handles[target];
             bool existing = static_cast<bool>(udp_handle);
+            holders++;
             if (!existing)
 
                 udp_handle = std::make_unique<quic::UDPSocket>(
@@ -1414,7 +1415,7 @@ namespace srouter::handlers
                                 }
                             }
                             if (auto it = _udp_handles.find(target); it != _udp_handles.end())
-                                it->second.second.push_back(instance);
+                                it->second.cports.push_back(instance);
                             mapped_port = new_port.port;
                             log::debug(
                                 logcat,
@@ -1460,7 +1461,14 @@ namespace srouter::handlers
                 return;
             }
 
-            auto& [sock, cports] = it->second;
+            auto& [sock, cports, holders] = it->second;
+            if (--holders > 0)
+            {
+                log::debug(
+                    logcat, "Released a claim on {}:{}; {} still held, keeping it mapped", remote, port, holders);
+                return;
+            }
+
             for (auto& c : cports)
             {
                 if (auto cit = _udp_client_ports.find(c); cit != _udp_client_ports.end())

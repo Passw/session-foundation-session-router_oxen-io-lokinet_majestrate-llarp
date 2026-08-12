@@ -27,8 +27,8 @@ namespace session::router
         TESTNET
     };
 
-    /// Object returned when establishing a session for a TCP or UDP tunnel.  The tunnel port will
-    /// be kept open until close_udp()/close_tcp() is called with the same remote and port.
+    /// The details of an established TCP or UDP tunnel.  This is plain data describing the tunnel;
+    /// what keeps a UDP tunnel open is holding the udp_tunnel claim that carries it.
     struct tunnel_info
     {
         /// The requested remote address.  If an ONS entry was requested, this will be the resolved
@@ -58,11 +58,74 @@ namespace session::router
         std::optional<uint16_t> suggested_mtu;
     };
 
+    /// Why a tunnel that was requested did not come up.
+    enum class tunnel_failure
+    {
+        /// The session did not establish in time.  The remote may well be reachable; this attempt
+        /// did not get there.
+        timeout,
+
+        /// The remote is a relay for which the network holds no relay contact, and so cannot be
+        /// reached at all until it rejoins.  Attempting it again immediately is pointless, but the
+        /// verdict is not permanent: it is re-checked on each attempt.
+        unreachable,
+    };
+
+    class SessionRouter;
+
+    /// A claim on a Session Router UDP tunnel, obtained from SessionRouter::establish_udp().
+    ///
+    /// Asking for a remote address and port that is already mapped hands back the same mapping
+    /// rather than making a new one, so a mapping can have several claims on it at once.  It stays
+    /// up until the last of them is destroyed, which means a caller only has to keep its own claim
+    /// for as long as it wants the tunnel: releasing it can never pull the tunnel out from under
+    /// someone else.
+    ///
+    /// An empty claim (default-constructed, moved-from, or reset) refers to no tunnel and releases
+    /// nothing; test with `operator bool`.  The tunnel's details are reached through `*` and `->`.
+    ///
+    /// Destroying the SessionRouter releases every tunnel with it, so a claim outliving its router
+    /// is harmless.
+    class udp_tunnel
+    {
+        friend class SessionRouter;
+
+        std::weak_ptr<void> _router_alive;
+        SessionRouter* _router{nullptr};
+        tunnel_info _info;
+
+        udp_tunnel(SessionRouter& router, std::weak_ptr<void> alive, tunnel_info info);
+
+      public:
+        udp_tunnel() = default;
+        udp_tunnel(udp_tunnel&& other) noexcept { *this = std::move(other); }
+        udp_tunnel& operator=(udp_tunnel&& other) noexcept;
+        udp_tunnel(const udp_tunnel&) = delete;
+        udp_tunnel& operator=(const udp_tunnel&) = delete;
+        ~udp_tunnel();
+
+        /// Releases this claim now rather than at destruction, leaving the object empty.
+        void reset();
+
+        explicit operator bool() const { return _router != nullptr; }
+
+        const tunnel_info& operator*() const { return _info; }
+        const tunnel_info* operator->() const { return &_info; }
+    };
+
     using snode_path = std::vector<std::pair<std::string, std::string>>;
     using session_path = std::pair<snode_path, std::string>;
 
     class SessionRouter
     {
+        friend class udp_tunnel;
+
+        // Lets a udp_tunnel that outlives us know not to touch us on the way out.
+        std::shared_ptr<void> _alive{std::make_shared<char>()};
+
+        // Releases one claim on a UDP tunnel; the mapping goes away with the last one.
+        void release_udp(const std::string& remote, uint16_t port);
+
         std::unique_ptr<srouter::Context> context;
 
         struct path_ctor
@@ -125,52 +188,50 @@ namespace session::router
         //
         // (This method does not accept SNS names: you need to call resolve_sns() first for that).
         //
-        // Returns nullopt if the remote is a relay that we know we cannot reach: we hold relay
-        // contacts for every relay participating in the network, so a relay we have no contact for
-        // is one that is not participating (it may be running a version without Session Router, or
-        // be misconfigured).  No tunnel is established in that case and neither callback is
+        // Returns an empty udp_tunnel if the remote is a relay that we know we cannot reach: we hold
+        // relay contacts for every relay participating in the network, so a relay we have no contact
+        // for is one that is not participating (it may be running a version without Session Router,
+        // or be misconfigured).  No tunnel is established in that case and neither callback is
         // invoked, so a caller choosing between several relays can move on to the next one
         // immediately rather than waiting out a build timeout.
         //
-        // Note that nullopt is a statement about this moment, not a permanent one, and it is only
-        // returned once relay contacts have actually been fetched: before the first fetch
+        // Note that an empty return is a statement about this moment, not a permanent one, and it
+        // only happens once relay contacts have actually been fetched: before the first fetch
         // completes, the request is held until we know the answer.
         //
-        // Otherwise the returned object contains the port information.  The tunnel will remain
-        // active until drop_udp() is called with the same remote address and port (or the
-        // SessionRouter instance is destroyed).  The caller should track this and drop UDP ports
-        // when no longer needed.
+        // Otherwise the returned udp_tunnel is a claim on the mapping and carries its port
+        // information.  The tunnel stays up until every claim on it has been destroyed (or the
+        // SessionRouter is), so the caller need only hold this object for as long as it wants the
+        // tunnel; there is nothing else to remember to call.
         //
-        // Calling with an already-established remote/port simply returns that existing mapping, it
+        // Asking for an already-mapped remote/port returns another claim on that same mapping, it
         // does *not* create a new one.
         //
         // This method will throw if the given address is unparseable.
         //
         // If an `on_established` callback is provided then it will be called once the full session
-        // is established, and passed the same tunnel_info data that was returned by the initial
-        // call.  Note that `on_established` can be called immediately (i.e. before
-        // `establish_udp()` returns), if a session to the remote is already established.
+        // is established, and passed the same tunnel_info data carried by the returned claim.  Note
+        // that `on_established` can be called immediately (i.e. before `establish_udp()` returns),
+        // if a session to the remote is already established.
         //
-        // `on_timeout` is invoked instead of `on_established` if the session fails to establish.
-        // Note that:
-        // - `on_timeout` is *not* called if the call throws (such as if given an unparseable
-        //   address).
-        // - an `on_timeout` call does *not* mean the tunnel has been cancelled: it will remain
-        //   active and future attempts to connect to the tunnel port will attempt to (re-)establish
-        //   the session.  If you want to cancel it on session initiation failure, you must call
-        //   `close_udp()` from within the on_timeout callback.
+        // `on_failed` is invoked instead of `on_established` if the session fails to establish, and
+        // is told which of the two happened.  In particular a relay whose relay contact we did not
+        // have yet, and which turns out on lookup not to have one, is reported as `unreachable`
+        // here rather than as a timeout: the empty return above can only cover the case where we
+        // already knew before returning.  Note that:
+        // - `on_failed` is *not* called if the call throws (such as if given an unparseable
+        //   address), nor if the return is empty (in which case there is no tunnel to report on).
+        // - an `on_failed` call does *not* mean the tunnel has been released: it remains mapped for
+        //   as long as the claim is held, and future attempts to connect to the tunnel port will
+        //   attempt to (re-)establish the session.  Drop the claim if you want it gone.
         //
         // Take care not to use very slow or blocking code inside the callbacks: they are called
         // from Session Router's logic thread (and so any blocking will stall Session Router).
-        std::optional<tunnel_info> establish_udp(
+        udp_tunnel establish_udp(
             std::string_view remote,
             uint16_t port,
             std::function<void(tunnel_info)> on_established = nullptr,
-            std::function<void()> on_timeout = nullptr);
-
-        // Closes a tunnel socket to the given remote/port combination, releasing any internal
-        // mappings set up from previous connections through the tunnel.
-        void close_udp(std::string_view remote, uint16_t port);
+            std::function<void(tunnel_failure)> on_failed = nullptr);
 
         // Takes an ONS/SNS address such as "blocks.loki" and attempts to resolve it to a Session
         // Router client (aka hidden service) address such as

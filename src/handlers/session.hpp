@@ -128,15 +128,24 @@ namespace srouter
             std::unordered_map<mapped_remote, uint16_t, mapped_remote::hash> _udp_client_ports;
             std::unordered_map<mapped_remote, uint16_t, mapped_remote::hash> _udp_return_ports;
 
-            // Stores any established embedded client UDP maps: {remote:port} -> {socket,cports}, so
-            // that you can safely ask for the same remote:port again and just get the existing one
-            // rather than a new listening socket.  cports is a vector of keys of _udp_client_ports,
-            // used when deleting the handle.
-            std::unordered_map<
-                mapped_remote,
-                std::pair<std::unique_ptr<quic::UDPSocket>, std::vector<mapped_remote>>,
-                mapped_remote::hash>
-                _udp_handles;
+            struct udp_handle
+            {
+                std::unique_ptr<quic::UDPSocket> socket;
+
+                // Keys of _udp_client_ports belonging to this handle, used when deleting it.
+                std::vector<mapped_remote> cports;
+
+                // How many callers currently hold this mapping.  Asking for a remote:port that is
+                // already mapped hands back the same socket rather than a new one, so the mapping
+                // outlives any single holder: it is torn down when the last one unmaps it, not the
+                // first.
+                int holders = 0;
+            };
+
+            // Stores any established embedded client UDP maps: {remote:port} -> handle, so that you
+            // can safely ask for the same remote:port again and just get the existing one rather
+            // than a new listening socket.
+            std::unordered_map<mapped_remote, udp_handle, mapped_remote::hash> _udp_handles;
 
             uint16_t _next_udp_client_port{0};
 
