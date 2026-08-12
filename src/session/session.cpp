@@ -1041,6 +1041,25 @@ namespace srouter::session
         }
     }
 
+    void OutboundSession::mark_unreachable()
+    {
+        _unreachable = true;
+        _dead_path = true;
+
+        while (!_on_established.empty())
+        {
+            try
+            {
+                _on_established.top().second(*this);
+            }
+            catch (const std::exception& e)
+            {
+                log::warning(logcat, "Exception during outbound session established callback: {}", e.what());
+            }
+            _on_established.pop();
+        }
+    }
+
     void OutboundSession::on_established(
         std::function<void(OutboundSession&)> callback, std::optional<std::chrono::milliseconds> timeout)
     {
@@ -1237,9 +1256,8 @@ namespace srouter::session
             }
             else
             {
-                log::debug(logcat, "RC lookup failed for {}", _remote);
-                // TODO FIXME: should we close the session?  Retry the lookup?  Start responding
-                // with ICMP unreachables?
+                log::debug(logcat, "RC lookup failed for {}; relay is unreachable", _remote);
+                mark_unreachable();
             }
         });
     }

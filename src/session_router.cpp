@@ -65,7 +65,7 @@ namespace session::router
         context->router->on_disconnected(std::move(callback), with_path, persist);
     }
 
-    tunnel_info SessionRouter::establish_udp(
+    std::optional<tunnel_info> SessionRouter::establish_udp(
         std::string_view remote,
         uint16_t dest_port,
         std::function<void(tunnel_info)> on_established,
@@ -92,7 +92,11 @@ namespace session::router
         quic::Address src{"::1"s, 0};
         quic::Address dest{"::1"s, dest_port};
 
-        auto [local_port, session] = context->router->session_endpoint().map_udp_remote_port(netaddr, dest_port);
+        auto mapped = context->router->session_endpoint().map_udp_remote_port(netaddr, dest_port);
+        if (!mapped)
+            return std::nullopt;
+
+        auto& [local_port, session] = *mapped;
 
         // Total tunnel overhead from outer UDP payload to inner payload:
         // outer QUIC packet framing (44) + path onion (41) + session encryption (37)

@@ -163,8 +163,10 @@ int main(int argc, char** argv)
                 case SIGUSR1:
                 {
                     std::cout << "\n\n\n\x1b[32;1mSIGUSR1 received: (re-)opening UDP tunnel\x1b[0m\n";
-                    auto ti = srouter->establish_udp(target, port);
-                    std::cout << "\n\x1b[32;1mUDP bound to port " << ti.local_port << "\x1b[0m\n\n";
+                    if (auto ti = srouter->establish_udp(target, port))
+                        std::cout << "\n\x1b[32;1mUDP bound to port " << ti->local_port << "\x1b[0m\n\n";
+                    else
+                        std::cout << "\n\x1b[31;1m" << target << " is unreachable\x1b[0m\n\n";
                     break;
                 }
                 case SIGUSR2:

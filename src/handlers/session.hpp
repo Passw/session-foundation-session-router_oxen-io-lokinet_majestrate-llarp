@@ -310,8 +310,12 @@ namespace srouter
             // usage).
             //
             // This method throws *without* calling `on_attempted` if a Session cannot be attempted,
-            // such as when `remote` does not contain a valid pubkey.  If it does not throw, then it
-            // always returns a non-null shared_ptr.
+            // such as when `remote` does not contain a valid pubkey.
+            //
+            // Returns nullptr if the remote is known to be unreachable, i.e. it is a relay for
+            // which the network holds no relay contact.  `on_attempted`, if given, is still called
+            // (with a non-established session) before returning, so a caller that only watches the
+            // callback remains correct; the null return simply reports the same failure sooner.
             std::shared_ptr<session::Session> initiate_remote_session(
                 const NetworkAddress& remote,
                 std::function<void(session::Session& session)> on_attempted = nullptr,
@@ -337,9 +341,13 @@ namespace srouter
             //   desired).  Note that the session could change over time, e.g. if it is deleted by
             //   idle time out and then is re-established as a result of activity to this port.
             //
+            // Returns nullopt, without mapping a port, if the remote is known to be unreachable
+            // (see initiate_remote_session).  Mapping a port would be pointless in that case: no
+            // session can carry what gets sent to it.
+            //
             // Throws (via initiate_remote_session) if the Session could not be initiated, such as
             // when given an invalid pubkey in `remote`.
-            std::pair<uint16_t, std::shared_ptr<session::Session>> map_udp_remote_port(
+            std::optional<std::pair<uint16_t, std::shared_ptr<session::Session>>> map_udp_remote_port(
                 const NetworkAddress& remote, uint16_t port);
 
             // Removes a mapping previously established with map_udp_remote_port; this closes the

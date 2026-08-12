@@ -125,9 +125,21 @@ namespace session::router
         //
         // (This method does not accept SNS names: you need to call resolve_sns() first for that).
         //
-        // The returned object contains the port information.  The tunnel will remain active until
-        // drop_udp() is called with the same remote address and port (or the SessionRouter instance
-        // is destroyed).  The caller should track this and drop UDP ports when no longer needed.
+        // Returns nullopt if the remote is a relay that we know we cannot reach: we hold relay
+        // contacts for every relay participating in the network, so a relay we have no contact for
+        // is one that is not participating (it may be running a version without Session Router, or
+        // be misconfigured).  No tunnel is established in that case and neither callback is
+        // invoked, so a caller choosing between several relays can move on to the next one
+        // immediately rather than waiting out a build timeout.
+        //
+        // Note that nullopt is a statement about this moment, not a permanent one, and it is only
+        // returned once relay contacts have actually been fetched: before the first fetch
+        // completes, the request is held until we know the answer.
+        //
+        // Otherwise the returned object contains the port information.  The tunnel will remain
+        // active until drop_udp() is called with the same remote address and port (or the
+        // SessionRouter instance is destroyed).  The caller should track this and drop UDP ports
+        // when no longer needed.
         //
         // Calling with an already-established remote/port simply returns that existing mapping, it
         // does *not* create a new one.
@@ -150,7 +162,7 @@ namespace session::router
         //
         // Take care not to use very slow or blocking code inside the callbacks: they are called
         // from Session Router's logic thread (and so any blocking will stall Session Router).
-        tunnel_info establish_udp(
+        std::optional<tunnel_info> establish_udp(
             std::string_view remote,
             uint16_t port,
             std::function<void(tunnel_info)> on_established = nullptr,

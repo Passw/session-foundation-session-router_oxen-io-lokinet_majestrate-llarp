@@ -1268,7 +1268,7 @@ namespace srouter::handlers
             std::shared_ptr<session::Session> s{nullptr};
             if (auto it = _sessions.find(remote); it != _sessions.end())
                 s = it->second;
-            if (s && !s->is_closed())
+            if (s && !s->is_closed() && !s->is_unreachable())
             {
                 if (on_attempted)
                 {
@@ -1295,6 +1295,14 @@ namespace srouter::handlers
                     else
                         s = router._jq->make_shared<session::OutboundRelaySession>(
                             remote, *this, tag, std::move(on_attempted), timeout);
+
+                    // A relay session resolves its RC during construction, so if the relay has no
+                    // RC we already know the session can never establish.  Don't register it: the
+                    // caller gets nullptr, and a later attempt builds a fresh session that looks
+                    // the RC up again rather than reusing this verdict.
+                    if (s->is_unreachable())
+                        return std::shared_ptr<session::Session>{nullptr};
+
                     _session_tags.emplace(tag, s);
                     _sessions[remote] = s;
                 }
@@ -1323,10 +1331,10 @@ namespace srouter::handlers
             visit(addr, *s);
     }
 
-    std::pair<uint16_t, std::shared_ptr<session::Session>> SessionEndpoint::map_udp_remote_port(
+    std::optional<std::pair<uint16_t, std::shared_ptr<session::Session>>> SessionEndpoint::map_udp_remote_port(
         const NetworkAddress& remote, uint16_t port)
     {
-        return router._jq->call_get([&] {
+        return router._jq->call_get([&]() -> std::optional<std::pair<uint16_t, std::shared_ptr<session::Session>>> {
             // Port selection: we pick something random in the 49152-60000 range to start from, as
             // that range (up to 60999) is common to all modern OSes for ephemeral addresses, and so
             // at least our first thousand ports will look like a normal random ephemeral port.
@@ -1337,6 +1345,11 @@ namespace srouter::handlers
             std::pair<uint16_t, std::shared_ptr<session::Session>> result;
             auto& [local_port, session] = result;
             session = initiate_remote_session(remote);  // throws on immediate error
+            if (!session)
+            {
+                log::debug(logcat, "Not mapping a UDP port for {}: remote is unreachable", remote);
+                return std::nullopt;
+            }
 
             mapped_remote target{.remote = remote, .port = port};
             auto& [udp_handle, cports] = _udp_handles[target];
@@ -1364,6 +1377,14 @@ namespace srouter::handlers
                                 "Received local mapped UDP packet, but unable to obtain/initiate a session with {}: {}",
                                 target.remote,
                                 e.what());
+                            return;
+                        }
+                        if (!session)
+                        {
+                            log::warning(
+                                logcat,
+                                "Received local mapped UDP packet for unreachable remote {}, dropping",
+                                target.remote);
                             return;
                         }
 

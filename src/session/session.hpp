@@ -194,6 +194,13 @@ namespace srouter
             // will never become non-closed; reestablishing a closed Session requires replacing it).
             bool _is_closed{false};
 
+            // Will be set to true if we determine that this session can never be established,
+            // as opposed to merely not having established yet.  Currently this means the remote
+            // is a relay for which the network has no relay contact: we know how to reach any
+            // relay we hold an RC for, and we hold RCs for all of them, so a missing RC means the
+            // relay is not participating in the network at all.
+            bool _unreachable{false};
+
             // Set to true if our current path is definitely dead, to short-circuit things like
             // send_session_message encryption if we know we can't deliver it anywhere.  This
             // is roughly equivalent to `!path || path->is_dead`, except that the base class doesn't
@@ -338,6 +345,12 @@ namespace srouter
             // down.
             bool is_closed() const { return _is_closed; }
 
+            // Returns true if this session is known to be impossible to establish, rather than
+            // simply not established yet.  Such a session must not be reused: a later attempt on
+            // the same remote should build a fresh one, as the information that made this one
+            // unreachable (currently: a missing relay contact) can change.
+            bool is_unreachable() const { return _unreachable; }
+
             // Called to close this session.  If the bool is true then the session will attempt to
             // send a session_close control message down the active path.
             void close(bool send_close);
@@ -401,6 +414,12 @@ namespace srouter
                 std::vector<std::byte>&& data, SymmNonce&& nonce, path::MessageType type) override;
 
             void queue_data_message(std::span<const std::byte>, traffic_type type) override;
+
+            // Marks the session unreachable and fires every waiting on_established callback right
+            // away rather than letting each one sit until its own deadline.  For a session we know
+            // can never establish, the deadline would only be telling the caller something we
+            // already know.
+            void mark_unreachable();
 
             // We stash the `type` as the last byte of the vector
             std::optional<std::deque<std::vector<std::byte>>> pre_establish_data_queue;
