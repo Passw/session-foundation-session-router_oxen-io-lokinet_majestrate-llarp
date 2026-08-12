@@ -1268,7 +1268,7 @@ namespace srouter::handlers
             std::shared_ptr<session::Session> s{nullptr};
             if (auto it = _sessions.find(remote); it != _sessions.end())
                 s = it->second;
-            if (s && !s->is_closed())
+            if (s && !s->is_closed() && !s->is_unreachable())
             {
                 if (on_attempted)
                 {
@@ -1295,6 +1295,14 @@ namespace srouter::handlers
                     else
                         s = router._jq->make_shared<session::OutboundRelaySession>(
                             remote, *this, tag, std::move(on_attempted), timeout);
+
+                    // A relay session resolves its RC during construction, so if the relay has no
+                    // RC we already know the session can never establish.  Don't register it: the
+                    // caller gets nullptr, and a later attempt builds a fresh session that looks
+                    // the RC up again rather than reusing this verdict.
+                    if (s->is_unreachable())
+                        return std::shared_ptr<session::Session>{nullptr};
+
                     _session_tags.emplace(tag, s);
                     _sessions[remote] = s;
                 }
@@ -1323,10 +1331,10 @@ namespace srouter::handlers
             visit(addr, *s);
     }
 
-    std::pair<uint16_t, std::shared_ptr<session::Session>> SessionEndpoint::map_udp_remote_port(
+    std::optional<std::pair<uint16_t, std::shared_ptr<session::Session>>> SessionEndpoint::map_udp_remote_port(
         const NetworkAddress& remote, uint16_t port)
     {
-        return router._jq->call_get([&] {
+        return router._jq->call_get([&]() -> std::optional<std::pair<uint16_t, std::shared_ptr<session::Session>>> {
             // Port selection: we pick something random in the 49152-60000 range to start from, as
             // that range (up to 60999) is common to all modern OSes for ephemeral addresses, and so
             // at least our first thousand ports will look like a normal random ephemeral port.
@@ -1337,10 +1345,16 @@ namespace srouter::handlers
             std::pair<uint16_t, std::shared_ptr<session::Session>> result;
             auto& [local_port, session] = result;
             session = initiate_remote_session(remote);  // throws on immediate error
+            if (!session)
+            {
+                log::debug(logcat, "Not mapping a UDP port for {}: remote is unreachable", remote);
+                return std::nullopt;
+            }
 
             mapped_remote target{.remote = remote, .port = port};
-            auto& [udp_handle, cports] = _udp_handles[target];
+            auto& [udp_handle, cports, holders] = _udp_handles[target];
             bool existing = static_cast<bool>(udp_handle);
+            holders++;
             if (!existing)
 
                 udp_handle = std::make_unique<quic::UDPSocket>(
@@ -1364,6 +1378,14 @@ namespace srouter::handlers
                                 "Received local mapped UDP packet, but unable to obtain/initiate a session with {}: {}",
                                 target.remote,
                                 e.what());
+                            return;
+                        }
+                        if (!session)
+                        {
+                            log::warning(
+                                logcat,
+                                "Received local mapped UDP packet for unreachable remote {}, dropping",
+                                target.remote);
                             return;
                         }
 
@@ -1393,7 +1415,7 @@ namespace srouter::handlers
                                 }
                             }
                             if (auto it = _udp_handles.find(target); it != _udp_handles.end())
-                                it->second.second.push_back(instance);
+                                it->second.cports.push_back(instance);
                             mapped_port = new_port.port;
                             log::debug(
                                 logcat,
@@ -1427,29 +1449,40 @@ namespace srouter::handlers
 
     void SessionEndpoint::unmap_udp_remote_port(const NetworkAddress& remote, uint16_t port)
     {
-        mapped_remote rem{.remote = remote, .port = port};
+        // As in map_udp_remote_port: these containers belong to the job queue thread, and an
+        // embedded caller can be on any thread at all.
+        router._jq->call_get([&] {
+            mapped_remote rem{.remote = remote, .port = port};
 
-        auto it = _udp_handles.find(rem);
-        if (it == _udp_handles.end())
-        {
-            log::debug(logcat, "Nothing to unmap: {}:{} is not currently a mapped UDP port", remote, port);
-            return;
-        }
-
-        auto& [sock, cports] = it->second;
-        for (auto& c : cports)
-        {
-            if (auto cit = _udp_client_ports.find(c); cit != _udp_client_ports.end())
+            auto it = _udp_handles.find(rem);
+            if (it == _udp_handles.end())
             {
-                _udp_return_ports.erase(mapped_remote{.remote = remote, .port = cit->second});
-                _udp_client_ports.erase(cit);
+                log::debug(logcat, "Nothing to unmap: {}:{} is not currently a mapped UDP port", remote, port);
+                return;
             }
-        }
 
-        auto local_port = sock->address().port();
-        _udp_handles.erase(it);
+            auto& [sock, cports, holders] = it->second;
+            if (--holders > 0)
+            {
+                log::debug(
+                    logcat, "Released a claim on {}:{}; {} still held, keeping it mapped", remote, port, holders);
+                return;
+            }
 
-        log::debug(logcat, "Unmapped localhost:{} -> {}:{} UDP mapping", local_port, remote, port);
+            for (auto& c : cports)
+            {
+                if (auto cit = _udp_client_ports.find(c); cit != _udp_client_ports.end())
+                {
+                    _udp_return_ports.erase(mapped_remote{.remote = remote, .port = cit->second});
+                    _udp_client_ports.erase(cit);
+                }
+            }
+
+            auto local_port = sock->address().port();
+            _udp_handles.erase(it);
+
+            log::debug(logcat, "Unmapped localhost:{} -> {}:{} UDP mapping", local_port, remote, port);
+        });
     }
 
 }  //  namespace srouter::handlers

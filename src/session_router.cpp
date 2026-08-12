@@ -65,11 +65,11 @@ namespace session::router
         context->router->on_disconnected(std::move(callback), with_path, persist);
     }
 
-    tunnel_info SessionRouter::establish_udp(
+    udp_tunnel SessionRouter::establish_udp(
         std::string_view remote,
         uint16_t dest_port,
         std::function<void(tunnel_info)> on_established,
-        std::function<void()> on_timeout)
+        std::function<void(tunnel_failure)> on_failed)
     {
         if (srouter::is_valid_sns(remote))
             throw std::invalid_argument{"establish_udp requires a network pubkey address, not an ONS/SNS addresses"};
@@ -92,7 +92,11 @@ namespace session::router
         quic::Address src{"::1"s, 0};
         quic::Address dest{"::1"s, dest_port};
 
-        auto [local_port, session] = context->router->session_endpoint().map_udp_remote_port(netaddr, dest_port);
+        auto mapped = context->router->session_endpoint().map_udp_remote_port(netaddr, dest_port);
+        if (!mapped)
+            return {};
+
+        auto& [local_port, session] = *mapped;
 
         // Total tunnel overhead from outer UDP payload to inner payload:
         // outer QUIC packet framing (44) + path onion (41) + session encryption (37)
@@ -119,22 +123,22 @@ namespace session::router
         }
         else if (session->is_outbound)
         {
-            if (on_established || on_timeout)
+            if (on_established || on_failed)
             {
                 auto osession = std::static_pointer_cast<srouter::session::OutboundSession>(session);
-                osession->on_established(
-                    [ti, on_established, on_timeout](const srouter::session::OutboundSession& session) {
-                        if (session.is_established())
-                        {
-                            if (on_established)
-                                on_established(ti);
-                        }
-                        else
-                        {
-                            if (on_timeout)
-                                on_timeout();
-                        }
-                    });
+                osession->on_established([ti, on_established, on_failed](
+                                             const srouter::session::OutboundSession& session) {
+                    if (session.is_established())
+                    {
+                        if (on_established)
+                            on_established(ti);
+                    }
+                    else
+                    {
+                        if (on_failed)
+                            on_failed(session.is_unreachable() ? tunnel_failure::unreachable : tunnel_failure::timeout);
+                    }
+                });
             }
         }
         else
@@ -143,22 +147,51 @@ namespace session::router
                 logcat, "Unexpected: tunnel session returned a non-established, but also non-outbound session!");
         }
 
-        return ti;
+        return udp_tunnel{*this, _alive, std::move(ti)};
     }
 
-    void SessionRouter::close_udp(std::string_view remote, uint16_t port)
+    udp_tunnel::udp_tunnel(SessionRouter& router, std::weak_ptr<void> alive, tunnel_info info)
+        : _router_alive{std::move(alive)}, _router{&router}, _info{std::move(info)}
+    {}
+
+    udp_tunnel& udp_tunnel::operator=(udp_tunnel&& other) noexcept
     {
-        srouter::NetworkAddress netaddr;
+        reset();
+        _router_alive = std::exchange(other._router_alive, {});
+        _router = std::exchange(other._router, nullptr);
+        _info = std::exchange(other._info, {});
+        return *this;
+    }
+
+    udp_tunnel::~udp_tunnel() { reset(); }
+
+    void udp_tunnel::reset()
+    {
+        if (!_router)
+            return;
+
+        // A claim can outlive the router it came from, in which case the mapping went away with it.
+        if (auto alive = _router_alive.lock())
+            _router->release_udp(_info.remote, _info.remote_port);
+
+        _router_alive.reset();
+        _router = nullptr;
+        _info = {};
+    }
+
+    void SessionRouter::release_udp(const std::string& remote, uint16_t port)
+    {
+        // Reached from ~udp_tunnel, so this must not throw.  The address came from us in the first
+        // place, so failing to parse it back would be a bug rather than bad input.
         try
         {
-            netaddr = srouter::NetworkAddress{remote};
+            srouter::NetworkAddress netaddr{remote};
+            context->router->session_endpoint().unmap_udp_remote_port(netaddr, port);
         }
         catch (const std::exception& e)
         {
-            throw std::invalid_argument{"Invalid remote address: {}"_format(e.what())};
+            log::error(logcat, "Failed to release UDP tunnel to {}:{}: {}", remote, port, e.what());
         }
-
-        context->router->session_endpoint().unmap_udp_remote_port(netaddr, port);
     }
 
     static snode_path to_snode_path(const srouter::path::Path::Info& info)

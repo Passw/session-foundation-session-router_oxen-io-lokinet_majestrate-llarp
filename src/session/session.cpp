@@ -915,7 +915,7 @@ namespace srouter::session
             log::debug(logcat, "Received udp datagram from unknown source port {}", *source_port);
             return;
         }
-        auto& socket = *it->second.first;
+        auto& socket = *it->second.socket;
 
         log::trace(logcat, "incoming udp packet for pseudo port {}", *dest_port);
         mapped_remote local{.remote = _remote, .port = *dest_port};
@@ -1028,6 +1028,25 @@ namespace srouter::session
         const bool est = is_established();
         const auto now = steady_now_ms();
         while (!_on_established.empty() && (est || _on_established.top().first <= now))
+        {
+            try
+            {
+                _on_established.top().second(*this);
+            }
+            catch (const std::exception& e)
+            {
+                log::warning(logcat, "Exception during outbound session established callback: {}", e.what());
+            }
+            _on_established.pop();
+        }
+    }
+
+    void OutboundSession::mark_unreachable()
+    {
+        _unreachable = true;
+        _dead_path = true;
+
+        while (!_on_established.empty())
         {
             try
             {
@@ -1237,9 +1256,8 @@ namespace srouter::session
             }
             else
             {
-                log::debug(logcat, "RC lookup failed for {}", _remote);
-                // TODO FIXME: should we close the session?  Retry the lookup?  Start responding
-                // with ICMP unreachables?
+                log::debug(logcat, "RC lookup failed for {}; relay is unreachable", _remote);
+                mark_unreachable();
             }
         });
     }
