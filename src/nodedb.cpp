@@ -628,6 +628,10 @@ namespace srouter
 
     void NodeDB::on_bootstrap_done(bool success)
     {
+        // This attempt is over either way; without clearing it the guard in purge_rcs() stays shut
+        // for the life of the process, and a client that loses its relays can never bootstrap again.
+        _bootstrap_running = false;
+
         if (success)
         {
             log::debug(logcat, "Bootstrap attempt completed successfully");
