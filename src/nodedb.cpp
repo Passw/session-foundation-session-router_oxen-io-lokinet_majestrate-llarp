@@ -359,6 +359,8 @@ namespace srouter
             btlp.append(std::span(h));
         }
 
+        log::debug(logcat, "Fetching RCs from {}", selected_path->terminal_rid());
+
         selected_path->fetch_relay_contacts(btdp.span<std::byte>(), [this, on_done = std::move(on_done)](auto resp) {
             std::string error;
             if (resp.ok())
@@ -366,6 +368,8 @@ namespace srouter
                 try
                 {
                     size_t fetched_count = 0;
+                    size_t n_new = 0, n_changed = 0, n_identical = 0;
+                    std::unordered_set<uint8_t> buckets_hit;
 
                     oxenc::bt_dict_consumer btdc{resp.body};
                     if (btdc.skip_until("!"sv))
@@ -387,11 +391,30 @@ namespace srouter
                         }
                         auto bucket = bucket_of(rid);
                         log::debug(logcat, "Received RC for relay {} in bucket {:x}", rid, bucket);
+
+                        buckets_hit.insert(bucket);
+                        if (auto it = rc_hashes[bucket].find(rid); it == rc_hashes[bucket].end())
+                            n_new++;
+                        else if (it->second == bucket_hash(rc.view()))
+                            n_identical++;
+                        else
+                            n_changed++;
+
                         if (auto [stored, gossip] = put_rc(std::move(rc)); !stored)
                             log::debug(logcat, "Not inserting RC for {}, seen too recently.", rid);
                         fetched_count++;
                     }
-                    log::debug(logcat, "RC fetch gave {} RCs"sv, fetched_count);
+                    // A large "identical" count means the relay sent us buckets whose contents
+                    // already match ours, i.e. its bucket hashes are stale rather than its RCs
+                    // being different from ours.
+                    log::debug(
+                        logcat,
+                        "RC fetch gave {} RCs across {} buckets: {} new, {} changed, {} identical"sv,
+                        fetched_count,
+                        buckets_hit.size(),
+                        n_new,
+                        n_changed,
+                        n_identical);
                     _last_rc_fetch = time_now_ms();
 
                     if (!_pending_rc_lookups.empty())
