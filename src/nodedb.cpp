@@ -105,14 +105,12 @@ namespace srouter
         return ret;
     }
 
-    static void update_bucket_hash(RCHash& bucket_hash, RCHash old_hash, RCHash new_hash)
+    // A bucket hash is the XOR of the hashes of the RCs in the bucket; since XOR is its own inverse
+    // this both adds and removes an RC's contribution.
+    static void xor_bucket_hash(RCHash& bucket_hash, RCHash rc_hash)
     {
         static_assert(sizeof(RCHash) == sizeof(uint64_t));
-        uint64_t& bint = *(reinterpret_cast<uint64_t*>(&bucket_hash));
-        uint64_t& oldint = *(reinterpret_cast<uint64_t*>(&old_hash));
-        uint64_t& newint = *(reinterpret_cast<uint64_t*>(&new_hash));
-        bint ^= oldint;
-        bint ^= newint;
+        *reinterpret_cast<uint64_t*>(&bucket_hash) ^= *reinterpret_cast<uint64_t*>(&rc_hash);
     }
 
     static uint8_t bucket_of(const RouterID& rid)
@@ -126,16 +124,20 @@ namespace srouter
     {
         const auto& rid = rc.router_id();
         auto bucket = bucket_of(rid);
-        auto rc_hash = bucket_hash(rc.view());
-        auto& old_hash = rc_hashes[bucket][rid];
-        update_bucket_hash(rc_bucket_hashes[bucket], old_hash, rc_hash);
-        if (!added)
+        auto& hashes = rc_hashes[bucket];
+        auto recorded = hashes.try_emplace(rid).first;
+
+        // We take out the hash we recorded when this RC was added, which is not necessarily a hash of
+        // the RC we have here.  (For an RC we don't have yet this is all-zeros, i.e. a no-op.)
+        xor_bucket_hash(rc_bucket_hashes[bucket], recorded->second);
+
+        if (added)
         {
-            assert(old_hash == rc_hash);
-            rc_hashes[bucket].erase(rid);
+            recorded->second = bucket_hash(rc.view());
+            xor_bucket_hash(rc_bucket_hashes[bucket], recorded->second);
         }
         else
-            old_hash = rc_hash;
+            hashes.erase(recorded);
     }
 
     std::vector<const RelayContact*> NodeDB::get_n_random_rcs(
