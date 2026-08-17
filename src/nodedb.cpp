@@ -494,10 +494,10 @@ namespace srouter
         auto result_count = std::make_shared<size_t>(0);
         std::vector<path::Path*> selected_paths;
 
-        // In the future, we may want to make paths to selected sources for RID fetching,
-        // but for now just use the first N paths that we already have for simplicity.  If
-        // fetching fails from one, or not all results agree, we probably want to drop that
-        // path anyway.
+        // Our inbound paths are the sources we trust most here: we picked their terminals at
+        // random, for reasons unconnected to whoever we happen to be talking to.
+        std::unordered_set<RouterID> inbound_sources;
+
         for (auto& path : _router.session_endpoint().active_paths())
         {
             if (selected_paths.size() >= RID_SOURCE_COUNT)
@@ -505,26 +505,51 @@ namespace srouter
             auto [itr, inserted] = results->emplace(path.terminal_rid(), std::unordered_set<RouterID>{});
             if (inserted)
             {
+                inbound_sources.insert(path.terminal_rid());
                 selected_paths.push_back(&path);
             }
         }
 
-        if (selected_paths.size() < 2)
+        // Inbound paths are also the utility paths we look up and publish client contacts over, so
+        // having none of them means we are cut off from the network rather than merely short of
+        // sources.  Nothing is gained by rebuilding our view of it from outbound sources alone.
+        if (inbound_sources.empty())
         {
-            log::debug(logcat, "Have fewer than 2 paths, not fetching RouterIDs yet.");
+            log::debug(logcat, "Have no inbound paths, not fetching RouterIDs yet.");
             _router._jq->call_later(100ms, [this] { fetch_rids(); });
             return;
         }
-        else if (selected_paths.size() < RID_SOURCE_COUNT)
+
+        // Short of inbound paths, make the number up from the paths our outbound sessions are
+        // using.  Those terminals were chosen to reach some particular remote rather than at random,
+        // so a peer we are talking to has a hand in who they are; handle_fetched_router_ids makes
+        // them corroborate rather than decide.
+        if (selected_paths.size() < RID_SOURCE_COUNT)
+        {
+            auto extra = _router.session_endpoint().outbound_session_paths();
+            std::ranges::shuffle(extra, srouter::csrng);
+
+            for (auto* path : extra)
+            {
+                if (selected_paths.size() >= RID_SOURCE_COUNT)
+                    break;
+                auto [itr, inserted] = results->emplace(path->terminal_rid(), std::unordered_set<RouterID>{});
+                if (inserted)
+                    selected_paths.push_back(path);
+            }
+        }
+
+        if (selected_paths.size() < RID_SOURCE_COUNT)
             log::info(
                 logcat,
-                "Fetching RIDs from {} sources (want minimum {}, but not enough paths)",
+                "Fetching RouterIDs from {} sources ({} of them inbound); wanted {}, but have no more paths to ask",
                 selected_paths.size(),
+                inbound_sources.size(),
                 RID_SOURCE_COUNT);
 
         for (auto* path : selected_paths)
         {
-            auto result_cb = [this, results, result_count, source = path->terminal_rid()](auto resp) {
+            auto result_cb = [this, results, result_count, inbound_sources, source = path->terminal_rid()](auto resp) {
                 (*result_count)++;
                 if (not resp.ok())
                 {
@@ -558,47 +583,97 @@ namespace srouter
                 }
                 if (*result_count == results->size())
                 {
-                    // FIXME: call again sooner if enough failed
-                    _router._jq->call_later(FETCH_INTERVAL, [this] { fetch_rids(); });
-                    handle_fetched_router_ids(*results);
+                    // Whatever happens while applying the results, the next round has to get
+                    // scheduled: dropping it would stop us fetching RouterIDs for good.
+                    bool conclusive = false;
+                    try
+                    {
+                        conclusive = handle_fetched_router_ids(*results, inbound_sources);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::error(logcat, "Error applying fetched RouterIDs: {}", e.what());
+                    }
+
+                    _router._jq->call_later(
+                        conclusive ? FETCH_INTERVAL : FETCH_RETRY_INTERVAL, [this] { fetch_rids(); });
                 }
             };
             path->send_path_control_message("fetch_rids"sv, {}, std::move(result_cb));
         }
     }
 
-    void NodeDB::handle_fetched_router_ids(const std::unordered_map<RouterID, std::unordered_set<RouterID>>& results)
+    bool NodeDB::handle_fetched_router_ids(
+        const std::unordered_map<RouterID, std::unordered_set<RouterID>>& results,
+        const std::unordered_set<RouterID>& inbound_sources)
     {
         assert(_router.loop().inside());
+
+        const size_t asked = results.size();
+
+        // A RouterID is accepted when a strict majority of the sources we asked affirm it -- 3 of 5,
+        // 3 of 4, 2 of 3, and so on down -- and that majority has to include one of our own inbound
+        // sources.  An outbound path's terminal is reached on behalf of some remote, so left to
+        // themselves those sources could walk us onto a different view of the network; where every
+        // source is inbound the requirement costs nothing, as any majority contains one.
+        //
+        // A source that failed, timed out or sent us nonsense simply affirms nothing, which is the
+        // same to us as one that answered without it.
+        const size_t needed = asked / 2 + 1;
+
         std::unordered_set<RouterID> accepted{};
 
-        auto itr = results.begin();
-        while (itr != results.end())
+        for (const auto& [source, rids] : results)
         {
-            for (const auto& rid : itr->second)
+            for (const auto& rid : rids)
             {
-                size_t count{0};
-                auto cur_itr = results.begin();
-                while (cur_itr != results.end())
+                if (accepted.contains(rid))
+                    continue;
+
+                size_t agree = 0;
+                bool inbound_agrees = false;
+                for (const auto& [other, other_rids] : results)
+                    if (other_rids.contains(rid))
+                    {
+                        agree++;
+                        if (inbound_sources.contains(other))
+                            inbound_agrees = true;
+                    }
+
+                if (agree < needed)
+                    continue;
+
+                if (not inbound_agrees)
                 {
-                    if (cur_itr->second.contains(rid))
-                        count++;
-                    cur_itr++;
+                    log::info(
+                        logcat,
+                        "{} sources know RouterID {}, but none of them is one of ours; not accepting it",
+                        agree,
+                        rid);
+                    continue;
                 }
-                // FIXME: better than "half-rounded-up agree"
-                if (count > (results.size() / 2))
-                    accepted.insert(rid);
-                else
-                    log::info(logcat, "Received a RouterID that not enough nodes agree is correct: {}", rid);
+
+                accepted.insert(rid);
             }
-            itr++;
         }
 
-        known_rids.clear();
-        for (const auto& rid : accepted)
-            known_rids.insert(rid);
+        // Whether the sources disagreed or simply did not answer, the outcome is the same: we have
+        // no consensus to act on.  We got the list we already have from somewhere, and had reason to
+        // trust it, so it stands until a consensus replaces it.
+        if (accepted.empty())
+        {
+            log::warning(
+                logcat,
+                "No consensus from {} RouterID sources; keeping the {} RouterIDs we already have",
+                asked,
+                known_rids.size());
+            return false;
+        }
+
+        known_rids = std::move(accepted);
 
         fetch_rcs();
+        return true;
     }
 
     void NodeDB::start()

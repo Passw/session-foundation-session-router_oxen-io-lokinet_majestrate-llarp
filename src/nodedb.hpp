@@ -24,6 +24,10 @@ namespace srouter
     class Router;
 
     inline constexpr auto FETCH_INTERVAL{5min};
+
+    // Used instead of FETCH_INTERVAL when a fetch round could not settle anything, so that a
+    // client with flaky paths retries promptly rather than sitting on stale RouterIDs.
+    inline constexpr auto FETCH_RETRY_INTERVAL{30s};
     inline constexpr auto PURGE_INTERVAL{5min};
 
     // fallback to bootstrap if we have less than this many RCs
@@ -258,7 +262,12 @@ namespace srouter
         /// remove any stored RCs matching the given predicate
         void remove_rcs_if(const std::function<bool(const RelayContact&)>& remove);
 
-        void handle_fetched_router_ids(const std::unordered_map<RouterID, std::unordered_set<RouterID>>& results);
+        // Applies a completed round of RID fetches.  Returns false if the round produced no
+        // consensus, whether from disagreement or from sources that did not answer, in which case
+        // what we already know is left alone.
+        bool handle_fetched_router_ids(
+            const std::unordered_map<RouterID, std::unordered_set<RouterID>>& results,
+            const std::unordered_set<RouterID>& inbound_sources);
 
         // Called on the disk thread to store/update/erase 0rtt tickets for a router id.
         void save_0rtt(const RouterID& rid);

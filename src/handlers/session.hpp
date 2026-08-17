@@ -338,6 +338,12 @@ namespace srouter
 
             session_tag next_tag();
 
+            // Paths belonging to our outbound sessions.  These are used as extra RouterID fetch
+            // sources when we do not have enough inbound paths of our own; unlike inbound paths,
+            // whose terminals we pick at random, an outbound path's terminal was chosen to reach a
+            // particular remote, so a caller should treat them as the less trustworthy source.
+            std::vector<path::Path*> outbound_session_paths() const;
+
             // UDP port mapping, primarily for embedded clients.  This starts constructing a session
             // to the given remote, starts a UDP listener on an IPv6 localhost (i.e. `[::1]`) random
             // port, and sets up the internal handling so that UDP traffic to that UDP localhost

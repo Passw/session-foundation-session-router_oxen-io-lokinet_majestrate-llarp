@@ -1357,7 +1357,7 @@ namespace srouter
             Comment{
                 "Number of local paths that Session Router maintains for both network reachability (i.e. remote",
                 "clients connecting to this instance) and network communication such as looking up",
-                "client lto maintain for network reachability and for general network requests",
+                "client records and updating network state",
                 "",
                 "This value does NOT apply to paths that are built to reach external clients or relays.",
             },
