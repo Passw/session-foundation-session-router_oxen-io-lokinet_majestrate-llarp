@@ -1169,11 +1169,11 @@ namespace srouter
         auto [it, new_rc] = known_rcs.try_emplace(rid, std::move(rc));
         auto& stored = it->second;
 
-        bool should_gossip;
+        bool should_gossip, significant_change;
         if (new_rc)
         {
             // If this is a brand new RC then we want to gossip it to make sure everyone gets it.
-            should_gossip = true;
+            should_gossip = significant_change = true;
         }
         else if (!rc.newer_than(stored, RelayContact::MIN_GOSSIP_RC_AGE))
         {
@@ -1182,22 +1182,27 @@ namespace srouter
         }
         else
         {
-            // This RC is an update of one we already have: we only gossip if this RC indicates a
-            // changed address (e.g. port or IP change) or was the first RC from this node in a long
-            // time, both of which are updates we want to waste a little extra network bandwidth for
-            // to get out everywhere ASAP via gossipping.  Otherwise it's a mundane update, and so
-            // we don't gossip it because the full-mesh network connections means it will send it
-            // directly to everyone (and other nodes don't need to update to be able to full mesh
-            // with it).
+            // This RC is an update of one we already have: we only gossip if this RC is a
+            // significant change (e.g. a port, IP or version change) or was the first RC from this
+            // node in a long time, both of which are updates we want to waste a little extra network
+            // bandwidth for to get out everywhere ASAP via gossipping.  Otherwise it's a mundane
+            // update, and so we don't gossip it because the full-mesh network connections means it
+            // will send it directly to everyone (and other nodes don't need to update to be able to
+            // full mesh with it).
+            //
+            // The bucket hash is what defines "significant": it covers everything identifying the
+            // relay and deliberately excludes the timestamp and signature, which is exactly the
+            // mundane/significant distinction we want here.
             //
             // For our own RC, we always return true if we get here because we always want to gossip
             // our *own* RC whenever it gets updated.
+            significant_change = bucket_hash(rc.view()) != bucket_hash(stored.view());
             should_gossip = rc.router_id() == _router.id() || rc.newer_than(stored, RelayContact::OUTDATED_AGE)
-                || rc.address_changed(stored);
+                || significant_change;
             stored = std::move(rc);
         }
 
-        if (should_gossip)  // if we actually stored the new RC
+        if (significant_change)
             update_rc_buckets(stored, /*added=*/true);
 
         // We inserted or updated the record, so queue saving it to disk on the disk loop
