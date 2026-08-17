@@ -580,7 +580,7 @@ namespace srouter
         }
 
         RelayContact rc{*this};
-        if (_node_db->put_rc(std::move(rc)))
+        if (auto [stored, gossip] = _node_db->put_rc(std::move(rc)); gossip)
         {
             auto* rc = _node_db->get_rc(id());
             assert(rc);

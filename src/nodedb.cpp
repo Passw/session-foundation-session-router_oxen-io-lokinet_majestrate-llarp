@@ -387,9 +387,8 @@ namespace srouter
                         }
                         auto bucket = bucket_of(rid);
                         log::debug(logcat, "Received RC for relay {} in bucket {:x}", rid, bucket);
-                        if (!put_rc(std::move(rc)))
-                            log::debug(
-                                logcat, "Not inserting RC for {}, seen too recently or functionally unchanged.", rid);
+                        if (auto [stored, gossip] = put_rc(std::move(rc)); !stored)
+                            log::debug(logcat, "Not inserting RC for {}, seen too recently.", rid);
                         fetched_count++;
                     }
                     log::debug(logcat, "RC fetch gave {} RCs"sv, fetched_count);
@@ -883,7 +882,7 @@ namespace srouter
         assert(_router.loop().inside());
         log::debug(logcat, "Received response to BootstrapRC fetch request...");
 
-        int num = 0, n_new = 0;
+        int num = 0, n_stored = 0;
 
         try
         {
@@ -908,7 +907,8 @@ namespace srouter
                 // if we're trusting the bootstrap for RCs regardless of RouterID, we
                 // should trust the RouterID as well.
                 known_rids.insert(new_rc.router_id());
-                n_new += put_rc(std::move(new_rc));
+                auto [stored, gossip] = put_rc(std::move(new_rc));
+                n_stored += stored;
                 ++num;
             }
         }
@@ -919,7 +919,7 @@ namespace srouter
             return false;
         }
 
-        log::info(logcat, "Bootstrap fetch successfully retrieved {} RCs ({} new)", num, n_new);
+        log::info(logcat, "Bootstrap fetch successfully retrieved {} RCs ({} stored)", num, n_stored);
         return true;
     }
 
@@ -1160,7 +1160,7 @@ namespace srouter
         return it != known_rcs.end() ? &it->second : nullptr;
     }
 
-    bool NodeDB::put_rc(RelayContact rc)
+    std::pair<bool, bool> NodeDB::put_rc(RelayContact rc)
     {
         assert(_router.loop().inside());
 
@@ -1178,7 +1178,7 @@ namespace srouter
         else if (!rc.newer_than(stored, RelayContact::MIN_GOSSIP_RC_AGE))
         {
             // The RC is too new since the last one we stored, so drop it.
-            return false;
+            return {false, false};
         }
         else
         {
@@ -1194,8 +1194,8 @@ namespace srouter
             // relay and deliberately excludes the timestamp and signature, which is exactly the
             // mundane/significant distinction we want here.
             //
-            // For our own RC, we always return true if we get here because we always want to gossip
-            // our *own* RC whenever it gets updated.
+            // For our own RC, we always gossip if we get here because we always want to tell our
+            // peers when we update our *own* RC.
             significant_change = bucket_hash(rc.view()) != bucket_hash(stored.view());
             should_gossip = rc.router_id() == _router.id() || rc.newer_than(stored, RelayContact::OUTDATED_AGE)
                 || significant_change;
@@ -1208,14 +1208,15 @@ namespace srouter
         // We inserted or updated the record, so queue saving it to disk on the disk loop
         _router.disk_loop.call_soon([rc = stored, path = get_path_by_pubkey(stored.router_id())] { rc.write(path); });
 
-        return should_gossip;
+        // Gossipping is a relay's job: a client stores RCs but has nobody to rebroadcast them to.
+        return {true, should_gossip and _router.is_service_node};
     }
 
-    bool NodeDB::verify_store_gossip_rc(RelayContact rc)
+    std::pair<bool, bool> NodeDB::verify_store_gossip_rc(RelayContact rc)
     {
         assert(_router.loop().inside());
         if (not is_registered(rc.router_id()) || rc.router_id() == _router.id())
-            return false;
+            return {false, false};
         return put_rc(std::move(rc));
     }
 
