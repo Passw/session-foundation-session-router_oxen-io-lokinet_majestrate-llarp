@@ -400,7 +400,10 @@ namespace srouter
                         else if (it->second == bucket_hash(rc.view()))
                             n_identical++;
                         else
+                        {
                             n_changed++;
+                            log::debug(logcat, "RC for {} differs from the one we hold", rid);
+                        }
 
                         if (auto [stored, gossip] = put_rc(std::move(rc)); !stored)
                             log::debug(logcat, "Not inserting RC for {}, seen too recently.", rid);
