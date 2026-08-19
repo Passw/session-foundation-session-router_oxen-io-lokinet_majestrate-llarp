@@ -1331,6 +1331,23 @@ namespace srouter::handlers
             visit(addr, *s);
     }
 
+    std::vector<path::Path*> SessionEndpoint::outbound_session_paths() const
+    {
+        std::vector<path::Path*> paths;
+
+        for (const auto& [remote, session] : _sessions)
+        {
+            if (not session->is_outbound)
+                continue;
+
+            if (auto* outbound = dynamic_cast<session::OutboundSession*>(session.get()))
+                for (auto& path : outbound->active_paths())
+                    paths.push_back(&path);
+        }
+
+        return paths;
+    }
+
     std::optional<std::pair<uint16_t, std::shared_ptr<session::Session>>> SessionEndpoint::map_udp_remote_port(
         const NetworkAddress& remote, uint16_t port)
     {
