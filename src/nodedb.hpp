@@ -197,32 +197,36 @@ namespace srouter
         std::vector<const RelayContact*> get_n_random_edge_rcs(
             int n, bool shuffle = true, const std::function<bool(const RelayContact&)>& predicate = nullptr) const;
 
-        /// Stores an RC broadcast to the network.  The return value indicates whether this RC
-        /// should be re-broadcast to all connected relays (true) or not (false).  In particular,
-        /// false does *not* necessarily mean that the RC was not updated, but could also simply
-        /// mean that the RC update was not significant enough to warrant rebroadcasting.
+        /// Stores an RC broadcast to the network.  Returns a pair of {stored, gossip}: the first
+        /// indicates whether we stored the RC, the second whether it should be re-broadcast to all
+        /// connected relays.  Note that these are separate questions: we store mundane updates
+        /// without gossipping them, and only a relay has any use for the gossip half at all.
         ///
         /// This function does *not* check that the RC's router ID is actually a valid service node:
         /// call `verify_store_gossip_rc` instead of this to also do that check.
         ///
-        /// In particular, RC re-gossipping is determined by:
+        /// An RC is not stored at all if the currently stored RC for the relay is not at least a
+        /// minute older than the incoming one.
+        ///
+        /// Otherwise, RC re-gossipping is determined by:
         /// - The RC must be for a relay we haven't recently received an RC for (i.e. we didn't have
         ///   it, or what we had was declared outdated (more than 12h old)).
-        /// - Alternatively, an RC will also be gossipped if it is an important update for
-        ///   reachability (i.e. changed IP or port, or other crucial RC properties).
-        /// - Gossips will not be accepted if the currently stored RC for the relay is not at least
-        ///   a minute older than the incoming one.
+        /// - Alternatively, an RC will also be gossipped if it is a significant change: that is, if
+        ///   anything identifying the relay changed (IP, port, version, ...), as opposed to a
+        ///   mundane update that only re-signs the same contents with a fresh timestamp.
         ///
-        /// If storing *our own* RC then this returns true if it was stored, false otherwise,
-        /// because we always want to gossip to our peers when we update our own RC.
-        bool put_rc(RelayContact rc);
+        /// If storing *our own* RC then gossip is true whenever it was stored, because we always
+        /// want to gossip to our peers when we update our own RC.
+        ///
+        /// On a client gossip is always false: rebroadcasting RCs is a relay's job.
+        std::pair<bool, bool> put_rc(RelayContact rc);
 
         /// Checks of the relay in the given rc is a registered remote network relay (either active
         /// or decommissioned, and not ourself) and, if so, calls and returns put_rc with it.
         ///
-        /// Returns true if the router ID is known *and* the rc was updated *and* the RC should be
-        /// re-gossipped (see put_rc); returns false otherwise.
-        bool verify_store_gossip_rc(RelayContact rc);
+        /// Returns {false, false} if the router ID is not a known remote relay, otherwise returns
+        /// put_rc's {stored, gossip} pair.
+        std::pair<bool, bool> verify_store_gossip_rc(RelayContact rc);
 
         /// Stores a 0rtt ticket received from a relay.  This is both written to disk and stored in
         /// memory so that it can reused quickly in the current session, or after restarting.  (NB:

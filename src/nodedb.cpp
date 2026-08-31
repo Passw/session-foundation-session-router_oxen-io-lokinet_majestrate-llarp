@@ -105,14 +105,12 @@ namespace srouter
         return ret;
     }
 
-    static void update_bucket_hash(RCHash& bucket_hash, RCHash old_hash, RCHash new_hash)
+    // A bucket hash is the XOR of the hashes of the RCs in the bucket; since XOR is its own inverse
+    // this both adds and removes an RC's contribution.
+    static void xor_bucket_hash(RCHash& bucket_hash, RCHash rc_hash)
     {
         static_assert(sizeof(RCHash) == sizeof(uint64_t));
-        uint64_t& bint = *(reinterpret_cast<uint64_t*>(&bucket_hash));
-        uint64_t& oldint = *(reinterpret_cast<uint64_t*>(&old_hash));
-        uint64_t& newint = *(reinterpret_cast<uint64_t*>(&new_hash));
-        bint ^= oldint;
-        bint ^= newint;
+        *reinterpret_cast<uint64_t*>(&bucket_hash) ^= *reinterpret_cast<uint64_t*>(&rc_hash);
     }
 
     static uint8_t bucket_of(const RouterID& rid)
@@ -126,16 +124,20 @@ namespace srouter
     {
         const auto& rid = rc.router_id();
         auto bucket = bucket_of(rid);
-        auto rc_hash = bucket_hash(rc.view());
-        auto& old_hash = rc_hashes[bucket][rid];
-        update_bucket_hash(rc_bucket_hashes[bucket], old_hash, rc_hash);
-        if (!added)
+        auto& hashes = rc_hashes[bucket];
+        auto recorded = hashes.try_emplace(rid).first;
+
+        // We take out the hash we recorded when this RC was added, which is not necessarily a hash of
+        // the RC we have here.  (For an RC we don't have yet this is all-zeros, i.e. a no-op.)
+        xor_bucket_hash(rc_bucket_hashes[bucket], recorded->second);
+
+        if (added)
         {
-            assert(old_hash == rc_hash);
-            rc_hashes[bucket].erase(rid);
+            recorded->second = bucket_hash(rc.view());
+            xor_bucket_hash(rc_bucket_hashes[bucket], recorded->second);
         }
         else
-            old_hash = rc_hash;
+            hashes.erase(recorded);
     }
 
     std::vector<const RelayContact*> NodeDB::get_n_random_rcs(
@@ -359,6 +361,8 @@ namespace srouter
             btlp.append(std::span(h));
         }
 
+        log::debug(logcat, "Fetching RCs from {}", selected_path->terminal_rid());
+
         selected_path->fetch_relay_contacts(btdp.span<std::byte>(), [this, on_done = std::move(on_done)](auto resp) {
             std::string error;
             if (resp.ok())
@@ -366,6 +370,8 @@ namespace srouter
                 try
                 {
                     size_t fetched_count = 0;
+                    size_t n_new = 0, n_changed = 0, n_identical = 0;
+                    std::unordered_set<uint8_t> buckets_hit;
 
                     oxenc::bt_dict_consumer btdc{resp.body};
                     if (btdc.skip_until("!"sv))
@@ -387,12 +393,33 @@ namespace srouter
                         }
                         auto bucket = bucket_of(rid);
                         log::debug(logcat, "Received RC for relay {} in bucket {:x}", rid, bucket);
-                        if (!put_rc(std::move(rc)))
-                            log::debug(
-                                logcat, "Not inserting RC for {}, seen too recently or functionally unchanged.", rid);
+
+                        buckets_hit.insert(bucket);
+                        if (auto it = rc_hashes[bucket].find(rid); it == rc_hashes[bucket].end())
+                            n_new++;
+                        else if (it->second == bucket_hash(rc.view()))
+                            n_identical++;
+                        else
+                        {
+                            n_changed++;
+                            log::debug(logcat, "RC for {} differs from the one we hold", rid);
+                        }
+
+                        if (auto [stored, gossip] = put_rc(std::move(rc)); !stored)
+                            log::debug(logcat, "Not inserting RC for {}, seen too recently.", rid);
                         fetched_count++;
                     }
-                    log::debug(logcat, "RC fetch gave {} RCs"sv, fetched_count);
+                    // A large "identical" count means the relay sent us buckets whose contents
+                    // already match ours, i.e. its bucket hashes are stale rather than its RCs
+                    // being different from ours.
+                    log::debug(
+                        logcat,
+                        "RC fetch gave {} RCs across {} buckets: {} new, {} changed, {} identical"sv,
+                        fetched_count,
+                        buckets_hit.size(),
+                        n_new,
+                        n_changed,
+                        n_identical);
                     _last_rc_fetch = time_now_ms();
 
                     if (!_pending_rc_lookups.empty())
@@ -883,7 +910,7 @@ namespace srouter
         assert(_router.loop().inside());
         log::debug(logcat, "Received response to BootstrapRC fetch request...");
 
-        int num = 0, n_new = 0;
+        int num = 0, n_stored = 0;
 
         try
         {
@@ -908,7 +935,8 @@ namespace srouter
                 // if we're trusting the bootstrap for RCs regardless of RouterID, we
                 // should trust the RouterID as well.
                 known_rids.insert(new_rc.router_id());
-                n_new += put_rc(std::move(new_rc));
+                auto [stored, gossip] = put_rc(std::move(new_rc));
+                n_stored += stored;
                 ++num;
             }
         }
@@ -919,7 +947,7 @@ namespace srouter
             return false;
         }
 
-        log::info(logcat, "Bootstrap fetch successfully retrieved {} RCs ({} new)", num, n_new);
+        log::info(logcat, "Bootstrap fetch successfully retrieved {} RCs ({} stored)", num, n_stored);
         return true;
     }
 
@@ -1160,7 +1188,7 @@ namespace srouter
         return it != known_rcs.end() ? &it->second : nullptr;
     }
 
-    bool NodeDB::put_rc(RelayContact rc)
+    std::pair<bool, bool> NodeDB::put_rc(RelayContact rc)
     {
         assert(_router.loop().inside());
 
@@ -1169,48 +1197,54 @@ namespace srouter
         auto [it, new_rc] = known_rcs.try_emplace(rid, std::move(rc));
         auto& stored = it->second;
 
-        bool should_gossip;
+        bool should_gossip, significant_change;
         if (new_rc)
         {
             // If this is a brand new RC then we want to gossip it to make sure everyone gets it.
-            should_gossip = true;
+            should_gossip = significant_change = true;
         }
         else if (!rc.newer_than(stored, RelayContact::MIN_GOSSIP_RC_AGE))
         {
             // The RC is too new since the last one we stored, so drop it.
-            return false;
+            return {false, false};
         }
         else
         {
-            // This RC is an update of one we already have: we only gossip if this RC indicates a
-            // changed address (e.g. port or IP change) or was the first RC from this node in a long
-            // time, both of which are updates we want to waste a little extra network bandwidth for
-            // to get out everywhere ASAP via gossipping.  Otherwise it's a mundane update, and so
-            // we don't gossip it because the full-mesh network connections means it will send it
-            // directly to everyone (and other nodes don't need to update to be able to full mesh
-            // with it).
+            // This RC is an update of one we already have: we only gossip if this RC is a
+            // significant change (e.g. a port, IP or version change) or was the first RC from this
+            // node in a long time, both of which are updates we want to waste a little extra network
+            // bandwidth for to get out everywhere ASAP via gossipping.  Otherwise it's a mundane
+            // update, and so we don't gossip it because the full-mesh network connections means it
+            // will send it directly to everyone (and other nodes don't need to update to be able to
+            // full mesh with it).
             //
-            // For our own RC, we always return true if we get here because we always want to gossip
-            // our *own* RC whenever it gets updated.
+            // The bucket hash is what defines "significant": it covers everything identifying the
+            // relay and deliberately excludes the timestamp and signature, which is exactly the
+            // mundane/significant distinction we want here.
+            //
+            // For our own RC, we always gossip if we get here because we always want to tell our
+            // peers when we update our *own* RC.
+            significant_change = bucket_hash(rc.view()) != bucket_hash(stored.view());
             should_gossip = rc.router_id() == _router.id() || rc.newer_than(stored, RelayContact::OUTDATED_AGE)
-                || rc.address_changed(stored);
+                || significant_change;
             stored = std::move(rc);
         }
 
-        if (should_gossip)  // if we actually stored the new RC
+        if (significant_change)
             update_rc_buckets(stored, /*added=*/true);
 
         // We inserted or updated the record, so queue saving it to disk on the disk loop
         _router.disk_loop.call_soon([rc = stored, path = get_path_by_pubkey(stored.router_id())] { rc.write(path); });
 
-        return should_gossip;
+        // Gossipping is a relay's job: a client stores RCs but has nobody to rebroadcast them to.
+        return {true, should_gossip and _router.is_service_node};
     }
 
-    bool NodeDB::verify_store_gossip_rc(RelayContact rc)
+    std::pair<bool, bool> NodeDB::verify_store_gossip_rc(RelayContact rc)
     {
         assert(_router.loop().inside());
         if (not is_registered(rc.router_id()) || rc.router_id() == _router.id())
-            return false;
+            return {false, false};
         return put_rc(std::move(rc));
     }
 

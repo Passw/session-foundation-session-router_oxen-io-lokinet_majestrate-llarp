@@ -182,7 +182,7 @@ namespace srouter::link
             return;
         }
 
-        if (router.node_db().verify_store_gossip_rc(rc))
+        if (auto [stored, gossip] = router.node_db().verify_store_gossip_rc(rc); gossip)
         {
             log::debug(
                 logcat,
