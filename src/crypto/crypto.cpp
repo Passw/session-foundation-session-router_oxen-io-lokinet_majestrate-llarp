@@ -289,6 +289,8 @@ namespace srouter::crypto
     }
 
 #ifdef SROUTER_HAVE_CRYPT
+    bool passwd_hash_supported() { return true; }
+
     bool check_passwd_hash(std::string pwhash, std::string challenge)
     {
         bool ret = false;
@@ -302,6 +304,10 @@ namespace srouter::crypto
         sodium_memzero(&data, sizeof(data));
         return ret;
     }
+#else
+    bool passwd_hash_supported() { return false; }
+
+    bool check_passwd_hash(std::string, std::string) { return false; }
 #endif
 
 }  // namespace srouter::crypto
