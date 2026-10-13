@@ -39,6 +39,7 @@ session_router_add_library(session-router-cryptography
   crypto/crypto.cpp
   crypto/key_manager.cpp
   crypto/keys.cpp
+  crypto/mlkem768.cpp
   crypto/session_keys.cpp
 )
 
