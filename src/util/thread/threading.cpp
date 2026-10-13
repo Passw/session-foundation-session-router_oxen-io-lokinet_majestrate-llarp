@@ -4,16 +4,14 @@
 
 #include <cstring>
 
-#ifdef POSIX
+#ifdef _MSC_VER
+#include <windows.h>
+extern "C" void SetThreadName(DWORD dwThreadID, LPCSTR szThreadName);
+#else
 #include <pthread.h>
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <pthread_np.h>
 #endif
-#endif
-
-#ifdef _MSC_VER
-#include <windows.h>
-extern "C" void SetThreadName(DWORD dwThreadID, LPCSTR szThreadName);
 #endif
 
 namespace srouter::util
@@ -22,7 +20,7 @@ namespace srouter::util
 
     void SetThreadName(const std::string& name)
     {
-#if defined(POSIX) || __MINGW32__
+#ifndef _MSC_VER
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
         /* on bsd this function has void return type */
         pthread_set_name_np(pthread_self(), name.c_str());
@@ -42,11 +40,8 @@ namespace srouter::util
             log::error(logcat, "Failed to set thread name to {} errno = {} errstr = {}", name, rc, ::strerror(rc));
         }
 #endif
-#elif _MSC_VER
-        ::SetThreadName(::GetCurrentThreadId(), name.c_str());
 #else
-        log::info(logcat, "Thread name setting not supported on this platform");
-        (void)name;
+        ::SetThreadName(::GetCurrentThreadId(), name.c_str());
 #endif
     }
 }  // namespace srouter::util
