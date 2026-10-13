@@ -29,7 +29,6 @@ namespace
     {
         // bool options
         bool help = false;
-        bool version = false;
         bool relay = false;
 
         std::filesystem::path config;
@@ -330,7 +329,9 @@ namespace
         command_line_options options{};
 
         // flags: boolean values in command_line_options struct
-        cli.add_flag("--version", options.version, "Session Router version");
+        // Handled during parsing (CLI11 exits with the version string), so it works without the
+        // otherwise-required --config.
+        cli.set_version_flag("--version", srouter::VERSION_FULL, "Session Router version");
         cli.add_flag(
             "-r,--relay", options.relay, "Run Session Router as a relay (service node) instead of as a client");
 
@@ -360,12 +361,6 @@ namespace
 
         try
         {
-            if (options.version)
-            {
-                std::cout << srouter::VERSION_FULL << std::endl;
-                return 0;
-            }
-
             if constexpr (srouter::platform::is_windows)
             {
                 if (options.win_install)
