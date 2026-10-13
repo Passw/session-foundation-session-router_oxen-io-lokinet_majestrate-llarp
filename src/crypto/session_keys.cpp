@@ -2,8 +2,8 @@
 
 #include "util/random.hpp"
 
-#include <mlkem_native.h>
 #include <oxenc/endian.h>
+#include <session/crypto/mlkem768.hpp>
 #include <sodium/crypto_generichash_blake2b.h>
 #include <sodium/crypto_kx.h>
 #include <sodium/crypto_scalarmult_curve25519.h>
@@ -57,33 +57,37 @@ namespace srouter
         return keys;
     }
 
-    // Check that the implicit pointer conversions we do to get the leancrypto primitives are okay.
-    // (These aren't exhaustive, but if any of these don't hold something is definitely wrong).
-    static_assert(MLKEM768_PUBLICKEYBYTES == sizeof(MLKEM768PubKey));
-    static_assert(MLKEM768_PUBLICKEYBYTES == MLKEM768PubKey::size());
+    // Fully qualified because `session` here would name srouter::session.
+    namespace mlkem768 = ::session::mlkem768;
 
-    static_assert(MLKEM768_SECRETKEYBYTES == sizeof(MLKEM768SecKey));
-    static_assert(MLKEM768_SECRETKEYBYTES == MLKEM768SecKey::size());
+    // The buffer types convert implicitly to the fixed-size spans session::mlkem768 takes; these make
+    // sure the sizes it converts between agree.
+    static_assert(mlkem768::PUBLICKEYBYTES == sizeof(MLKEM768PubKey));
+    static_assert(mlkem768::PUBLICKEYBYTES == MLKEM768PubKey::size());
 
-    static_assert(MLKEM768_BYTES == sizeof(MLKEMSharedSecret));
-    static_assert(MLKEM768_BYTES == MLKEMSharedSecret::size());
+    static_assert(mlkem768::SECRETKEYBYTES == sizeof(MLKEM768SecKey));
+    static_assert(mlkem768::SECRETKEYBYTES == MLKEM768SecKey::size());
+
+    static_assert(mlkem768::CIPHERTEXTBYTES == MLKEM768Ciphertext::size());
+
+    static_assert(mlkem768::SHAREDSECRETBYTES == sizeof(MLKEMSharedSecret));
+    static_assert(mlkem768::SHAREDSECRETBYTES == MLKEMSharedSecret::size());
 
     MLKEM768KeyPair MLKEM768KeyPair::generate()
     {
         MLKEM768KeyPair keys;
 
-        cleared_uarray<size_t{2} * MLKEM_SYMBYTES> rnd;
-        random_fill(rnd);
+        cleared_barray<mlkem768::SEEDBYTES> seed;
+        random_fill(seed);
 
-        if (0 != sr_mlkem768_keypair_derand(keys.pub.udata(), keys.sec.udata(), rnd.data()))
-            throw std::runtime_error{"ML-KEM-768 keygen failed!"};
+        mlkem768::keygen(keys.pub, keys.sec, seed);
         return keys;
     }
 
     MLKEMSharedSecret MLKEM768SecKey::decapsulate(const MLKEM768Ciphertext& ct) const
     {
         MLKEMSharedSecret ss;
-        if (0 != sr_mlkem768_dec(ss.udata(), ct.udata(), udata()))
+        if (!mlkem768::decapsulate(ss, ct, *this))
             throw std::runtime_error{"ML-KEM-768 decapsulation failed!"};
         return ss;
     }
@@ -93,11 +97,10 @@ namespace srouter
         std::pair<MLKEM768Ciphertext, MLKEMSharedSecret> result;
         auto& [ct, ss] = result;
 
-        cleared_uarray<MLKEM_SYMBYTES> rnd;
-        random_fill(rnd);
+        cleared_barray<mlkem768::SHAREDSECRETBYTES> seed;
+        random_fill(seed);
 
-        if (0 != sr_mlkem768_enc_derand(ct.udata(), ss.udata(), udata(), rnd.data()))
-            throw std::runtime_error{"ML-KEM-768 encapsulation failed!"};
+        mlkem768::encapsulate(ct, ss, *this, seed);
 
         return result;
     }

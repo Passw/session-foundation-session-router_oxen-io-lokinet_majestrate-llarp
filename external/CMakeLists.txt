@@ -76,21 +76,35 @@ else()
 endif()
 
 
-if(NOT TARGET mlkem_native::mlkem768)
-    file(GLOB_RECURSE mlkem_sources mlkem-native/mlkem/src/*.c mlkem-native/mlkem/src/*.S)
+# ML-KEM-768 from mlkem-native's single-compilation-unit sources, used through crypto/mlkem768.cpp.
+#
+# mlkem-native only compiles in its x86_64 assembly when the target already has AVX2, and then uses
+# it unconditionally, so a build for a baseline x86_64 target (as our release builds are) would never
+# use it.  On x86_64 we therefore build it a second time with AVX2 enabled, under a different symbol
+# prefix, and crypto/mlkem768.cpp picks between the two from the CPU's features at runtime.  These
+# are object libraries so that their code lands in the archive of whatever links them rather than in
+# archives of their own.
+include(TargetArch)
+target_architecture(mlkem768_arch)
 
-    add_library(mlkem_native768 STATIC ${mlkem_sources})
-
-    target_compile_definitions(mlkem_native768 PUBLIC
-        MLK_CONFIG_NO_RANDOMIZED_API
+function(add_mlkem768_build name)
+    set(tgt mlkem768_${name})
+    add_library(${tgt} OBJECT mlkem-native/mlkem/mlkem_native.c mlkem-native/mlkem/mlkem_native_asm.S)
+    target_include_directories(${tgt} PRIVATE mlkem-native/mlkem)
+    target_compile_definitions(${tgt} PRIVATE
         MLK_CONFIG_PARAMETER_SET=768
-        MLK_CONFIG_NAMESPACE_PREFIX=sr_mlkem768
-        MLK_CONFIG_NO_SUPERCOP
+        MLK_CONFIG_NAMESPACE_PREFIX=${tgt}
+        MLK_CONFIG_NO_RANDOMIZED_API
+        MLK_CONFIG_INTERNAL_API_QUALIFIER=static
         MLK_CONFIG_USE_NATIVE_BACKEND_ARITH
-        MLK_CONFIG_USE_NATIVE_BACKEND_FIPS202
-    )
+        MLK_CONFIG_USE_NATIVE_BACKEND_FIPS202)
+    target_compile_options(${tgt} PRIVATE ${ARGN})
+endfunction()
 
-    target_include_directories(mlkem_native768 PUBLIC mlkem-native/mlkem)
-
-    add_library(mlkem_native::mlkem768 ALIAS mlkem_native768)
+add_mlkem768_build(baseline)
+# Not for MSVC: mlkem-native leaves out its x86_64 assembly there, so the copy would be identical.
+if(mlkem768_arch STREQUAL "x86_64" AND NOT MSVC)
+    # The AVX2 backend's rejection sampling also uses pext (BMI2) and popcnt.
+    add_mlkem768_build(avx2 -mavx2 -mbmi2 -mpopcnt)
+    target_compile_definitions(mlkem768_avx2 INTERFACE SROUTER_MLKEM768_AVX2_BUILD)
 endif()

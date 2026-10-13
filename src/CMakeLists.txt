@@ -39,6 +39,7 @@ session_router_add_library(session-router-cryptography
   crypto/crypto.cpp
   crypto/key_manager.cpp
   crypto/keys.cpp
+  crypto/mlkem768.cpp
   crypto/session_keys.cpp
 )
 
@@ -293,9 +294,13 @@ target_link_libraries(session-router-core-utils
 
 target_link_libraries(session-router-cryptography
   PRIVATE
-  mlkem_native::mlkem768
+  mlkem768_baseline
+  PUBLIC
   session-router-libcrypt
 )
+if(TARGET mlkem768_avx2)
+  target_link_libraries(session-router-cryptography PRIVATE mlkem768_avx2)
+endif()
 
 if(SROUTER_FULL)
   target_link_libraries(session-router-exit-auth PUBLIC session-router-core-utils session-router-cryptography)
