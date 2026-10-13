@@ -104,6 +104,11 @@ namespace srouter::crypto
     // keypair from disk.
     bool check_pubkey(const Ed25519SecretKey& keys);
 
+    // True if this build supports crypt(3)-style password hashes (i.e. was built with libcrypt).
+    bool passwd_hash_supported();
+
+    // Checks `challenge` against the crypt(3)-style hash `pwhash`.  Always returns false if
+    // passwd_hash_supported() is false.
     bool check_passwd_hash(std::string pwhash, std::string challenge);
 
 }  // namespace srouter::crypto

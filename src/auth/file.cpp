@@ -1,4 +1,5 @@
 #include "auth.hpp"
+#include "crypto/crypto.hpp"
 #include "router/router.hpp"
 #include "util/str.hpp"
 
@@ -32,11 +33,7 @@ namespace srouter::auth
             case AuthFileType::PLAIN:
                 return hash == challenge;
             case AuthFileType::HASHES:
-#ifdef SROUTER_HAVE_CRYPT
                 return crypto::check_passwd_hash(std::move(hash), std::move(challenge));
-#else
-                return false;
-#endif
         }
         return false;
     }

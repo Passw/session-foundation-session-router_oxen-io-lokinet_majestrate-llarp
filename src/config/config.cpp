@@ -4,6 +4,7 @@
 #include "constants/platform.hpp"
 #include "constants/version.hpp"
 #include "contact/sns.hpp"
+#include "crypto/crypto.hpp"
 #include "definition.hpp"
 #include "ini.hpp"
 #include "path/path_handler.hpp"
@@ -443,20 +444,15 @@ namespace srouter
             FullClientOnly,
             Comment{
                 "How to interpret the contents of an auth file.",
-#ifdef SROUTER_HAVE_CRYPT
-                "Possible values: hash, plaintext",
-#else
-                "Possible values: plaintext",
-#endif
+                crypto::passwd_hash_supported() ? "Possible values: hash, plaintext" : "Possible values: plaintext",
             },
             [this](std::string arg) {
                 if (arg == "plain" || arg == "plaintext")
                     auth_file_type = auth::AuthFileType::PLAIN;
                 else if (arg == "hashed" || arg == "hashes" || arg == "hash")
                 {
-#ifndef SROUTER_HAVE_CRYPT
-                    throw std::invalid_argument{"Hashed auth files are not supported by this Session Router build"};
-#endif
+                    if (!crypto::passwd_hash_supported())
+                        throw std::invalid_argument{"Hashed auth files are not supported by this Session Router build"};
                     auth_file_type = auth::AuthFileType::HASHES;
                 }
                 else

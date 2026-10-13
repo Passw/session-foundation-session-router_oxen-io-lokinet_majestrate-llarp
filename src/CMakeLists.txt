@@ -294,7 +294,6 @@ target_link_libraries(session-router-core-utils
 target_link_libraries(session-router-cryptography
   PRIVATE
   mlkem_native::mlkem768
-  PUBLIC
   session-router-libcrypt
 )
 

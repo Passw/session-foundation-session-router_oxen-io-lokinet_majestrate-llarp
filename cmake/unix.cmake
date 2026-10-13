@@ -7,9 +7,6 @@ endif()
 include(CheckCXXSourceCompiles)
 include(CheckLibraryExists)
 
-add_definitions(-DUNIX)
-add_definitions(-DPOSIX)
-
 if(EMBEDDED_CFG OR ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   link_libatomic()
 endif()
