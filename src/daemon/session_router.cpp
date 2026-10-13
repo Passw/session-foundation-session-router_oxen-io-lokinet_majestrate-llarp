@@ -336,8 +336,8 @@ namespace
             "-r,--relay", options.relay, "Run Session Router as a relay (service node) instead of as a client");
 
         // options: string
-        cli.add_option("config,-c,--config", options.config, "Path to session-router.ini configuration file")
-            ->required();
+        auto* config =
+            cli.add_option("config,-c,--config", options.config, "Path to session-router.ini configuration file");
 
         cli.add_option(
             "-l,--log-levels",
@@ -346,9 +346,16 @@ namespace
 
         if constexpr (srouter::platform::is_windows)
         {
-            cli.add_flag("--install", options.win_install, "Install win32 daemon to SCM");
-            cli.add_flag("--remove", options.win_remove, "Remove win32 daemon from SCM");
+            auto* install = cli.add_flag("--install", options.win_install, "Install win32 daemon to SCM");
+            auto* remove = cli.add_flag("--remove", options.win_remove, "Remove win32 daemon from SCM");
+            // Installing or removing the service needs no config, so on Windows a config is only one
+            // of three things we can be asked to do.
+            auto* mode = cli.add_option_group("mode");
+            mode->add_options(config, install, remove);
+            mode->require_option(1);
         }
+        else
+            config->required();
 
         try
         {
