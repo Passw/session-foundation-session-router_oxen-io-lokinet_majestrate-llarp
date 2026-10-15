@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=@CMAKE_INSTALL_FULL_LIBDIR@
+includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+
+Name: libsessionrouter-core
+Description: Session Router core library, for embedded Session Router use
+Version: @PROJECT_VERSION@
+
+Libs: -L${libdir} -lsessionrouter-core
+Cflags: -I${includedir}

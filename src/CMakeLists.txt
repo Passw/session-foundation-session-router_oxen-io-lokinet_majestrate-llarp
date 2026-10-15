@@ -402,6 +402,23 @@ if(NOT APPLE)
     install(TARGETS libsessionrouter ${_srtr_lib_kind} DESTINATION ${_srtr_lib_dest}
       COMPONENT libsessionrouter)
   endif()
+
+  # Development files only for shared builds: the .pc files don't list the dependencies that linking
+  # a static library would also need.
+  if(BUILD_SHARED_LIBS AND NOT WIN32)
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/session DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+      COMPONENT libsessionrouter-dev
+      FILES_MATCHING PATTERN "*.hpp")
+    set(_srtr_pcs libsessionrouter-core)
+    if(SROUTER_FULL)
+      list(APPEND _srtr_pcs libsessionrouter)
+    endif()
+    foreach(pc ${_srtr_pcs})
+      configure_file(${pc}.pc.in ${pc}.pc @ONLY)
+      install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${pc}.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+        COMPONENT libsessionrouter-dev)
+    endforeach()
+  endif()
 endif()
 
 file(GLOB_RECURSE docs_SRC */*.hpp *.hpp)
