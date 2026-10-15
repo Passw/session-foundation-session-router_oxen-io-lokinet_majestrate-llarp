@@ -31,7 +31,10 @@ cp -av build/session-router{,-config} "$base"
 archive="$base.tar.xz"
 tar cJvf "$archive" "$base"
 
-upload_to="builds.session.codes/${CI_REPO// /_}/${CI_COMMIT_BRANCH// /_}"
+# A tag build goes into a directory named for the tag: CI sets a branch for tag builds too, but that
+# is only the forge's guess at which branch the tag is on.
+upload_dir=${CI_COMMIT_TAG:-${CI_COMMIT_BRANCH}}
+upload_to="builds.session.codes/${CI_REPO// /_}/${upload_dir// /_}"
 
 # sftp doesn't have any equivalent to mkdir -p, so we have to split the above up into a chain of
 # -mkdir a/, -mkdir a/b/, -mkdir a/b/c/, ... commands.  The leading `-` allows the command to fail
