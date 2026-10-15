@@ -60,7 +60,6 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(cmake/session-deps/Deps.cmake)
 
 # Core options
-option(SROUTER_AVX2 "enable avx2 code" OFF)
 option(SROUTER_NATIVE_BUILD "optimise for host system and FPU" ON)
 option(SROUTER_XSAN "use sanitiser, if your system has it (requires -DCMAKE_BUILD_TYPE=Debug)" OFF)
 option(SROUTER_JEMALLOC "Link to jemalloc for memory allocations, if found (requires non-static build)" ON)
@@ -181,12 +180,7 @@ if(NOT APPLE)
     endif()
   # Android's NDK picks the CPU baseline for each ABI itself.
   elseif(SROUTER_TARGET_X86 AND NOT ANDROID)
-    if (SROUTER_AVX2)
-      add_compile_options(-march=haswell -mtune=haswell -mfpmath=sse)
-    else()
-      # Public binary releases
-      add_compile_options(-march=nocona -mtune=haswell -mfpmath=sse)
-    endif()
+    add_compile_options(-march=nocona -mtune=haswell -mfpmath=sse)
   endif()
 endif()
 
