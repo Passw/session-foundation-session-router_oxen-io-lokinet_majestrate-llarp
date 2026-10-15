@@ -295,7 +295,6 @@ target_link_libraries(session-router-core-utils
 target_link_libraries(session-router-cryptography
   PRIVATE
   mlkem768_baseline
-  PUBLIC
   session-router-libcrypt
 )
 if(TARGET mlkem768_avx2)
