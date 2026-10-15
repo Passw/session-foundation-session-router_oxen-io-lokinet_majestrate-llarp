@@ -85,10 +85,19 @@ endif()
 # are object libraries so that their code lands in the archive of whatever links them rather than in
 # archives of their own.
 check_target_condition(MLKEM768_TARGET_X86_64 "defined(__x86_64__)")
+# mlkem-native enables its x86_64 backend from __AVX2__ alone (sys.h), while crypto/mlkem768.cpp only
+# skips the runtime dispatch when the target also guarantees BMI2 and POPCNT.
+check_target_condition(MLKEM768_TARGET_AVX2 "defined(__AVX2__)")
+check_target_condition(MLKEM768_TARGET_AVX2_FULL
+    "defined(__AVX2__) && defined(__BMI2__) && defined(__POPCNT__)")
 
-function(add_mlkem768_build name)
+function(add_mlkem768_build name with_asm)
     set(tgt mlkem768_${name})
-    add_library(${tgt} OBJECT mlkem-native/mlkem/mlkem_native.c mlkem-native/mlkem/mlkem_native_asm.S)
+    set(srcs mlkem-native/mlkem/mlkem_native.c)
+    if(with_asm)
+        list(APPEND srcs mlkem-native/mlkem/mlkem_native_asm.S)
+    endif()
+    add_library(${tgt} OBJECT ${srcs})
     target_include_directories(${tgt} PRIVATE mlkem-native/mlkem)
     target_compile_definitions(${tgt} PRIVATE
         MLK_CONFIG_PARAMETER_SET=768
@@ -100,10 +109,17 @@ function(add_mlkem768_build name)
     target_compile_options(${tgt} PRIVATE ${ARGN})
 endfunction()
 
-add_mlkem768_build(baseline)
+set(mlkem768_baseline_asm ON)
+if(MLKEM768_TARGET_X86_64 AND NOT MLKEM768_TARGET_AVX2)
+    # The x86_64 backend is AVX2-only, so without AVX2 the baseline's assembly would be empty.
+    set(mlkem768_baseline_asm OFF)
+endif()
+add_mlkem768_build(baseline ${mlkem768_baseline_asm})
 # Not for MSVC: mlkem-native leaves out its x86_64 assembly there, so the copy would be identical.
-if(MLKEM768_TARGET_X86_64 AND NOT MSVC)
+# Not when the target already has everything the AVX2 backend needs: the baseline build is then the
+# AVX2 build, and crypto/mlkem768.cpp doesn't dispatch.
+if(MLKEM768_TARGET_X86_64 AND NOT MSVC AND NOT MLKEM768_TARGET_AVX2_FULL)
     # The AVX2 backend's rejection sampling also uses pext (BMI2) and popcnt.
-    add_mlkem768_build(avx2 -mavx2 -mbmi2 -mpopcnt)
+    add_mlkem768_build(avx2 ON -mavx2 -mbmi2 -mpopcnt)
     target_compile_definitions(mlkem768_avx2 INTERFACE SROUTER_MLKEM768_AVX2_BUILD)
 endif()
