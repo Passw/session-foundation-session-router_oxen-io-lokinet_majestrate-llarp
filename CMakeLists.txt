@@ -129,20 +129,9 @@ macro_ensure_out_of_source_build("${PROJECT_NAME} requires an out-of-source buil
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(cmake/unix.cmake)
+include(cmake/check_target_condition.cmake)
 
-if(NOT WIN32)
-  if(IOS OR ANDROID)
-    set(NON_PC_TARGET ON)
-  else()
-    include(TargetArch)
-    target_architecture(COMPILE_ARCH)
-    if(COMPILE_ARCH MATCHES i386 OR COMPILE_ARCH MATCHES x86_64)
-      set(NON_PC_TARGET OFF)
-    else()
-      set(NON_PC_TARGET ON)
-    endif()
-  endif()
-endif()
+check_target_condition(SROUTER_TARGET_X86 "defined(__x86_64__) || defined(__i386__)")
 
 set(warning_flags -Wall -Wextra -Wno-unknown-pragmas -Wno-unused-function -Werror=vla)
 
@@ -190,7 +179,8 @@ if(NOT APPLE)
     else()
       add_compile_options(-march=native -mtune=native)
     endif()
-  elseif(NOT NON_PC_TARGET)
+  # Android's NDK picks the CPU baseline for each ABI itself.
+  elseif(SROUTER_TARGET_X86 AND NOT ANDROID)
     if (SROUTER_AVX2)
       add_compile_options(-march=haswell -mtune=haswell -mfpmath=sse)
     else()

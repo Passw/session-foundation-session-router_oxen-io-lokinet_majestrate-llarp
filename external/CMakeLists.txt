@@ -84,8 +84,7 @@ endif()
 # prefix, and crypto/mlkem768.cpp picks between the two from the CPU's features at runtime.  These
 # are object libraries so that their code lands in the archive of whatever links them rather than in
 # archives of their own.
-include(TargetArch)
-target_architecture(mlkem768_arch)
+check_target_condition(MLKEM768_TARGET_X86_64 "defined(__x86_64__)")
 
 function(add_mlkem768_build name)
     set(tgt mlkem768_${name})
@@ -103,7 +102,7 @@ endfunction()
 
 add_mlkem768_build(baseline)
 # Not for MSVC: mlkem-native leaves out its x86_64 assembly there, so the copy would be identical.
-if(mlkem768_arch STREQUAL "x86_64" AND NOT MSVC)
+if(MLKEM768_TARGET_X86_64 AND NOT MSVC)
     # The AVX2 backend's rejection sampling also uses pext (BMI2) and popcnt.
     add_mlkem768_build(avx2 -mavx2 -mbmi2 -mpopcnt)
     target_compile_definitions(mlkem768_avx2 INTERFACE SROUTER_MLKEM768_AVX2_BUILD)
