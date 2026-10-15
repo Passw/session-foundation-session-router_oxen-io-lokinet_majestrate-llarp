@@ -26,7 +26,7 @@ if(SROUTER_DAEMON AND NOT SROUTER_FULL)
 endif()
 
 
-option(SROUTER_VERSION_SO "Add the project version to the shared library filename, e.g. libsession-router1.2.3.so instead of libsession-router.so" OFF)
+option(SROUTER_VERSION_SO "Add the project major.minor version to the shared library filename, e.g. libsessionrouter.so.1.2 instead of libsessionrouter.so" OFF)
 
 set(LANGS C CXX ASM)
 if(APPLE AND SROUTER_DAEMON)

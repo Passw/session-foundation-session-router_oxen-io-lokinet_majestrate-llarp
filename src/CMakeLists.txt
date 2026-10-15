@@ -382,9 +382,9 @@ if(BUILD_SHARED_LIBS AND SROUTER_VERSION_SO)
   if(SROUTER_FULL)
     list(APPEND _srtr_libs libsessionrouter)
   endif()
+  # Releases with the same major.minor version are ABI compatible; an ABI break bumps one of them.
   set_target_properties(${_srtr_libs} PROPERTIES
-    VERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
-    SOVERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}")
+    SOVERSION "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
 endif()
 
 if(NOT APPLE)
